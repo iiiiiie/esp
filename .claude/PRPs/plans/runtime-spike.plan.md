@@ -22,8 +22,8 @@ The repository currently contains a product definition and architecture decision
 - **Estimated Files**: 5 repository files
 - **Estimated Tasks**: 9
 - **Current Steam Build ID**: `24088745` (must be re-read at test time)
-- **Current active UE4SS baseline**: v3.0.1 Beta, Git SHA `c2ac246`, Workshop package `experimental-palworld-4` (must be re-read from the newest `UE4SS.log`)
-- **Active UE4SS root**: `E:/Steam/steamapps/common/Palworld/Mods/NativeMods/UE4SS`
+- **Current active UE4SS baseline**: v3.0.1 Beta, Git SHA `c2ac2464`, Workshop package `experimental-palworld-5` (observed 2026-07-15; re-read from the newest `UE4SS.log`)
+- **Active UE4SS root**: `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss`
 - **Working internal mod identifier**: `PalworldResourceESP`; public project name remains an open product decision
 
 ---
@@ -88,10 +88,10 @@ Files that MUST be read before implementing:
 | P0 (critical) | `../automatic_pickup/AutomaticPickup/Scripts/main.lua` | 20-66, 232-287, 330-420, 1291-1328 | Working UE4SS patterns for logging, UObject safety, `IsA`, individual parameters, hooks, and notifications |
 | P1 (important) | `../automatic_pickup/AutomaticPickup/Scripts/config.lua` | all | Existing local configuration style and uppercase constant naming |
 | P1 (important) | `readme.txt` | all | Original feature intent and naming vocabulary |
-| P1 (important) | `E:/Steam/steamapps/common/Palworld/Mods/NativeMods/UE4SS/UE4SS.log` | startup section and newest project lines | Runtime version, active mod root, loader errors, and actual hook behavior |
+| P1 (important) | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss/UE4SS.log` | startup section and newest project lines | Runtime version, active mod root, loader errors, and actual hook behavior |
 | P1 (important) | `E:/Steam/steamapps/appmanifest_1623730.acf` | build metadata | Records the exact Steam build under test |
-| P2 (reference) | `E:/Steam/steamapps/common/Palworld/Mods/NativeMods/UE4SS/Mods/BPModLoaderMod/Scripts/main.lua` | initialization and `ExecuteInGameThread` sections | Current installed UE4SS/LogicMod initialization examples |
-| P2 (reference) | `E:/Steam/steamapps/common/Palworld/Mods/NativeMods/UE4SS/Mods/shared/UEHelpers/UEHelpers.lua` | object lookup helpers | Installed examples of `FindFirstOf` and `FindAllOf` |
+| P2 (reference) | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss/Mods/BPModLoaderMod/Scripts/main.lua` | initialization and `ExecuteInGameThread` sections | Current installed UE4SS/LogicMod initialization examples |
+| P2 (reference) | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss/Mods/shared/UEHelpers/UEHelpers.lua` | object lookup helpers | Installed examples of `FindFirstOf` and `FindAllOf` |
 
 Do not edit the `automatic_pickup` repository or either installed UE4SS directory while implementing repository code. Deployment into the active UE4SS root is a separate, reversible validation step.
 
@@ -102,7 +102,7 @@ Do not edit the `automatic_pickup` repository or either installed UE4SS director
 | UE4SS Lua functions | https://github.com/PalworldModding/Docs/blob/master/docs/developers/ue4ss-modding/lua-mods/ue4ss-functions.mdx | Use `/Script/` hooks for reliable initialization; hook parameters may be `RemoteUnrealParam` and require `:get()`; guard notifications against duplicate registration |
 | Lua with Blueprint | https://github.com/PalworldModding/Docs/blob/master/docs/developers/ue4ss-modding/lua-mods/blueprints-with-lua.mdx | Cache and validate the ModActor, bind custom events once, and use unique custom-event names because one registration can overwrite another |
 | LogicMod introduction | https://github.com/PalworldModding/Docs/blob/master/docs/developers/ue4ss-modding/logic-mods/introduction.md | End-user UI should use Widgets rather than the UE4SS GUI console; LogicMods must not use the `_P` patch-pak suffix |
-| Steam Workshop packaging | https://github.com/PalworldModding/Docs/blob/master/docs/developers/mod-publishing/workshop/packaging.md | Lua + LogicMods can be packaged together and declare UE4SS; current Lua install root is under `Palworld/Mods/NativeMods/UE4SS` |
+| Steam Workshop packaging | https://github.com/PalworldModding/Docs/blob/master/docs/developers/mod-publishing/workshop/packaging.md | Lua + LogicMods can be packaged together and declare UE4SS; documented install roots can differ from the active experimental runtime, so the newest `UE4SS.log` is authoritative |
 
 ### External Research Findings
 
@@ -125,9 +125,9 @@ GOTCHA: Use the local `unwrap` pattern and `pcall`; direct dereference can fail 
 ```
 
 ```text
-KEY_INSIGHT: The active Workshop UE4SS root differs from the older `Pal/Binaries/Win64/ue4ss` layout used by the read-only reference copy.
+KEY_INSIGHT: The active UE4SS root can differ from Workshop documentation and stale logs; on 2026-07-15 experimental-palworld-5 loaded from `Pal/Binaries/Win64/ue4ss`.
 APPLIES_TO: Development deployment and log inspection.
-GOTCHA: Deploy only to the root reported by the newest `UE4SS.log`; code placed in the legacy directory may never load.
+GOTCHA: Deploy only to the root reported by the newest current-process `UE4SS.log`; a valid-looking alternate root may remain installed but unused.
 ```
 
 ---
@@ -145,7 +145,7 @@ GOTCHA: Deploy only to the root reported by the newest `UE4SS.log`; code placed 
 | Lifecycle | `.claude/PRPs/prds/palworld-resource-pal-esp.prd.md:191-193,228-230` | Event-driven cache plus low-frequency reconciliation | No per-frame full scan |
 | Configuration | `../automatic_pickup/AutomaticPickup/Scripts/config.lua:3-27` | Small explicit flags and measured timing values | No public setting can enable player collection |
 | Tests | Repository currently has no test harness | Runtime experiment matrix is the Phase 1 test structure | Do not invent a framework before the runtime API is proven |
-| Dependencies | `E:/Steam/.../UE4SS/UE4SS.log:2-22` | UE4SS v3.0.1 Beta loads mods from `Mods/NativeMods/UE4SS/Mods` | Game and loader versions are part of every result |
+| Dependencies | `E:/Steam/.../Win64/ue4ss/UE4SS.log:2-15` | UE4SS v3.0.1 Beta currently loads mods from `Pal/Binaries/Win64/ue4ss/Mods` | Game and loader versions are part of every result |
 
 ### Runtime Data Flow
 
@@ -350,7 +350,7 @@ No production Widget asset, C++ module, package manifest, public README rewrite,
 
 - **ACTION**: Record the exact game, UE4SS, install-root, and installed-mod baseline before writing runtime assumptions.
 - **IMPLEMENT**: Read Steam `buildid`, newest `UE4SS.log` version/SHA/root, Workshop UE4SS package metadata, and whether known overlay mods are enabled. Add these fields to the test matrix template and require them for every run.
-- **MIRROR**: Use the active-root evidence in `UE4SS.log:2-22`; treat the legacy Win64 copy as read-only reference only.
+- **MIRROR**: Use the active-root evidence in the newest current-process `UE4SS.log:2-15`; do not infer the root from packaging documentation or an older log.
 - **IMPORTS**: None.
 - **GOTCHA**: Workshop content can update before the installed copy is activated by a game launch; the newest runtime log is authoritative for the tested binary.
 - **VALIDATE**: `runtime-spike-matrix.md` contains non-empty build ID, UE4SS version, Git SHA, and active mod root fields.
@@ -503,9 +503,9 @@ EXPECT: Required diagnostic codes exist; the prohibited mutation/Player-ESP sear
 ### Active Runtime Root Preflight
 
 ```powershell
-rg -n "UE4SS -|Git SHA|Loading mods from:|root directory:" "E:/Steam/steamapps/common/Palworld/Mods/NativeMods/UE4SS/UE4SS.log"
+rg -n "UE4SS -|Git SHA|Loading mods from:|root directory:" "E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss/UE4SS.log"
 rg -n '"buildid"' "E:/Steam/steamapps/appmanifest_1623730.acf"
-Test-Path "E:/Steam/steamapps/common/Palworld/Mods/NativeMods/UE4SS/Mods/PalworldResourceESP"
+Test-Path "E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss/Mods/PalworldResourceESP"
 ```
 
 EXPECT: Version/root/build evidence is captured before deployment. If the target exists unexpectedly, stop and inspect it; do not overwrite it.
@@ -517,8 +517,8 @@ Before copying, follow the repository defensive preflight protocol. Copy the rep
 ### Runtime Log Validation
 
 ```powershell
-rg -n "\[PalworldResourceESP\].*(BOOT_|CLASS_|PAL_|FIELD_|METRIC|DRAW_|ERROR)" "E:/Steam/steamapps/common/Palworld/Mods/NativeMods/UE4SS/UE4SS.log"
-rg -n "\[PalworldResourceESP\].*(player name|player uid|platform id|location)" "E:/Steam/steamapps/common/Palworld/Mods/NativeMods/UE4SS/UE4SS.log"
+rg -n "\[PalworldResourceESP\].*(BOOT_|CLASS_|PAL_|FIELD_|METRIC|DRAW_|ERROR)" "E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss/UE4SS.log"
+rg -n "\[PalworldResourceESP\].*(player name|player uid|platform id|location)" "E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss/UE4SS.log"
 ```
 
 EXPECT: The first command provides evidence for the matrix. The second command returns no identifying player diagnostics.
@@ -580,7 +580,7 @@ EXPECT: The first command provides evidence for the matrix. The second command r
 | Lua diagnostic rendering path is unavailable | Medium | Medium | Fixed Canvas/controller projection probes; document LogicMod toolchain blocker without changing ADR |
 | Other overlay mods create misleading evidence | Medium | Medium | Clean control run plus normal compatibility run |
 | Initial scan or draw causes frame hitching | Medium | High | Time every phase, display one target, no per-frame scan, bounded reconciliation |
-| Active UE4SS installation changes after Workshop update | Medium | High | Trust newest runtime log, not stale package metadata or legacy directories |
+| Active UE4SS installation changes after Workshop update | Medium | High | Trust the newest current-process runtime log, not stale package metadata, documentation, or alternate installed roots |
 
 ## Notes
 
