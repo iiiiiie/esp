@@ -1,0 +1,171 @@
+# Blueprint Bridge Spike Plan
+
+## Summary
+
+Phase 2 proves the minimum LogicMod/Blueprint path required by ADR-0001 and ADR-0002. It does not build the final ESP panel or broad resource registry. The spike accepts one already-approved wild Pal from Lua, initializes a Blueprint bridge, draws one top-anchored guide through a Widget, and reads gender inside Blueprint without letting Blueprint enumerate or accept human players.
+
+## Current Evidence
+
+- Steam PC build: `24088745` at the Phase 1 test time.
+- UE4SS: v3.0.1 Beta #0, Git SHA `c2ac2464`.
+- Lua acquisition, player rejection, snapshot reconciliation, and map teardown passed.
+- `ReceiveDrawHUD` registered but produced zero callbacks.
+- Direct `Gender` access and `GetGenderType()` enum marshalling crashed UE4SS Lua.
+- Existing architecture: `docs/adr/0001-use-ue4ss-hybrid-client-mod-architecture.md`.
+- Toolchain decision: `docs/adr/0002-use-pinned-palworld-modding-kit-toolchain.md`.
+
+## Success Criteria
+
+1. PMK opens and compiles at the pinned commit with the recorded UE/Wwise/MSVC versions.
+2. `PalworldResourceESP` loads as a LogicMod and emits one unique bridge-ready event per gameplay ModActor instance.
+3. Lua caches only the current valid bridge actor and clears it before map teardown.
+4. Lua passes at most one actor that already passed the Phase 1 wild/non-player classification.
+5. Blueprint creates one unframed viewport Widget and draws a thin line from the top-center anchor to the target.
+6. Blueprint reads and reports the target Pal gender without routing the enum through Lua.
+7. A local human player never enters candidate, bridge, Widget target, label, or diagnostic state.
+8. Entering a save, waiting near wild Pals, returning to title, and normal exit do not crash.
+9. The `.pak` is reproducibly produced and installed under `Pal/Content/Paks/LogicMods/PalworldResourceESP.pak`.
+
+## Non-Goals
+
+- Final `Shift+E` settings panel.
+- Multiple targets, boxes, outlines, names, health, weak points, or off-screen indicators.
+- Passive-skill arrays, IVs, Lucky/Alpha, elements, capture count, or resource adapters.
+- Multiplayer verification.
+- Forced entity loading, direct memory reads, save mutation, server components, or C++ hot paths.
+
+## Minimal Bridge Contract
+
+All names are project-unique.
+
+### Blueprint to Lua
+
+- Custom event: `PalworldResourceESP_LuaBridgeReady`
+- Output: current `ModActor` or dedicated bridge actor UObject.
+- Called from `PostBeginPlay`.
+
+### Lua to Blueprint
+
+- Function: `PalworldResourceESP_ResetSession(SessionId: int)`
+- Function: `PalworldResourceESP_SetTarget(Target: PalMonsterCharacter, SessionId: int)`
+- Function: `PalworldResourceESP_ClearTarget(SessionId: int)`
+
+Rules:
+
+- Lua calls bridge functions only on the GameThread and only when the bridge UObject is valid.
+- The target comes exclusively from the existing candidate snapshot.
+- Session IDs prevent delayed calls from reviving a target after map travel.
+- No player object, player identity, player position, or player parameter is passed to Blueprint.
+- Blueprint owns per-frame projection only; it does not scan the world.
+
+## Planned Repository Layout
+
+```text
+LogicMod/
+  Content/
+    Mods/
+      PalworldResourceESP/
+        ModActor.uasset
+        BP_ESPBridge.uasset
+        WBP_ESPOverlay.uasset
+        PalworldResourceESP.uasset
+  README.md
+docs/
+  adr/
+  research/
+  testing/
+PalworldResourceESP/
+  Scripts/
+```
+
+The `LogicMod/Content/Mods/PalworldResourceESP` directory is project-owned. The full PMK checkout, Wwise files, Unreal-generated caches, packaged `Windows` directory, and game assets remain untracked outside this repository.
+
+## Tasks
+
+### Task 1: Bootstrap and Record the Toolchain
+
+- Verify .NET 6, VS Build Tools, Windows SDK, UE 5.1, Wwise 2021.1.11, and PMK commit.
+- Add the missing MSVC 14.38 component without replacing newer installed toolsets.
+- Keep installer/account steps explicit and record any maintainer interaction.
+- Verify PMK opens before adding project assets.
+
+### Task 2: Create the External PMK Checkout
+
+- Clone `localcc/PalworldModdingKit` under the sibling `palworld_mod/tooling` directory.
+- Pin commit `62fad4130238cb0aadf024b87496e7387d5f4bf5`.
+- Integrate Wwise exactly as required by the current PMK documentation.
+- Record the external path and hashes without committing third-party files.
+
+### Task 3: Establish Project-Owned LogicMod Assets
+
+- Create `LogicMod/Content/Mods/PalworldResourceESP` in this repository.
+- Connect it to PMK with a verified reversible Junction or a documented copy step.
+- Assign a unique non-zero chunk ID after inspecting existing project labels.
+- Create `ModActor`, `BP_ESPBridge`, and `WBP_ESPOverlay` in Unreal Editor.
+
+### Task 4: Implement Bridge Initialization
+
+- `ModActor` spawns or owns the dedicated bridge actor.
+- `PostBeginPlay` calls `PalworldResourceESP_LuaBridgeReady` with the bridge UObject.
+- Lua registers the custom event once, validates the UObject, and replaces stale bridge state.
+- LoadMap pre-hook clears the cached bridge before the old world tears down.
+
+### Task 5: Connect the Existing Candidate Snapshot
+
+- Preserve all Phase 1 classification and ownership checks.
+- Select at most one current wild candidate.
+- Call `SetTarget` only when target/session changes; call `ClearTarget` on empty state or transition.
+- Do not increase scan frequency for rendering.
+
+### Task 6: Draw the Top-Anchored Guide
+
+- Create one viewport overlay Widget with stable full-screen dimensions.
+- Project the target actor location each Widget frame.
+- Draw a thin line from `(viewport width / 2, TOP_ANCHOR_Y)` to the projected target.
+- Hide the line for invalid, destroyed, behind-camera, or off-world targets.
+- Do not place the line origin at screen center.
+
+### Task 7: Prove the Gender Adapter
+
+- Blueprint obtains the accepted Pal's individual parameter through typed Blueprint nodes.
+- Blueprint reads `EPalGenderType` locally and converts it to a diagnostic string or integer inside Blueprint.
+- Only the normalized diagnostic value may be shown/logged; the enum does not return through Lua.
+- Failure remains explicit and does not crash or fabricate a value.
+
+### Task 8: Package and Deploy Reversibly
+
+- Package the unique chunk.
+- Rename the produced chunk to `PalworldResourceESP.pak`.
+- Preflight `Pal/Content/Paks/LogicMods` and preserve any existing target via a dated `__DEPRECATED_` rename.
+- Keep the Lua Junction deployment unchanged unless the bridge integration requires a documented update.
+
+### Task 9: Execute the Phase 2 Smoke Matrix
+
+- Launch, enter the existing single-player save, and wait near a wild Pal.
+- Verify bridge-ready, `candidate_player_count=0`, one top line, and gender evidence.
+- Move/rotate to confirm the endpoint tracks the Pal without changing the top anchor.
+- Return to title, wait, and exit normally.
+- Record build/tool versions, logs, screenshot evidence, and crash-report timestamps.
+
+## Validation Commands
+
+```powershell
+git status --short --branch
+git diff --check
+rg -n "PalworldResourceESP_(LuaBridgeReady|ResetSession|SetTarget|ClearTarget)" PalworldResourceESP LogicMod docs
+rg -ni "player name|player uid|platform id|steam id|location=" PalworldResourceESP LogicMod
+```
+
+Runtime validation remains required because static checks cannot validate Blueprint serialization, cooking, Widget projection, or UE4SS custom-event marshalling.
+
+## Rollback
+
+- Tool installations are removed through their installers, not filesystem deletion.
+- External PMK or generated directories are renamed with `__DEPRECATED_YYYYMMDD_` before any later cleanup.
+- Junctions are renamed with the same protocol and never replaced over an existing path.
+- A failed `.pak` is renamed with `__MISTAKE_YYYYMMDD_` and the previous package is restored by name.
+- Git changes are reverted with normal commits; no hard reset or force push.
+
+## Phase Gate
+
+Phase 2 passes only when the minimal bridge, top-anchored guide, Blueprint-local gender adapter, player exclusion invariant, map teardown, and normal exit all pass in the maintainer's Steam single-player environment. Multiplayer remains community-pending.

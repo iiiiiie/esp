@@ -1,6 +1,10 @@
 local config = require("config")
 
 local MOD_NAME = "PalworldResourceESP"
+local BRIDGE_READY_EVENT = "PalworldResourceESP_LuaBridgeReady"
+local BRIDGE_METHOD_RESET_SESSION = "PalworldResourceESP_ResetSession"
+local BRIDGE_METHOD_SET_TARGET = "PalworldResourceESP_SetTarget"
+local BRIDGE_METHOD_CLEAR_TARGET = "PalworldResourceESP_ClearTarget"
 
 local CLASS_PATHS = {
     monster = "/Script/Pal.PalMonsterCharacter",
@@ -85,6 +89,11 @@ local state = {
     notification_registered = false,
     lifecycle_hooks_registered = false,
     load_map_hooks_registered = false,
+    bridge_event_registered = false,
+    bridge_actor = nil,
+    bridge_session_sent = nil,
+    bridge_target_actor = nil,
+    bridge_target_session = nil,
     draw_hook_registered = false,
     reconcile_started = false,
     reconcile_handle = nil,
@@ -211,6 +220,30 @@ local function safe_call_no_args(object, method_name)
 
     local ok, result = pcall(function()
         return method(object)
+    end)
+    if not ok then
+        return false, nil
+    end
+
+    return true, unwrap(result)
+end
+
+local function safe_call_with_args(object, method_name, ...)
+    object = unwrap(object)
+    if not is_valid(object) then
+        return false, nil
+    end
+
+    local ok_method, method = pcall(function()
+        return object[method_name]
+    end)
+    if not ok_method or method == nil then
+        return false, nil
+    end
+
+    local args = { ... }
+    local ok, result = pcall(function()
+        return method(object, table.unpack(args))
     end)
     if not ok then
         return false, nil
@@ -956,6 +989,8 @@ local function emit_metrics(force)
     ))
 end
 
+local sync_bridge_target
+
 local function reconcile()
     if not config.ENABLED then
         return
@@ -965,6 +1000,7 @@ local function reconcile()
     state.gameplay_active = gameplay_active
     if not gameplay_active then
         clear_candidate_cache(inactive_reason)
+        sync_bridge_target()
         state.metrics.raw_monsters = 0
         if state.last_scan_skip_reason ~= inactive_reason then
             state.last_scan_skip_reason = inactive_reason
@@ -980,9 +1016,10 @@ local function reconcile()
     state.last_scan_skip_reason = nil
     clear_candidate_cache("reconcile_rebuild")
     scan_monsters("reconcile")
-    if config.DRAW_ENABLED then
+    if config.DRAW_ENABLED or config.BLUEPRINT_BRIDGE_ENABLED then
         select_target()
     end
+    sync_bridge_target()
     emit_metrics(false)
 end
 
@@ -1012,8 +1049,118 @@ local function run_on_game_thread(callback)
     return true
 end
 
+local function clear_bridge_cache(reason)
+    local had_bridge = state.bridge_actor ~= nil
+    state.bridge_actor = nil
+    state.bridge_session_sent = nil
+    state.bridge_target_actor = nil
+    state.bridge_target_session = nil
+
+    if had_bridge then
+        debug_event("BRIDGE_CLEARED", string.format("reason=%s", reason))
+    end
+end
+
+local function call_bridge(method_name, ...)
+    if not config.BLUEPRINT_BRIDGE_ENABLED then
+        return false
+    end
+
+    local bridge_actor = state.bridge_actor
+    if not is_valid(bridge_actor) then
+        return false
+    end
+
+    local ok = safe_call_with_args(bridge_actor, method_name, ...)
+    if not ok then
+        log_event("BRIDGE_CALL_FAILED", string.format("method=%s", method_name))
+        clear_bridge_cache("call_failed:" .. method_name)
+        return false
+    end
+
+    return true
+end
+
+sync_bridge_target = function()
+    if not config.BLUEPRINT_BRIDGE_ENABLED or not is_valid(state.bridge_actor) then
+        return
+    end
+
+    local session_index = state.session_index
+    if state.bridge_session_sent ~= session_index then
+        if not call_bridge(BRIDGE_METHOD_RESET_SESSION, session_index) then
+            return
+        end
+        state.bridge_session_sent = session_index
+        state.bridge_target_actor = nil
+        state.bridge_target_session = nil
+        debug_event("BRIDGE_SESSION", string.format("session=%d", session_index))
+    end
+
+    local selected = state.selected
+    if selected ~= nil and is_valid(selected.actor) then
+        if state.bridge_target_actor == selected.actor and state.bridge_target_session == session_index then
+            return
+        end
+
+        if call_bridge(BRIDGE_METHOD_SET_TARGET, selected.actor, session_index) then
+            state.bridge_target_actor = selected.actor
+            state.bridge_target_session = session_index
+            debug_event("BRIDGE_TARGET_SET", string.format("session=%d", session_index))
+        end
+        return
+    end
+
+    if state.bridge_target_actor ~= nil then
+        if call_bridge(BRIDGE_METHOD_CLEAR_TARGET, session_index) then
+            state.bridge_target_actor = nil
+            state.bridge_target_session = nil
+            debug_event("BRIDGE_TARGET_CLEARED", string.format("session=%d", session_index))
+        end
+    end
+end
+
+local function register_blueprint_bridge()
+    if not config.BLUEPRINT_BRIDGE_ENABLED or state.bridge_event_registered then
+        return
+    end
+    if type(RegisterCustomEvent) ~= "function" then
+        log_event("BRIDGE_UNAVAILABLE", "api=RegisterCustomEvent")
+        return
+    end
+
+    local ok, err = pcall(function()
+        RegisterCustomEvent(BRIDGE_READY_EVENT, function(bridge_parameter)
+            run_on_game_thread(function()
+                local bridge_actor = unwrap(bridge_parameter)
+                if not is_valid(bridge_actor) then
+                    log_event("BRIDGE_REJECTED", "reason=invalid_actor")
+                    return
+                end
+
+                state.bridge_actor = bridge_actor
+                state.bridge_session_sent = nil
+                state.bridge_target_actor = nil
+                state.bridge_target_session = nil
+                log_event("BRIDGE_READY", string.format("event=%s", BRIDGE_READY_EVENT))
+                sync_bridge_target()
+            end)
+        end)
+    end)
+    if not ok then
+        log_event("BRIDGE_REGISTER_FAILED", tostring(err))
+        return
+    end
+
+    state.bridge_event_registered = true
+    debug_event("BRIDGE_REGISTERED", string.format("event=%s", BRIDGE_READY_EVENT))
+end
+
 local function reset_session(reason)
     clear_candidate_cache("session_reset:" .. reason)
+    state.bridge_session_sent = nil
+    state.bridge_target_actor = nil
+    state.bridge_target_session = nil
     state.draw_failure_logged = false
     state.draw_block_reason_logged = {}
     state.pal_accept_logged = false
@@ -1033,11 +1180,13 @@ local function bootstrap(reason)
     state.gameplay_active = gameplay_active
     if gameplay_active then
         scan_monsters("bootstrap")
-        if config.DRAW_ENABLED then
+        if config.DRAW_ENABLED or config.BLUEPRINT_BRIDGE_ENABLED then
             select_target()
         end
+        sync_bridge_target()
     else
         clear_candidate_cache(inactive_reason)
+        sync_bridge_target()
         state.metrics.raw_monsters = 0
         debug_event("SCAN_SKIPPED", string.format(
             "source=bootstrap reason=%s",
@@ -1145,6 +1294,7 @@ local function register_load_map_hooks()
                 state.bootstrap_pending = false
                 state.world_transitioning = true
                 state.gameplay_active = false
+                clear_bridge_cache("load_map_pre")
                 clear_candidate_cache("load_map_pre")
                 debug_event("WORLD_TRANSITION", "phase=pre")
             end)
@@ -1197,9 +1347,10 @@ local function register_monster_notification()
             local actor = unwrap(constructed_object)
             run_on_game_thread(function()
                 add_candidate(actor, "notify")
-                if config.DRAW_ENABLED then
+                if config.DRAW_ENABLED or config.BLUEPRINT_BRIDGE_ENABLED then
                     select_target()
                 end
+                sync_bridge_target()
             end)
         end)
     end)
@@ -1450,6 +1601,7 @@ if not config.ENABLED then
 end
 
 resolve_required_classes()
+register_blueprint_bridge()
 register_monster_notification()
 register_lifecycle_hooks()
 register_load_map_hooks()
