@@ -11,7 +11,7 @@ config.MAX_CANDIDATES = 512
 config.MAX_DISPLAY_TARGETS = 1
 
 config.FIELD_PROBES_ENABLED = true
-config.BLUEPRINT_BRIDGE_ENABLED = false
+config.BLUEPRINT_BRIDGE_ENABLED = true
 config.DRAW_ENABLED = false
 config.DRAW_MODE = "disabled"
 config.TOP_ANCHOR_Y = 28.0
