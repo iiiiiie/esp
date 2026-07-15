@@ -17,7 +17,7 @@ ADR-0001 selects a UE4SS Lua plus LogicMod/Blueprint Widget architecture. The Ph
 
 The active community documentation uses the unofficial `localcc/PalworldModdingKit` project to compile Blueprint LogicMods. That project is tied to Unreal Engine 5.1, .NET 6, Visual Studio 2022 with the MSVC 14.38 toolchain, and Wwise 2021.1.11 integration. These are substantial, version-sensitive dependencies and should not be inferred from whichever tools happen to be installed on a contributor machine.
 
-The current maintainer machine has .NET 6, Visual Studio Build Tools 2022, and Windows SDK 10.0.26100. It does not currently have Unreal Engine 5.1, Epic Games Launcher, Wwise, or MSVC 14.38.
+The current maintainer machine has .NET 6, Unreal Engine 5.1.1, Epic Games Launcher, and Visual Studio Build Tools 2022 with MSVC 14.38. A 2026-07-15 UBT probe could not discover a Windows 10/11 SDK (only the Windows 8.1 registry entry and Windows 10 UnionMetadata were present), and Wwise is not installed.
 
 ## Decision
 
