@@ -14,6 +14,8 @@ Audiokinetic account activation and download access are currently unreliable for
 
 The first no-Wwise probe disabled the Wwise plugin and removed the direct `AkAudio` dependency in an isolated PMK copy. UnrealBuildTool did not reach source compilation because the machine also lacks a discoverable Windows 10/11 SDK; this is an independent environment blocker. The clean PMK checkout remains unchanged.
 
+After installing the Windows 11 SDK 10.0.26100.0, the no-Wwise `PalEditor` build and headless module-load smoke test passed using UBT's default MSVC 14.39 toolchain. Explicit `-CompilerVersion` attempts for the installed MSVC 14.38 family were rejected by this UE 5.1 UBT build and remain a separate reproducibility task.
+
 ## Decision
 
 We will pursue a Wwise-free PMK development path for the ESP, initially as an isolated experiment:
@@ -88,5 +90,6 @@ Negative effects:
 - [x] Add the minimal `AkAudio` compatibility module in the experimental PMK copy.
 - [x] Run UHT/UBT; the stub passed UHT and the incremental `PalEditor` build completed.
 - [x] Launch the no-Wwise editor target headlessly; `AkAudioStub` mounted without a module-initialization error. The first asset scan required a normal window-close request after `Quit` before the editor exited.
+- [ ] Reconcile the UE 5.1 UBT compiler selector with the pinned MSVC 14.38 family; the successful probe used MSVC 14.39.
 - [ ] Package the bridge and run the approved Steam single-player smoke matrix.
 - [ ] Change this ADR to `Accepted` only after the no-Wwise path passes those checks.
