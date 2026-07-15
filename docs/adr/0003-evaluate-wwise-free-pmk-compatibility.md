@@ -87,6 +87,6 @@ Negative effects:
 - [x] Install or otherwise expose a Windows 10/11 SDK to UBT.
 - [x] Add the minimal `AkAudio` compatibility module in the experimental PMK copy.
 - [x] Run UHT/UBT; the stub passed UHT and the incremental `PalEditor` build completed.
-- [x] Launch the no-Wwise editor target headlessly; `AkAudioStub` mounted and the editor exited normally after the module-entry fix.
+- [x] Launch the no-Wwise editor target headlessly; `AkAudioStub` mounted without a module-initialization error. The first asset scan required a normal window-close request after `Quit` before the editor exited.
 - [ ] Package the bridge and run the approved Steam single-player smoke matrix.
 - [ ] Change this ADR to `Accepted` only after the no-Wwise path passes those checks.
