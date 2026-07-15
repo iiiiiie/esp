@@ -120,8 +120,8 @@ Follow-up concerns:
 
 ## Follow-ups
 
-- [ ] Install or verify Unreal Engine 5.1.x.
-- [ ] Add MSVC 14.38 to Visual Studio Build Tools 2022.
+- [x] Install or verify Unreal Engine 5.1.x.
+- [x] Add MSVC 14.38 to Visual Studio Build Tools 2022.
 - [ ] Install and integrate Wwise 2021.1.11.
 - [x] Clone PMK outside the repository and pin commit `62fad4130238cb0aadf024b87496e7387d5f4bf5`.
 - [ ] Compile and launch the PMK without project assets.
