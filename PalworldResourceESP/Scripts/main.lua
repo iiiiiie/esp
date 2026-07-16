@@ -1,6 +1,11 @@
 local config = require("config")
 
 local MOD_NAME = "PalworldResourceESP"
+local BRIDGE_READY_EVENT = "PalworldResourceESP_LuaBridgeReady"
+local BRIDGE_METHOD_RESET_SESSION = "PalworldResourceESP_ResetSession"
+local BRIDGE_METHOD_SET_TARGET = "PalworldResourceESP_SetTarget"
+local BRIDGE_METHOD_CLEAR_TARGET = "PalworldResourceESP_ClearTarget"
+local BRIDGE_CLASS_FULL_NAME = "BlueprintGeneratedClass /Game/Mods/PalworldResourceESP/ModActor.ModActor_C"
 
 local CLASS_PATHS = {
     monster = "/Script/Pal.PalMonsterCharacter",
@@ -85,6 +90,17 @@ local state = {
     notification_registered = false,
     lifecycle_hooks_registered = false,
     load_map_hooks_registered = false,
+    bridge_event_registered = false,
+    bridge_discovery_registered = false,
+    bridge_probe_actor = nil,
+    bridge_actor = nil,
+    bridge_session_sent = nil,
+    -- __DEPRECATED_20260716__ [reason: retained for rollback; multi-target sync tracks a count]
+    bridge_target_actor = nil,
+    bridge_target_session = nil,
+    bridge_target_count = 0,
+    bridge_gender_logged = false,
+    bridge_gender_pending_reason = nil,
     draw_hook_registered = false,
     reconcile_started = false,
     reconcile_handle = nil,
@@ -106,6 +122,7 @@ local state = {
         accepted = 0,
         rejected_player = 0,
         rejected_owned = 0,
+        rejected_dead = 0,
         rejected_unknown = 0,
         invalidated = 0,
         notification_count = 0,
@@ -114,6 +131,9 @@ local state = {
         draw_callbacks = 0,
         draw_calls = 0,
         draw_seconds = 0.0,
+        bridge_syncs = 0,
+        bridge_set_calls = 0,
+        bridge_sync_seconds = 0.0,
         last_emit_at = 0.0,
     },
 }
@@ -211,6 +231,30 @@ local function safe_call_no_args(object, method_name)
 
     local ok, result = pcall(function()
         return method(object)
+    end)
+    if not ok then
+        return false, nil
+    end
+
+    return true, unwrap(result)
+end
+
+local function safe_call_with_args(object, method_name, ...)
+    object = unwrap(object)
+    if not is_valid(object) then
+        return false, nil
+    end
+
+    local ok_method, method = pcall(function()
+        return object[method_name]
+    end)
+    if not ok_method or method == nil then
+        return false, nil
+    end
+
+    local args = { ... }
+    local ok, result = pcall(function()
+        return method(object, table.unpack(args))
     end)
     if not ok then
         return false, nil
@@ -521,6 +565,11 @@ local function classify_actor(actor)
         return "parameter_component_unavailable", nil, nil
     end
 
+    local ok_is_dead, is_dead = safe_call_no_args(component, "IsDead")
+    if ok_is_dead and is_dead == true then
+        return "dead", component, nil
+    end
+
     local parameter = try_get_individual_parameter(actor)
     if not is_valid(parameter) then
         return "individual_parameter_unavailable", component, nil
@@ -677,6 +726,12 @@ local function record_rejection(reason)
         return
     end
 
+    if reason == "dead" then
+        state.metrics.rejected_dead = state.metrics.rejected_dead + 1
+        log_reason_once("CLASS_REJECT_DEAD")
+        return
+    end
+
     state.metrics.rejected_unknown = state.metrics.rejected_unknown + 1
     log_reason_once("CLASS_REJECT_UNKNOWN")
 end
@@ -701,7 +756,7 @@ local function add_candidate(actor, source)
     end
 
     if state.candidates[actor] ~= nil then
-        return true
+        return false
     end
 
     if state.candidate_count >= config.MAX_CANDIDATES then
@@ -938,13 +993,14 @@ local function emit_metrics(force)
 
     state.metrics.last_emit_at = current
     log_event("METRIC", string.format(
-        "session=%d raw=%d candidates=%d accepted_total=%d rejected_player=%d rejected_owned=%d rejected_unknown=%d invalidated=%d notifications=%d scans=%d scan_ms=%.3f draw_callbacks=%d draw_calls=%d draw_ms=%.3f",
+        "session=%d raw=%d candidates=%d accepted_total=%d rejected_player=%d rejected_owned=%d rejected_dead=%d rejected_unknown=%d invalidated=%d notifications=%d scans=%d scan_ms=%.3f draw_callbacks=%d draw_calls=%d draw_ms=%.3f bridge_syncs=%d bridge_set_calls=%d bridge_sync_ms=%.3f",
         state.session_index,
         state.metrics.raw_monsters,
         state.candidate_count,
         state.metrics.accepted,
         state.metrics.rejected_player,
         state.metrics.rejected_owned,
+        state.metrics.rejected_dead,
         state.metrics.rejected_unknown,
         state.metrics.invalidated,
         state.metrics.notification_count,
@@ -952,9 +1008,14 @@ local function emit_metrics(force)
         state.metrics.scan_seconds * 1000.0,
         state.metrics.draw_callbacks,
         state.metrics.draw_calls,
-        state.metrics.draw_seconds * 1000.0
+        state.metrics.draw_seconds * 1000.0,
+        state.metrics.bridge_syncs,
+        state.metrics.bridge_set_calls,
+        state.metrics.bridge_sync_seconds * 1000.0
     ))
 end
+
+local sync_bridge_target
 
 local function reconcile()
     if not config.ENABLED then
@@ -965,6 +1026,7 @@ local function reconcile()
     state.gameplay_active = gameplay_active
     if not gameplay_active then
         clear_candidate_cache(inactive_reason)
+        sync_bridge_target()
         state.metrics.raw_monsters = 0
         if state.last_scan_skip_reason ~= inactive_reason then
             state.last_scan_skip_reason = inactive_reason
@@ -980,9 +1042,12 @@ local function reconcile()
     state.last_scan_skip_reason = nil
     clear_candidate_cache("reconcile_rebuild")
     scan_monsters("reconcile")
+    -- __DEPRECATED_20260716__ [reason: Blueprint receives all candidates; nearest selection remains Lua-draw-only]
+    -- if config.DRAW_ENABLED or config.BLUEPRINT_BRIDGE_ENABLED then
     if config.DRAW_ENABLED then
         select_target()
     end
+    sync_bridge_target()
     emit_metrics(false)
 end
 
@@ -1012,8 +1077,268 @@ local function run_on_game_thread(callback)
     return true
 end
 
+local function clear_bridge_cache(reason)
+    local had_bridge = state.bridge_actor ~= nil or state.bridge_probe_actor ~= nil
+    state.bridge_probe_actor = nil
+    state.bridge_actor = nil
+    state.bridge_session_sent = nil
+    state.bridge_target_actor = nil
+    state.bridge_target_session = nil
+    state.bridge_target_count = 0
+    state.bridge_gender_logged = false
+    state.bridge_gender_pending_reason = nil
+
+    if had_bridge then
+        debug_event("BRIDGE_CLEARED", string.format("reason=%s", reason))
+    end
+end
+
+local function register_blueprint_bridge_discovery()
+    if not config.BLUEPRINT_BRIDGE_ENABLED or state.bridge_discovery_registered then
+        return
+    end
+    if type(RegisterBeginPlayPostHook) ~= "function" then
+        log_event("BRIDGE_DISCOVERY_UNAVAILABLE", "api=RegisterBeginPlayPostHook")
+        return
+    end
+
+    local ok, err = pcall(function()
+        RegisterBeginPlayPostHook(function(context_parameter)
+            local actor = unwrap(context_parameter)
+            if not is_valid(actor) then
+                return
+            end
+
+            local class_ok, class_full_name = pcall(function()
+                return actor:GetClass():GetFullName()
+            end)
+            if not class_ok or class_full_name ~= BRIDGE_CLASS_FULL_NAME then
+                return
+            end
+
+            state.bridge_probe_actor = actor
+            state.bridge_actor = actor
+            state.bridge_session_sent = nil
+            state.bridge_target_actor = nil
+            state.bridge_target_session = nil
+            state.bridge_target_count = 0
+            state.bridge_gender_logged = false
+            state.bridge_gender_pending_reason = nil
+            log_event("BRIDGE_READY", "mode=lua_discovery class=ModActor_C")
+            sync_bridge_target()
+        end)
+    end)
+    if not ok then
+        log_event("BRIDGE_DISCOVERY_FAILED", tostring(err))
+        return
+    end
+
+    state.bridge_discovery_registered = true
+    debug_event("BRIDGE_DISCOVERY_REGISTERED", "mode=lua_discovery")
+end
+
+local function call_bridge(method_name, ...)
+    if not config.BLUEPRINT_BRIDGE_ENABLED then
+        return false
+    end
+
+    local bridge_actor = state.bridge_actor
+    if not is_valid(bridge_actor) then
+        return false
+    end
+
+    local ok = safe_call_with_args(bridge_actor, method_name, ...)
+    if not ok then
+        log_event("BRIDGE_CALL_FAILED", string.format("method=%s", method_name))
+        clear_bridge_cache("call_failed:" .. method_name)
+        return false
+    end
+
+    return true
+end
+
+local function log_bridge_gender_diagnostic()
+    if state.bridge_gender_logged or not is_valid(state.bridge_actor) then
+        return
+    end
+
+    local function pending(reason)
+        if state.bridge_gender_pending_reason ~= reason then
+            state.bridge_gender_pending_reason = reason
+            debug_event("BLUEPRINT_GENDER_PENDING", string.format("reason=%s", reason))
+        end
+    end
+
+    local ok_value, value = safe_get_property(state.bridge_actor, "ESP_BridgeGenderDiagnosticCode")
+    if not ok_value then
+        pending("property_unavailable")
+        return
+    end
+    if type(value) ~= "number" then
+        pending("value_not_number")
+        return
+    end
+    local gender_by_code = {
+        [0] = "unknown",
+        [1] = "male",
+        [2] = "female",
+    }
+    local gender = gender_by_code[value]
+    if gender == nil then
+        pending("value_pending")
+        return
+    end
+
+    state.bridge_gender_logged = true
+    state.bridge_gender_pending_reason = nil
+    log_event("BLUEPRINT_GENDER", string.format("value=%s", gender))
+end
+
+--[[ __DEPRECATED_20260716__ [reason: replaced by the all-candidate batch sync below]
+sync_bridge_target = function()
+    if not config.BLUEPRINT_BRIDGE_ENABLED or not is_valid(state.bridge_actor) then
+        return
+    end
+
+    local session_index = state.session_index
+    if state.bridge_session_sent ~= session_index then
+        if not call_bridge(BRIDGE_METHOD_RESET_SESSION, session_index) then
+            return
+        end
+        state.bridge_session_sent = session_index
+        state.bridge_target_actor = nil
+        state.bridge_target_session = nil
+        debug_event("BRIDGE_SESSION", string.format("session=%d", session_index))
+    end
+
+    local selected = state.selected
+    if selected ~= nil and is_valid(selected.actor) then
+        if state.bridge_target_actor == selected.actor and state.bridge_target_session == session_index then
+            return
+        end
+
+        if call_bridge(BRIDGE_METHOD_SET_TARGET, selected.actor, session_index) then
+            state.bridge_target_actor = selected.actor
+            state.bridge_target_session = session_index
+            debug_event("BRIDGE_TARGET_SET", string.format("session=%d", session_index))
+        end
+        return
+    end
+
+    if state.bridge_target_actor ~= nil then
+        if call_bridge(BRIDGE_METHOD_CLEAR_TARGET, session_index) then
+            state.bridge_target_actor = nil
+            state.bridge_target_session = nil
+            debug_event("BRIDGE_TARGET_CLEARED", string.format("session=%d", session_index))
+        end
+    end
+end
+]]
+
+sync_bridge_target = function()
+    if not config.BLUEPRINT_BRIDGE_ENABLED or not is_valid(state.bridge_actor) then
+        return
+    end
+
+    local session_index = state.session_index
+    if state.bridge_session_sent ~= session_index then
+        if not call_bridge(BRIDGE_METHOD_RESET_SESSION, session_index) then
+            return
+        end
+        state.bridge_session_sent = session_index
+        state.bridge_target_count = 0
+        debug_event("BRIDGE_SESSION", string.format("session=%d", session_index))
+    end
+
+    if state.candidate_count == 0 and state.bridge_target_count == 0 then
+        return
+    end
+
+    local started_at = os.clock()
+    state.metrics.bridge_syncs = state.metrics.bridge_syncs + 1
+
+    if not call_bridge(BRIDGE_METHOD_CLEAR_TARGET, session_index) then
+        state.metrics.bridge_sync_seconds = state.metrics.bridge_sync_seconds + (os.clock() - started_at)
+        return
+    end
+
+    local display_limit = math.max(0, tonumber(config.MAX_DISPLAY_TARGETS) or 0)
+    local submitted = 0
+    for _, record in pairs(state.candidates) do
+        if submitted >= display_limit then
+            break
+        end
+        if record ~= nil and is_valid(record.actor) then
+            if not call_bridge(BRIDGE_METHOD_SET_TARGET, record.actor, session_index) then
+                state.metrics.bridge_sync_seconds = state.metrics.bridge_sync_seconds + (os.clock() - started_at)
+                return
+            end
+            submitted = submitted + 1
+            state.metrics.bridge_set_calls = state.metrics.bridge_set_calls + 1
+        end
+    end
+
+    state.bridge_target_count = submitted
+    if submitted > 0 then
+        log_bridge_gender_diagnostic()
+    end
+    state.metrics.bridge_sync_seconds = state.metrics.bridge_sync_seconds + (os.clock() - started_at)
+    debug_event("BRIDGE_TARGETS_SYNCED", string.format(
+        "session=%d count=%d candidates=%d limit=%d",
+        session_index,
+        submitted,
+        state.candidate_count,
+        display_limit
+    ))
+end
+
+local function register_blueprint_bridge()
+    if not config.BLUEPRINT_BRIDGE_ENABLED or state.bridge_event_registered then
+        return
+    end
+    if type(RegisterCustomEvent) ~= "function" then
+        log_event("BRIDGE_UNAVAILABLE", "api=RegisterCustomEvent")
+        return
+    end
+
+    local ok, err = pcall(function()
+        RegisterCustomEvent(BRIDGE_READY_EVENT, function(bridge_parameter)
+            run_on_game_thread(function()
+                local bridge_actor = unwrap(bridge_parameter)
+                if not is_valid(bridge_actor) then
+                    log_event("BRIDGE_REJECTED", "reason=invalid_actor")
+                    return
+                end
+
+                state.bridge_actor = bridge_actor
+                state.bridge_session_sent = nil
+                state.bridge_target_actor = nil
+                state.bridge_target_session = nil
+                state.bridge_target_count = 0
+                state.bridge_gender_logged = false
+                state.bridge_gender_pending_reason = nil
+                log_event("BRIDGE_READY", string.format("event=%s", BRIDGE_READY_EVENT))
+                sync_bridge_target()
+            end)
+        end)
+    end)
+    if not ok then
+        log_event("BRIDGE_REGISTER_FAILED", tostring(err))
+        return
+    end
+
+    state.bridge_event_registered = true
+    debug_event("BRIDGE_REGISTERED", string.format("event=%s", BRIDGE_READY_EVENT))
+end
+
 local function reset_session(reason)
     clear_candidate_cache("session_reset:" .. reason)
+    state.bridge_session_sent = nil
+    state.bridge_target_actor = nil
+    state.bridge_target_session = nil
+    state.bridge_target_count = 0
+    state.bridge_gender_logged = false
+    state.bridge_gender_pending_reason = nil
     state.draw_failure_logged = false
     state.draw_block_reason_logged = {}
     state.pal_accept_logged = false
@@ -1033,11 +1358,15 @@ local function bootstrap(reason)
     state.gameplay_active = gameplay_active
     if gameplay_active then
         scan_monsters("bootstrap")
+        -- __DEPRECATED_20260716__ [reason: Blueprint receives all candidates; nearest selection remains Lua-draw-only]
+        -- if config.DRAW_ENABLED or config.BLUEPRINT_BRIDGE_ENABLED then
         if config.DRAW_ENABLED then
             select_target()
         end
+        sync_bridge_target()
     else
         clear_candidate_cache(inactive_reason)
+        sync_bridge_target()
         state.metrics.raw_monsters = 0
         debug_event("SCAN_SKIPPED", string.format(
             "source=bootstrap reason=%s",
@@ -1145,6 +1474,7 @@ local function register_load_map_hooks()
                 state.bootstrap_pending = false
                 state.world_transitioning = true
                 state.gameplay_active = false
+                clear_bridge_cache("load_map_pre")
                 clear_candidate_cache("load_map_pre")
                 debug_event("WORLD_TRANSITION", "phase=pre")
             end)
@@ -1196,10 +1526,16 @@ local function register_monster_notification()
             end
             local actor = unwrap(constructed_object)
             run_on_game_thread(function()
-                add_candidate(actor, "notify")
+                local added = add_candidate(actor, "notify")
+                if not added then
+                    return
+                end
+                -- __DEPRECATED_20260716__ [reason: Blueprint receives all candidates; nearest selection remains Lua-draw-only]
+                -- if config.DRAW_ENABLED or config.BLUEPRINT_BRIDGE_ENABLED then
                 if config.DRAW_ENABLED then
                     select_target()
                 end
+                sync_bridge_target()
             end)
         end)
     end)
@@ -1450,6 +1786,8 @@ if not config.ENABLED then
 end
 
 resolve_required_classes()
+register_blueprint_bridge()
+register_blueprint_bridge_discovery()
 register_monster_notification()
 register_lifecycle_hooks()
 register_load_map_hooks()

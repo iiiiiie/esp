@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Date
 
@@ -151,3 +151,24 @@ v1 采用 UE4SS Lua + LogicMod/Blueprint Widget 的混合纯客户端架构。
 - [ ] 确定默认最大显示数量与刷新周期。
 - [ ] 在真实性能数据出现后决定是否需要 C++ 热路径。
 - [ ] 若评估直接偏移、签名或外部内存读取，新增独立 ADR。
+
+## Bridge Initialization Addendum (2026-07-16)
+
+Packaged runtime testing rejected Blueprint-initiated discovery through the UE4SS custom-event bridge. Both the original `PostBeginPlay -> PalworldResourceESP_LuaBridgeReady(self) -> CreateWidget` graph and an isolated `PostBeginPlay -> PalworldResourceESP_LuaBridgeReady(self)` graph crashed before the first game frame. A passive `ModActor` with the same Lua-callable event signatures loaded across Login, Title, MainWorld, return-to-title, and normal exit without a new crash.
+
+The accepted initialization direction is therefore:
+
+- `ModActor.PostBeginPlay` remains passive and must not call a UE4SS custom event.
+- Lua registers `RegisterBeginPlayPostHook`, identifies only `/Game/Mods/PalworldResourceESP/ModActor.ModActor_C`, and owns the current bridge reference.
+- Lua calls `ResetSession`, `SetTarget`, and `ClearTarget` on that actor after the existing player-exclusion boundary has accepted a wild Pal.
+- Map pre-load clears the bridge reference before the old world is torn down.
+
+The visible-guide contract was extended after the first packaged guide proved that one projected target was stable:
+
+- Lua calls `ClearTarget` once per accepted snapshot, then calls `SetTarget` for every valid accepted Pal up to `MAX_DISPLAY_TARGETS`.
+- `SetTarget` appends the Pal to one overlay widget's typed target array and ignores duplicates; it does not replace the previous target.
+- The overlay performs one `OnPaint` pass and iterates the typed array to draw all guide lines.
+- Blueprint still does not discover actors. The Lua player-exclusion boundary remains the only path into the render array.
+- `ResetSession` removes the overlay, while snapshot-level `ClearTarget` only empties its target array.
+
+This addendum narrows the original generic custom-event bridge choice using runtime evidence. It does not change the hybrid Lua/LogicMod architecture or allow Blueprint to enumerate actors.
