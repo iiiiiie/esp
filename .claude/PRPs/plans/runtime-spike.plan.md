@@ -480,7 +480,7 @@ There is no current unit-test harness. Phase 1 uses deterministic log assertions
 
 ## Validation Commands
 
-Run commands from `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp` unless noted.
+Run commands from `<repository-root>` unless noted.
 
 ### Repository Structure
 
