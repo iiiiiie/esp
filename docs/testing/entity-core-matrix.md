@@ -43,6 +43,7 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-12 | Capability/privacy scan | No sensitive player diagnostics or prohibited mutation primitives | Pass | Both source scans return no matches |
 | AT-13 | Chunked reconcile | Four simulated Pal actors complete in two scheduled batches and one atomic replacement | Pass | Stub emitted `admitted=4`, `batches=2`, and terminated its delayed queue |
 | AT-14 | Chunk cancellation | Map pre-load cancels a pending job without committing its stale generation | Pass | Queued stale callback completed without a second `SCAN_DONE` |
+| AT-15 | Frame-time analyzer | PresentMon v2 CSV statistics and same-file A/B comparison are deterministic | Pass | 201-frame validation returned zero deltas and a passing comparison |
 
 ## Performance Investigation
 
@@ -51,8 +52,9 @@ Record final source hashes and the implementation commit immediately before the 
 | 2026-07-16 18:38 | Synchronous Entity Core | Functional pass; scans reached `239 ms` at 33 raw actors; admission consumed `1028 / 1581 ms` cumulative |
 | 2026-07-16 19:10 | Deferred notifications and reduced probes | Functional pass but no perceived stutter improvement; scans reached `300 ms` at 37 raw actors; admission consumed `2038 / 3085 ms` cumulative |
 | Offline checkpoint | Two actors per delayed GameThread batch, 16 ms between batches | Four simulated actors completed in two batches and one atomic replacement; real UE4SS timing remains unverified |
+| 2026-07-16 23:43 | Chunked reconcile | Functional pass but maintainer perceived worse stutter; 51 raw actors required 26 batches, one batch reached `24 ms`, and scan CPU reached `358 ms` |
 
-Both real runs passed capture cleanup, death cleanup, return to Title, normal exit, and the player boundary. The second run deferred all 42 active construction notifications, proving that construction-time classification was not the remaining dominant stall. The unresolved spike is synchronous full-snapshot admission; the current checkpoint splits that admission across scheduled batches while keeping replacement atomic.
+All three real runs passed capture cleanup, death cleanup, return to Title, normal exit, and the player boundary. The second run deferred all 42 active construction notifications, proving that construction-time classification was not the remaining dominant stall. Chunking reduced the maximum single callback relative to the full scan, but repeated over-budget batches prolonged the disturbance and failed the subjective gate. PresentMon A/B measurement now replaces perception as the performance pass/fail gate; see [performance-benchmark.md](performance-benchmark.md).
 
 ## Runtime Matrix
 
@@ -67,7 +69,7 @@ Both real runs passed capture cleanup, death cleanup, return to Title, normal ex
 | EC-07 | Notification/reconcile interaction | Construction notifications defer safely; next scan replaces the generation without duplicates | Regression pending | Pre-chunk deferral reached 42 notifications; chunked interaction needs a real run |
 | EC-08 | Capture and death | Captured and dead targets disappear and stay absent after reconciliation | Regression pending | Maintainer confirmed both behaviors twice without a crash; recheck current checkpoint |
 | EC-09 | Return to Title | Pending reconcile cancels without dereferencing actors; bridge clears before teardown | Regression pending | Pre-chunk teardown passed; chunk cancellation has static/stub coverage only |
-| EC-10 | Performance | `max_batch_ms` remains acceptable and visible stutter materially improves | Pending | Synchronous path failed subjective and timing gate; chunked checkpoint is unverified in UE4SS |
+| EC-10 | Performance | PresentMon A/B frame-time gates pass and Mod stage timings identify no over-budget callback | Pending | Chunked run reached `max_batch_ms=24`; standardized Mod-on/off captures are required |
 | EC-11 | Adapter extension | Synthetic second adapter changes no gate/filter/renderer module | Pass | Covered by AT-08 |
 | EC-12 | Normal exit | No new crash report; source and active deployment hashes match | Regression pending | Both pre-chunk runs exited normally; no crash newer than `09:56:11` |
 

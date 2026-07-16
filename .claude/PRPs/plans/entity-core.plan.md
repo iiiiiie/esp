@@ -2,7 +2,7 @@
 
 ## Status
 
-`IMPLEMENTED - chunked performance validation pending`
+`IMPLEMENTED - objective performance benchmark pending`
 
 ## Summary
 
