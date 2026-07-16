@@ -1,4 +1,8 @@
 local config = require("config")
+local adapter_registry = require("core.adapter_registry")
+local entity_snapshot = require("core.entity_snapshot")
+local filter_engine = require("core.filter_engine")
+local pal_adapter = require("adapters.pal")
 
 local MOD_NAME = "PalworldResourceESP"
 local BRIDGE_READY_EVENT = "PalworldResourceESP_LuaBridgeReady"
@@ -86,6 +90,11 @@ local state = {
     classes = {},
     candidates = {},
     candidate_count = 0,
+    entity_registry = adapter_registry.new(),
+    entity_store = entity_snapshot.new_store(),
+    matched_records = {},
+    display_records = {},
+    adapters_registered = false,
     selected = nil,
     notification_registered = false,
     lifecycle_hooks_registered = false,
@@ -134,6 +143,16 @@ local state = {
         bridge_syncs = 0,
         bridge_set_calls = 0,
         bridge_sync_seconds = 0.0,
+        admitted = 0,
+        matched = 0,
+        displayed = 0,
+        admission_rejected = 0,
+        display_truncated = 0,
+        discovery_seconds = 0.0,
+        admission_seconds = 0.0,
+        filter_seconds = 0.0,
+        order_seconds = 0.0,
+        budget_seconds = 0.0,
         last_emit_at = 0.0,
     },
 }
@@ -611,6 +630,23 @@ local function classify_actor(actor)
     return "wild", component, parameter, save_parameter
 end
 
+local function reject_player_representation(actor)
+    actor = unwrap(actor)
+    if not is_valid(actor) then
+        return nil
+    end
+    if is_a(actor, resolve_class("player")) then
+        return "player_class"
+    end
+    if is_a(actor, resolve_class("player_controller")) then
+        return "player_controller"
+    end
+    if is_a(actor, resolve_class("player_state")) then
+        return "player_state"
+    end
+    return nil
+end
+
 local function probe_source_value(source, definition)
     if not is_valid(source) then
         return false, nil, nil
@@ -797,8 +833,15 @@ end
 
 local function clear_candidate_cache(reason)
     local previous_count = state.candidate_count
+    entity_snapshot.clear(state.entity_store, reason)
     state.candidates = {}
     state.candidate_count = 0
+    state.matched_records = {}
+    state.display_records = {}
+    state.metrics.admitted = 0
+    state.metrics.matched = 0
+    state.metrics.displayed = 0
+    state.metrics.display_truncated = 0
     state.selected = nil
 
     if previous_count > 0 then
@@ -874,6 +917,148 @@ local function distance_squared(first, second)
     return dx * dx + dy * dy + dz * dz
 end
 
+local function distance_m(actor, context)
+    local camera_location = context and context.camera_location or nil
+    if camera_location == nil then
+        camera_location = get_camera_location(find_player_controller())
+    end
+    local actor_location = get_actor_location(actor)
+    local squared = distance_squared(camera_location, actor_location)
+    if squared == nil then
+        return nil
+    end
+    return math.sqrt(squared) / 100.0
+end
+
+local function find_all(class_name)
+    local ok, objects = pcall(function()
+        return FindAllOf(class_name)
+    end)
+    if not ok or type(objects) ~= "table" then
+        return nil
+    end
+    return objects
+end
+
+local entity_runtime = {
+    reject_player_representation = reject_player_representation,
+    classify_pal = classify_actor,
+    probe_pal_fields = function(actor, component, parameter, save_parameter)
+        if not config.FIELD_PROBES_ENABLED then
+            return {}
+        end
+        return probe_candidate_fields(actor, component, parameter, save_parameter)
+    end,
+    distance_m = distance_m,
+    find_all = find_all,
+}
+
+local function refresh_pipeline_output(source)
+    local current = entity_snapshot.current(state.entity_store)
+
+    local filter_started_at = os.clock()
+    local matched = filter_engine.filter(current.records, config.ACTIVE_FILTERS)
+    state.metrics.filter_seconds = state.metrics.filter_seconds + (os.clock() - filter_started_at)
+
+    local order_started_at = os.clock()
+    local ordered = filter_engine.order(matched)
+    state.metrics.order_seconds = state.metrics.order_seconds + (os.clock() - order_started_at)
+
+    local budget_started_at = os.clock()
+    local configured_limit = math.max(0, tonumber(config.MAX_DISPLAY_TARGETS) or 0)
+    local maximum_limit = math.max(0, tonumber(config.MAX_CONFIGURABLE_DISPLAY_TARGETS) or 0)
+    local display_limit = math.min(configured_limit, maximum_limit)
+    local displayed, truncated = filter_engine.budget(ordered, display_limit)
+    state.metrics.budget_seconds = state.metrics.budget_seconds + (os.clock() - budget_started_at)
+
+    state.candidates = current.lookup
+    state.candidate_count = #current.records
+    state.matched_records = ordered
+    state.display_records = displayed
+    state.metrics.admitted = state.candidate_count
+    state.metrics.matched = #ordered
+    state.metrics.displayed = #displayed
+    state.metrics.display_truncated = truncated
+
+    log_event("ENTITY_SNAPSHOT", string.format(
+        "session=%d generation=%d source=%s admitted=%d",
+        current.session_id,
+        current.generation_id,
+        source,
+        state.metrics.admitted
+    ))
+    log_event("FILTER_RESULT", string.format(
+        "session=%d generation=%d admitted=%d matched=%d displayed=%d",
+        current.session_id,
+        current.generation_id,
+        state.metrics.admitted,
+        state.metrics.matched,
+        state.metrics.displayed
+    ))
+    if truncated > 0 then
+        log_event("DISPLAY_BUDGET", string.format(
+            "session=%d generation=%d limit=%d truncated=%d",
+            current.session_id,
+            current.generation_id,
+            display_limit,
+            truncated
+        ))
+    end
+end
+
+local function add_entity_candidate(actor, source, generation, context)
+    if state.world_transitioning or not state.gameplay_active then
+        return false
+    end
+
+    actor = unwrap(actor)
+    if not config.ENABLED or not is_valid(actor) then
+        return false
+    end
+
+    if #generation.records >= config.MAX_ADMITTED_ENTITIES then
+        state.metrics.admission_rejected = state.metrics.admission_rejected + 1
+        if state.metrics.admission_rejected == 1 then
+            log_event("ADMISSION_BUDGET", string.format(
+                "session=%d generation=%d limit=%d",
+                generation.session_id,
+                generation.generation_id,
+                config.MAX_ADMITTED_ENTITIES
+            ))
+        end
+        return false
+    end
+
+    context = context or {}
+    context.source = source
+    context.accepted_at = now()
+    local normalized, rejection = state.entity_registry:admit(entity_runtime, actor, context)
+    if normalized == nil then
+        record_rejection(rejection and rejection.reason or "adapter_rejected")
+        return false
+    end
+
+    local added, record = entity_snapshot.add(generation, normalized)
+    if not added then
+        return false
+    end
+
+    state.metrics.accepted = state.metrics.accepted + 1
+    if not state.pal_accept_logged then
+        state.pal_accept_logged = true
+        local level_cell = record.fields.level
+        local level = level_cell and level_cell.state == "known" and tostring(level_cell.value) or "<unknown>"
+        log_event("PAL_ACCEPT", string.format(
+            "source=%s level=%s generation=%d ordinal=%d",
+            source,
+            level,
+            record.generation_id,
+            record.ordinal
+        ))
+    end
+    return true
+end
+
 local function select_target()
     local controller = find_player_controller()
     local camera_location = get_camera_location(controller)
@@ -919,7 +1104,8 @@ local function gameplay_world_available()
     return true, nil
 end
 
-local function scan_monsters(source)
+--[[ __DEPRECATED_20260716__ [reason: replaced by adapter admission into a generation-scoped snapshot]
+local function scan_monsters_legacy(source)
     local started_at = os.clock()
     local ok, objects = pcall(function()
         return FindAllOf("PalMonsterCharacter")
@@ -955,8 +1141,66 @@ local function scan_monsters(source)
     ))
     return raw_count
 end
+]]
 
-local function audit_player_boundary()
+local function scan_monsters(source)
+    local started_at = os.clock()
+    local descriptor = state.entity_registry:get("pal")
+    local generation = entity_snapshot.begin_generation(state.entity_store, source, now())
+    state.metrics.scan_count = state.metrics.scan_count + 1
+    state.metrics.admission_rejected = 0
+
+    local discovery_started_at = os.clock()
+    local ok, objects = pcall(function()
+        return descriptor and descriptor.find_all(entity_runtime) or nil
+    end)
+    state.metrics.discovery_seconds = state.metrics.discovery_seconds + (os.clock() - discovery_started_at)
+    if not ok or type(objects) ~= "table" then
+        entity_snapshot.replace(state.entity_store, generation)
+        refresh_pipeline_output(source)
+        state.metrics.raw_monsters = 0
+        state.metrics.scan_seconds = state.metrics.scan_seconds + (os.clock() - started_at)
+        log_event("SCAN_EMPTY", string.format("source=%s", source))
+        return 0
+    end
+
+    local context = {
+        source = source,
+        camera_location = get_camera_location(find_player_controller()),
+    }
+    local raw_count = 0
+    local admission_started_at = os.clock()
+    for _, actor in ipairs(objects) do
+        raw_count = raw_count + 1
+        local added_ok, added_error = pcall(function()
+            add_entity_candidate(actor, source, generation, context)
+        end)
+        if not added_ok then
+            log_event("ERROR_CANDIDATE", tostring(added_error))
+        end
+    end
+    state.metrics.admission_seconds = state.metrics.admission_seconds + (os.clock() - admission_started_at)
+
+    entity_snapshot.replace(state.entity_store, generation)
+    refresh_pipeline_output(source)
+
+    local elapsed = os.clock() - started_at
+    state.metrics.raw_monsters = raw_count
+    state.metrics.scan_seconds = state.metrics.scan_seconds + elapsed
+    log_event("SCAN_DONE", string.format(
+        "source=%s raw=%d admitted=%d matched=%d displayed=%d elapsed_ms=%.3f",
+        source,
+        raw_count,
+        state.metrics.admitted,
+        state.metrics.matched,
+        state.metrics.displayed,
+        elapsed * 1000.0
+    ))
+    return raw_count
+end
+
+--[[ __DEPRECATED_20260716__ [reason: audit now exercises the registry-owned hard player gate]
+local function audit_player_boundary_legacy()
     local ok, players = pcall(function()
         return FindAllOf("PalPlayerCharacter")
     end)
@@ -984,6 +1228,37 @@ local function audit_player_boundary()
         boundary_failures
     ))
 end
+]]
+
+local function audit_player_boundary()
+    local players = find_all("PalPlayerCharacter")
+    if players == nil then
+        log_event("PLAYER_AUDIT", "status=no_player_instances")
+        return
+    end
+
+    local audited = 0
+    local boundary_failures = 0
+    for _, player in ipairs(players) do
+        audited = audited + 1
+        local normalized, rejection = state.entity_registry:admit(entity_runtime, player, {
+            source = "player_audit",
+            accepted_at = now(),
+        })
+        if normalized ~= nil then
+            boundary_failures = boundary_failures + 1
+            log_event("ERROR_PLAYER_BOUNDARY", "classification=admitted")
+        else
+            record_rejection(rejection and rejection.reason or "unknown_player_rejection")
+        end
+    end
+
+    log_event("PLAYER_AUDIT", string.format(
+        "audited=%d candidate_player_count=%d",
+        audited,
+        boundary_failures
+    ))
+end
 
 local function emit_metrics(force)
     local current = now()
@@ -992,7 +1267,8 @@ local function emit_metrics(force)
     end
 
     state.metrics.last_emit_at = current
-    log_event("METRIC", string.format(
+    --[[ __DEPRECATED_20260716__ [reason: Entity Core exposes separate pipeline counts and timings]
+    log_event("METRIC_LEGACY", string.format(
         "session=%d raw=%d candidates=%d accepted_total=%d rejected_player=%d rejected_owned=%d rejected_dead=%d rejected_unknown=%d invalidated=%d notifications=%d scans=%d scan_ms=%.3f draw_callbacks=%d draw_calls=%d draw_ms=%.3f bridge_syncs=%d bridge_set_calls=%d bridge_sync_ms=%.3f",
         state.session_index,
         state.metrics.raw_monsters,
@@ -1009,6 +1285,35 @@ local function emit_metrics(force)
         state.metrics.draw_callbacks,
         state.metrics.draw_calls,
         state.metrics.draw_seconds * 1000.0,
+        state.metrics.bridge_syncs,
+        state.metrics.bridge_set_calls,
+        state.metrics.bridge_sync_seconds * 1000.0
+    ))
+    ]]
+    local current = entity_snapshot.current(state.entity_store)
+    log_event("METRIC", string.format(
+        "session=%d generation=%d raw=%d admitted=%d matched=%d displayed=%d admission_rejected=%d display_truncated=%d accepted_total=%d rejected_player=%d rejected_owned=%d rejected_dead=%d rejected_unknown=%d notifications=%d scans=%d scan_ms=%.3f discovery_ms=%.3f admission_ms=%.3f filter_ms=%.3f order_ms=%.3f budget_ms=%.3f bridge_syncs=%d bridge_set_calls=%d bridge_sync_ms=%.3f",
+        state.session_index,
+        current.generation_id,
+        state.metrics.raw_monsters,
+        state.metrics.admitted,
+        state.metrics.matched,
+        state.metrics.displayed,
+        state.metrics.admission_rejected,
+        state.metrics.display_truncated,
+        state.metrics.accepted,
+        state.metrics.rejected_player,
+        state.metrics.rejected_owned,
+        state.metrics.rejected_dead,
+        state.metrics.rejected_unknown,
+        state.metrics.notification_count,
+        state.metrics.scan_count,
+        state.metrics.scan_seconds * 1000.0,
+        state.metrics.discovery_seconds * 1000.0,
+        state.metrics.admission_seconds * 1000.0,
+        state.metrics.filter_seconds * 1000.0,
+        state.metrics.order_seconds * 1000.0,
+        state.metrics.budget_seconds * 1000.0,
         state.metrics.bridge_syncs,
         state.metrics.bridge_set_calls,
         state.metrics.bridge_sync_seconds * 1000.0
@@ -1040,7 +1345,8 @@ local function reconcile()
     end
 
     state.last_scan_skip_reason = nil
-    clear_candidate_cache("reconcile_rebuild")
+    -- __DEPRECATED_20260716__ [reason: scan_monsters atomically replaces the complete generation]
+    -- clear_candidate_cache("reconcile_rebuild")
     scan_monsters("reconcile")
     -- __DEPRECATED_20260716__ [reason: Blueprint receives all candidates; nearest selection remains Lua-draw-only]
     -- if config.DRAW_ENABLED or config.BLUEPRINT_BRIDGE_ENABLED then
@@ -1250,7 +1556,9 @@ sync_bridge_target = function()
         debug_event("BRIDGE_SESSION", string.format("session=%d", session_index))
     end
 
-    if state.candidate_count == 0 and state.bridge_target_count == 0 then
+    -- __DEPRECATED_20260716__ [reason: admitted records may be removed by filters or display budget]
+    -- if state.candidate_count == 0 and state.bridge_target_count == 0 then
+    if #state.display_records == 0 and state.bridge_target_count == 0 then
         return
     end
 
@@ -1264,7 +1572,22 @@ sync_bridge_target = function()
 
     local display_limit = math.max(0, tonumber(config.MAX_DISPLAY_TARGETS) or 0)
     local submitted = 0
+    --[[ __DEPRECATED_20260716__ [reason: unordered admitted records bypassed filter ordering and display budgeting]
     for _, record in pairs(state.candidates) do
+        if submitted >= display_limit then
+            break
+        end
+        if record ~= nil and is_valid(record.actor) then
+            if not call_bridge(BRIDGE_METHOD_SET_TARGET, record.actor, session_index) then
+                state.metrics.bridge_sync_seconds = state.metrics.bridge_sync_seconds + (os.clock() - started_at)
+                return
+            end
+            submitted = submitted + 1
+            state.metrics.bridge_set_calls = state.metrics.bridge_set_calls + 1
+        end
+    end
+    ]]
+    for _, record in ipairs(state.display_records) do
         if submitted >= display_limit then
             break
         end
@@ -1344,6 +1667,7 @@ local function reset_session(reason)
     state.pal_accept_logged = false
     state.last_scan_skip_reason = nil
     state.session_index = state.session_index + 1
+    entity_snapshot.reset_session(state.entity_store, state.session_index)
     log_event("SESSION_RESET", string.format("session=%d reason=%s", state.session_index, reason))
 end
 
@@ -1524,12 +1848,19 @@ local function register_monster_notification()
             if state.world_transitioning or not state.gameplay_active then
                 return
             end
+            state.metrics.raw_monsters = state.metrics.raw_monsters + 1
             local actor = unwrap(constructed_object)
             run_on_game_thread(function()
-                local added = add_candidate(actor, "notify")
+                local generation = entity_snapshot.current(state.entity_store)
+                local context = {
+                    source = "notify",
+                    camera_location = get_camera_location(find_player_controller()),
+                }
+                local added = add_entity_candidate(actor, "notify", generation, context)
                 if not added then
                     return
                 end
+                refresh_pipeline_output("notify")
                 -- __DEPRECATED_20260716__ [reason: Blueprint receives all candidates; nearest selection remains Lua-draw-only]
                 -- if config.DRAW_ENABLED or config.BLUEPRINT_BRIDGE_ENABLED then
                 if config.DRAW_ENABLED then
@@ -1780,12 +2111,26 @@ local function register_draw_hook()
     end
 end
 
+local function register_entity_adapters()
+    if state.adapters_registered then
+        return
+    end
+    local descriptor = state.entity_registry:register(pal_adapter.new())
+    state.adapters_registered = true
+    log_event("ADAPTER_REGISTERED", string.format(
+        "id=%s notification_class=%s",
+        descriptor.id,
+        descriptor.notification_class
+    ))
+end
+
 if not config.ENABLED then
     log_event("BOOT_DISABLED", "config.ENABLED=false")
     return
 end
 
 resolve_required_classes()
+register_entity_adapters()
 register_blueprint_bridge()
 register_blueprint_bridge_discovery()
 register_monster_notification()

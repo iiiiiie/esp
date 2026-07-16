@@ -1,0 +1,13 @@
+{
+  "name": "palworld-resource-esp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run-lua-tests.mjs"
+  },
+  "devDependencies": {
+    "fengari": "0.1.5",
+    "luaparse": "0.3.1"
+  }
+}

@@ -2,7 +2,7 @@
 
 ## Status
 
-`PROPOSED - awaiting maintainer approval`
+`APPROVED - implementation in progress`
 
 ## Summary
 
@@ -23,6 +23,8 @@ The phase must preserve the validated Blueprint bridge and visible guides. It do
 - The diagnostic `MAX_DISPLAY_TARGETS = 512` is a capacity ceiling, not an acceptable default visual budget.
 
 ## Decisions Requiring Approval
+
+Maintainer approval was recorded on 2026-07-16. The following values are the implementation baseline; runtime acceptance remains subject to EC-01 through EC-12.
 
 The following values are proposed for the MVP contract:
 

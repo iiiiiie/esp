@@ -128,7 +128,7 @@ Follow-up concerns:
 
 ## Follow-ups
 
-- [ ] Implement the Entity Core PRP and unit-test the adapter/filter contracts.
+- [x] Implement the Entity Core PRP and unit-test the adapter/filter contracts.
 - [ ] Validate snapshot replacement, capture/death cleanup, map teardown, and normal exit in Steam single-player.
 - [ ] Measure reconciliation, filtering, ordering, and bridge synchronization separately.
 - [ ] Accept this ADR only after the Entity Core smoke matrix passes.

@@ -241,7 +241,7 @@ Direct memory reading cannot recover dynamic data the server never sent to the c
 | # | Phase | Description | Status | Parallel | Depends | PRP Plan |
 |---|-------|-------------|--------|----------|---------|----------|
 | 1 | Runtime Spike | 验证 UE4SS、对象分类、核心字段、单机生命周期和玩家硬排除 | complete | - | - | [.claude/PRPs/plans/runtime-spike.plan.md](../plans/runtime-spike.plan.md) |
-| 2 | Entity Core | 建立实体注册表、适配器、缓存、失效清理和筛选模型 | planned | - | 1 | [.claude/PRPs/plans/entity-core.plan.md](../plans/entity-core.plan.md) |
+| 2 | Entity Core | 建立实体注册表、适配器、缓存、失效清理和筛选模型 | in progress | - | 1 | [.claude/PRPs/plans/entity-core.plan.md](../plans/entity-core.plan.md) |
 | 3 | Pal Filter MVP | 实现帕鲁种类、属性、等级、性别、稀有、词条、IV、图鉴筛选 | pending | with 4 | 2 | - |
 | 4 | UI & I18n | 实现 Shift+E 面板、中文默认、Language 切换和配置持久化 | pending | with 3 | 2 | - |
 | 5 | ESP Renderer | 实现顶部引导线、屏幕外指示、标签、方框和显示预算 | pending | - | 3, 4 | - |
