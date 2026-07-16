@@ -60,5 +60,5 @@ Negative:
 
 ## Follow-ups
 
-- [ ] Validate the generated bridge events in a Steam single-player smoke test.
-- [ ] Keep the editor-only plugin out of the final LogicMod package.
+- [x] Validate the generated bridge events in a Steam single-player smoke test.
+- [x] Keep the editor-only plugin out of the final LogicMod package; the pak contains exactly eight Blueprint asset files and no DLL.

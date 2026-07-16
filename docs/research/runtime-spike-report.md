@@ -2,19 +2,19 @@
 
 ## Status
 
-`CONDITIONAL GO - stable Lua acquisition core proven; Blueprint bridge required for rendering and complex fields`
+`GO - Phase 2 multi-target Blueprint bridge and gender adapter proven on Steam single-player`
 
 Server compatibility is intentionally unverified by the maintainer. Community multiplayer evidence may be added later, but it is not a Phase 1 completion gate.
 
 ## Objective
 
-Prove that the Steam PC client can use UE4SS Lua to discover currently loaded wild Pals, reject human players and player-associated Pals before candidate insertion, read useful individual fields, and draw one top-anchored diagnostic guide without modifying game or server state.
+Prove that the Steam PC client can use UE4SS Lua to discover currently loaded wild Pals, reject human players and player-associated Pals before candidate insertion, read useful individual fields, and hand accepted targets to a Blueprint Widget for multi-target top-anchored guides without modifying game or server state.
 
 ## Compatibility Fingerprint
 
 | Field | Plan-Time Value | Runtime-Test Value |
 |---|---|---|
-| Steam build ID | `24088745` | `24088745` |
+| Steam build ID | `24088745` | `24088745` in Phase 1; `24181527` in the Phase 2 gate run |
 | Game executable timestamp | 2026-07-11 | Pending |
 | UE4SS version | v3.0.1 Beta | v3.0.1 Beta #0 |
 | UE4SS Git SHA | `c2ac2464` | `c2ac2464` observed 2026-07-15 |
@@ -33,7 +33,7 @@ The active root must be taken from the newest current-process `UE4SS.log`. On 20
 - Player boundary: player/player-controller/player-state type checks occur before monster acceptance and before candidate insertion
 - Wildness boundary: accepted monsters require a zero `SaveParameter.OwnerPlayerUId` and no `Trainer`/`NPCSpawnedOtomoTrainer`
 - Unknown or unreadable ownership state fails closed
-- Rendering: at most one candidate, projected through the local player controller and drawn from a top-center Canvas anchor
+- Rendering: one Blueprint Widget projects every accepted loaded candidate up to `MAX_DISPLAY_TARGETS = 512` and draws top-anchored guides in one `OnPaint` pass
 - Mutation: no server RPC, setter, teleport, spawn, capture, probability, save, or network modification path exists
 
 ## Runtime Event Contract
@@ -45,6 +45,7 @@ The active root must be taken from the newest current-process `UE4SS.log`. On 20
 | `SESSION_RESET` | Candidate state reset after a lifecycle signal |
 | `CLASS_REJECT_PLAYER` | A player representation was rejected before candidate insertion |
 | `CLASS_REJECT_OWNED` | A player/trainer-associated Pal was rejected |
+| `CLASS_REJECT_DEAD` | A dead Pal was rejected before bridge synchronization |
 | `CLASS_REJECT_UNKNOWN` | Type or ownership could not be proven; object failed closed |
 | `PLAYER_AUDIT` | Aggregate player-boundary result; must report `candidate_player_count=0` |
 | `PAL_ACCEPT` | A monster passed all wild/non-player checks |
@@ -54,6 +55,8 @@ The active root must be taken from the newest current-process `UE4SS.log`. On 20
 | `CANDIDATES_CLEARED` | Candidate snapshot was dropped without dereferencing retained actors |
 | `WORLD_TRANSITION` | UE4SS LoadMap pre/post lifecycle boundary |
 | `METRIC` | Aggregate discovery, rejection, invalidation, notification, scan, and draw metrics |
+| `BRIDGE_TARGETS_SYNCED` | The accepted snapshot was copied into the Blueprint target array |
+| `BLUEPRINT_GENDER` | Blueprint normalized `EPalGenderType`; Lua received only `0/1/2` and logged the mapped value |
 | `DRAW_READY` | Top-center diagnostic line successfully rendered |
 | `ERROR_PLAYER_BOUNDARY` | Critical safety failure; Phase 1 cannot pass |
 
@@ -66,7 +69,7 @@ Runtime values must be copied from `FIELD_PATH` log lines. Do not infer unavaila
 | Species | `UPalIndividualCharacterParameter.GetCharacterID()` | Available | `parameter.method:GetCharacterID` returning FName userdata | Eighth run completed without direct ScriptStruct access |
 | Individual ID | Confirmed parameter method only | Available, structured value | `parameter.method:GetPalId` | Returned a table-like value; diagnostic identity only for Pals |
 | Level | `UPalIndividualCharacterParameter.GetLevel()` | Available | `parameter.method:GetLevel` | Eighth run value was `3` |
-| Gender | Blueprint/LogicMod bridge required | Runtime unsafe in Lua | Direct property and `parameter.method:GetGenderType` both rejected | Direct enum access caused two crashes; UFUNCTION enum return caused the tenth-run crash |
+| Gender | Blueprint-local `GetGenderType()` plus enum switch | Available through Blueprint | `0=unknown`, `1=male`, `2=female`; final gate value `female` | `EPalGenderType` remains entirely inside Blueprint and never crosses the UE4SS Lua boundary |
 | Passive skills | Blueprint/LogicMod bridge required | Runtime unsafe to probe further in Lua | Pending bridge | Array marshalling remains unproven; no further crash-prone Lua experiment |
 | HP IV | Blueprint/LogicMod bridge over confirmed `Talent_HP` data | Deferred from Lua | Pending bridge | No rank-method substitution |
 | Attack IV | Blueprint/LogicMod bridge over confirmed `Talent_Shot` data | Deferred from Lua | Pending bridge | |
@@ -114,6 +117,12 @@ Post-crash recovery restored the previously stable profile: only `GetCharacterID
 
 The eleventh run (2026-07-15 02:27:47-02:28:51) validated that recovery profile. It entered the save, reported `candidate_player_count=0`, read species, individual ID, and level, and reported every disabled complex field as unavailable without invoking an accessor. Reconciliation found 9-15 raw monsters and retained 4-7 current wild candidates while rejecting player-owned and trainer-associated Pals. Returning to title cleared seven candidates before map teardown, later scans remained suppressed without a local player, and the game exited normally with no new crash report. This is a short recovery smoke test, not the pending 15-minute stability sample.
 
+The Phase 2 multi-target bridge run on 2026-07-16 kept `raw`, accepted candidate, and submitted Blueprint target counts equal as the loaded snapshot grew from `6/6/6` to `23/23/23`. The maintainer confirmed that multiple simultaneous top guides each followed a different Pal, including off-screen targets, while `candidate_player_count=0` remained intact. Returning to title and normal exit did not crash. Pals visible only at greater distance were accepted after approaching; logs showed no display-budget rejection or renderer omission, so this remains a client actor/individual-parameter availability boundary rather than a 512-target cap.
+
+Subsequent invalid-target runs proved both ownership and death cleanup. Capturing a tracked Pal removed its guide. Killing a tracked Pal removed its guide immediately; the dedicated death run emitted `CLASS_REJECT_DEAD`, reached `rejected_dead=3`, and did not re-add the corpse during a six-second wait. Both runs returned to title and exited normally. Lua rejects dead candidates during snapshot rebuild, while Blueprint calls `PalUtility::IsDead` every paint pass so a corpse is hidden before the next five-second reconciliation.
+
+The final Phase 2 gate run (2026-07-16 16:44:46-16:45:32) audited one local player with `candidate_player_count=0`, emitted `BLUEPRINT_GENDER value=female` with no pending/error diagnostic, and synchronized snapshots up to 30 accepted targets. Return to title emitted `BRIDGE_CLEARED reason=load_map_pre` and `CANDIDATES_CLEARED reason=load_map_pre previous=23`. The game then exited normally, and no crash directory newer than the earlier 09:56 failure was created. The deployed pak SHA-256 was `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14`.
+
 ### Server Evidence
 
 `UNTESTED - community pending`
@@ -128,9 +137,9 @@ The code retains server-compatible lifecycle hooks, but the maintainer does not 
 | Newly constructed Pals observed | Pass | 16 `NotifyOnNewObject` callbacks recorded in the sixth run |
 | No per-frame full scan | Implemented | Reconcile interval in config; runtime timing pending |
 | Candidate invalidation/despawn cleanup | Pass for snapshot lifecycle | Seventh run rebuilt current candidates each scan and cleared the snapshot before title-map load without actor dereference |
-| Capture/ownership transition cleanup | Pending | |
+| Capture/ownership transition cleanup | Pass | Maintainer confirmed the captured Pal's guide disappeared; the next snapshot rejected it as player-owned |
 | Fast travel/interior transition | Pending | |
-| Death/respawn | Pending | |
+| Death/respawn | Death cleanup pass; respawn untested | Blueprint hid the corpse immediately; Lua later emitted `CLASS_REJECT_DEAD`, and the guide stayed absent for six seconds |
 | Return to title/reload | Pass | Seventh and eleventh runs returned to title, waited, and exited without a crash |
 
 ## Diagnostic Renderer Results
@@ -139,9 +148,9 @@ The code retains server-compatible lifecycle hooks, but the maintainer does not 
 |---|---|---|
 | HUD draw hook registration | Hook registered, callback unavailable | Ninth run recorded zero callbacks during gameplay |
 | World-to-screen projection | Blocked in Lua path | HUD callback never executes; defer to LogicMod/Blueprint Widget |
-| Top-center anchor | Implemented, runtime pending | `TOP_ANCHOR_Y`, no center anchor option |
-| One-target cap | Implemented | `MAX_DISPLAY_TARGETS = 1` |
-| Invalid target disappears safely | Pending | Fourth run crashed before candidate insertion and rendering |
+| Top-center anchor | Pass | Maintainer confirmed guides originate at the top and track their Pal endpoints |
+| Multi-target display budget | Pass for loaded candidates | One overlay target array; accepted/submitted counts matched from 6 through 23 with `MAX_DISPLAY_TARGETS = 512` |
+| Invalid target disappears safely | Pass for capture and death | Captured targets and dead targets both disappear; dead targets are gated every frame and rejected during reconciliation |
 | Player guide impossible through renderer input | Pass for local audit | Renderer reads candidate table only; local player candidate count remained zero |
 
 If `ReceiveDrawHUD` or the Canvas struct bridge is unavailable on the current build, record `DRAW_HOOK_BLOCKED`/`DRAW_FAILED` and treat LogicMod/Blueprint tooling as the remaining rendering prerequisite. Do not silently change the architecture.
@@ -153,12 +162,13 @@ If `ReceiveDrawHUD` or the Canvas struct bridge is unavailable on the current bu
 | Bootstrap raw actor count | 0 | Bootstrap fired before Pal actors were available |
 | Bootstrap scan time | 32 ms in world bootstrap sample | Cumulative value increased from earlier title scans |
 | Reconcile interval | 5000 ms configured | Diagnostic value, not production default |
-| Reconcile scan time | 59-98 ms in latest stable run | Eleventh run raw actor count 9-15; earlier runs observed 56-140 ms |
+| Reconcile scan time | 70-233 ms in final gate run | 10-33 raw monsters and 7-30 accepted candidates; remote-session timing includes one 233 ms sample |
 | Notification count | 17 in latest stable run | Eleventh run; earlier second run observed 25 |
-| Candidate count | 4-7 current wild candidates with 9-15 raw monsters | Eleventh run confirmed the rebuilt snapshot remains bounded by the current raw set |
+| Candidate count | 7-30 current wild candidates with 10-33 raw monsters | Final gate run confirmed submitted counts never exceeded the rebuilt accepted snapshot |
+| Blueprint snapshot sync | 6 syncs, 142 `SetTarget` calls, 10 ms cumulative | Final in-world metric before return to title |
 | Draw calls/time | 0 callbacks and 0 calls | Ninth run confirmed the registered `ReceiveDrawHUD` Hook is not invoked |
 | Discovery latency samples | Pending | |
-| 15-minute single-player stability | Pending | |
+| 15-minute single-player stability | Continuous gameplay pending | Final process remained stable for more than 22 minutes, mostly at Title; the in-world gate sample was under one minute |
 
 ## Deviations From Plan
 
@@ -170,13 +180,17 @@ If `ReceiveDrawHUD` or the Canvas struct bridge is unavailable on the current bu
 - The sixth run showed that UObject Lua wrapper identity is not stable across `FindAllOf` calls. Candidate state must be a current-scan snapshot or use a proven stable native identifier; raw wrapper keys cannot be accumulated across scans.
 - The spike uses current UE4SS delayed actions when available instead of preferring deprecated `LoopAsync`; a compatibility fallback remains.
 - Capture count is documented as requiring a separate player-save adapter rather than probing sensitive player objects during the acquisition spike.
+- Packaged Blueprint-to-UE4SS custom-event calls with `self` crashed during startup; the accepted bridge direction is passive `ModActor` discovery from Lua followed by Lua-to-Blueprint calls.
+- Wwise installation was replaced by a no-Wwise PMK build variant because this LogicMod has no audio assets. That variant compiled, generated assets, cooked `407/407` packages, and produced the validated pak.
+- Blueprint `FString` properties marshal to UE4SS Lua as userdata on the tested build. Cross-boundary diagnostics therefore use integer codes, while text normalization stays on each side of the bridge.
 
 ## Known Limitations
 
 - Server compatibility and replication range are unknown.
-- The diagnostic Canvas renderer is not the production Widget renderer.
+- The legacy Lua Canvas renderer remains disabled; the validated Blueprint Widget is the production rendering direction.
 - Alpha/Boss and element accessors may require a later database/spawn adapter.
 - No claim is made that a configured scan distance can load objects the client has not loaded or received.
+- A visually distant Pal may not expose a usable actor or initialized individual parameter until the client updates it; only targets accepted by the loaded-candidate boundary can be drawn.
 - Runtime syntax and static checks cannot prove game-version field compatibility; the single-player matrix is required.
 - Some invalid or mismatched UE4SS property/method conversions can terminate the GameThread rather than raising a catchable Lua error; new accessors must be introduced one confirmed path at a time.
 - SDK presence does not imply that UE4SS Lua can safely marshal a property type. Enum and array fields require a proven UFUNCTION/Blueprint adapter or must remain unavailable.
@@ -185,6 +199,6 @@ If `ReceiveDrawHUD` or the Canvas struct bridge is unavailable on the current bu
 
 ## Phase 2 Gate
 
-Decision: `CONDITIONAL GO - BEGIN LOGICMOD/BLUEPRINT BRIDGE SPIKE`
+Decision: `GO - PHASE 2 BLUEPRINT BRIDGE SPIKE PASSED`
 
-Phase 2 may begin because the acquisition boundary, current-snapshot lifecycle, safe core fields, and return-to-title recovery are proven; human candidate admission remained zero; and both remaining technical blockers are reproducible UE4SS Lua limitations with the ADR-selected bridge as their next step. Phase 1 is not declared fully complete: capture/mount/travel/death scenarios, the 15-minute stability sample, and broader compatibility evidence remain follow-up validation. Multiplayer rows remain community-pending and must not be presented as verified.
+BP-01 through BP-11 pass on the maintainer's Steam single-player build. The gate includes the passive bridge, multi-target top guides, Blueprint-local gender enum handling, integer diagnostic marshalling, capture/death cleanup, `candidate_player_count=0`, map teardown, normal exit, and a reproducible eight-file pak. Fast travel/interior transitions, respawn behavior, a 15-minute continuous in-world sample, broader game-build compatibility, and multiplayer remain follow-up validation and must not be presented as verified.

@@ -2,11 +2,11 @@
 
 ## Summary
 
-Phase 2 proves the minimum LogicMod/Blueprint path required by ADR-0001 and ADR-0002. It does not build the final ESP panel or broad resource registry. The spike accepts one already-approved wild Pal from Lua, initializes a Blueprint bridge, draws one top-anchored guide through a Widget, and reads gender inside Blueprint without letting Blueprint enumerate or accept human players.
+Phase 2 proves the minimum LogicMod/Blueprint path required by ADR-0001 and ADR-0002. It does not build the final ESP panel or broad resource registry. The spike was initially one-target and was amended after that path passed: it now hands every accepted loaded wild Pal to one Blueprint Widget, draws top-anchored guides, and reads gender inside Blueprint without letting Blueprint enumerate or accept human players.
 
 ## Current Evidence
 
-- Steam PC build: `24088745` at the Phase 1 test time.
+- Steam PC build: `24088745` at the Phase 1 test time; `24181527` at the Phase 2 gate.
 - UE4SS: v3.0.1 Beta #0, Git SHA `c2ac2464`.
 - Lua acquisition, player rejection, snapshot reconciliation, and map teardown passed.
 - `ReceiveDrawHUD` registered but produced zero callbacks.
@@ -16,11 +16,11 @@ Phase 2 proves the minimum LogicMod/Blueprint path required by ADR-0001 and ADR-
 
 ## Success Criteria
 
-1. PMK opens and compiles at the pinned commit with the recorded UE/Wwise/MSVC versions.
+1. PMK opens and compiles at the pinned commit with the recorded UE/MSVC/Windows SDK versions and the ADR-0003 no-Wwise variant.
 2. `PalworldResourceESP` loads as a LogicMod and emits one unique bridge-ready event per gameplay ModActor instance.
 3. Lua caches only the current valid bridge actor and clears it before map teardown.
-4. Lua passes at most one actor that already passed the Phase 1 wild/non-player classification.
-5. Blueprint creates one unframed viewport Widget and draws a thin line from the top-center anchor to the target.
+4. Lua passes only actors that already passed the Phase 1 wild/non-player classification, up to `MAX_DISPLAY_TARGETS`.
+5. Blueprint creates one unframed viewport Widget and draws a thin line from the top-center anchor to every accepted target.
 6. Blueprint reads and reports the target Pal gender without routing the enum through Lua.
 7. A local human player never enters candidate, bridge, Widget target, label, or diagnostic state.
 8. Entering a save, waiting near wild Pals, returning to title, and normal exit do not crash.
@@ -29,20 +29,34 @@ Phase 2 proves the minimum LogicMod/Blueprint path required by ADR-0001 and ADR-
 ## Non-Goals
 
 - Final `Shift+E` settings panel.
-- Multiple targets, boxes, outlines, names, health, weak points, or off-screen indicators.
+- Boxes, outlines, names, health, weak points, or dedicated off-screen indicators. Multi-target guides were added by the scope amendment.
 - Passive-skill arrays, IVs, Lucky/Alpha, elements, capture count, or resource adapters.
 - Multiplayer verification.
 - Forced entity loading, direct memory reads, save mutation, server components, or C++ hot paths.
+
+## Scope Amendment (2026-07-16)
+
+The original spike limited the Lua-to-Blueprint handoff and guide to one target. Packaged single-target testing proved the passive bridge, Widget projection, map teardown, and top-anchored guide, after which the maintainer approved extending the same spike to all currently accepted loaded wild Pals.
+
+The amended scope is:
+
+- Lua submits every accepted candidate up to `MAX_DISPLAY_TARGETS`; it never submits a player or lets Blueprint enumerate actors.
+- One overlay Widget owns a typed `PalMonsterCharacter` array and draws all guides in one `OnPaint` pass.
+- Snapshot synchronization clears the Widget array and then appends the current accepted candidates.
+- The Blueprint-local gender adapter diagnoses the first accepted target once per Widget session as `unknown`, `male`, or `female`; `EPalGenderType` never crosses into Lua.
+- Targets outside the client's usable actor/individual-parameter state remain outside the bridge. The observed far-distance visibility boundary is documented as a loaded-entity limitation, not a renderer omission.
+
+This is a runtime-evidence-based extension of Tasks 5 and 6. Boxes, labels, the settings panel, broad resource adapters, and forced loading remain non-goals for this spike.
 
 ## Minimal Bridge Contract
 
 All names are project-unique.
 
-### Blueprint to Lua
+### Bridge Discovery
 
-- Custom event: `PalworldResourceESP_LuaBridgeReady`
-- Output: current `ModActor` or dedicated bridge actor UObject.
-- Called from `PostBeginPlay`.
+- `ModActor.PostBeginPlay` remains passive.
+- Lua observes `ModActor_C` with `RegisterBeginPlayPostHook` and caches only the current matching class instance.
+- The packaged `PalworldResourceESP_LuaBridgeReady` signature remains for rollback compatibility but is not invoked; packaged Blueprint-to-UE4SS calls with `self` crashed during startup.
 
 ### Lua to Blueprint
 
@@ -84,7 +98,7 @@ The `LogicMod/Content/Mods/PalworldResourceESP` directory is project-owned. The 
 
 ### Task 1: Bootstrap and Record the Toolchain
 
-- Verify .NET 6, VS Build Tools, Windows SDK, UE 5.1, Wwise 2021.1.11, and PMK commit.
+- Verify .NET 6, VS Build Tools, Windows SDK, UE 5.1, the ADR-0003 no-Wwise variant, and the PMK commit.
 - Add the missing MSVC 14.38 component without replacing newer installed toolsets.
 - Keep installer/account steps explicit and record any maintainer interaction.
 - Verify PMK opens before adding project assets.
@@ -93,7 +107,7 @@ The `LogicMod/Content/Mods/PalworldResourceESP` directory is project-owned. The 
 
 - Clone `localcc/PalworldModdingKit` under the sibling `palworld_mod/tooling` directory.
 - Pin commit `62fad4130238cb0aadf024b87496e7387d5f4bf5`.
-- Integrate Wwise exactly as required by the current PMK documentation.
+- Keep the upstream Wwise integration out of the product repository and use the ADR-0003 no-Wwise compatibility module for this non-audio LogicMod.
 - Record the external path and hashes without committing third-party files.
 
 ### Task 3: Establish Project-Owned LogicMod Assets
@@ -105,23 +119,22 @@ The `LogicMod/Content/Mods/PalworldResourceESP` directory is project-owned. The 
 
 ### Task 4: Implement Bridge Initialization
 
-- `ModActor` spawns or owns the dedicated bridge actor.
-- `PostBeginPlay` calls `PalworldResourceESP_LuaBridgeReady` with the bridge UObject.
-- Lua registers the custom event once, validates the UObject, and replaces stale bridge state.
+- `ModActor` passively owns the Widget bridge events.
+- Lua discovers the current `ModActor_C`, validates it, and replaces stale bridge state.
 - LoadMap pre-hook clears the cached bridge before the old world tears down.
 
 ### Task 5: Connect the Existing Candidate Snapshot
 
 - Preserve all Phase 1 classification and ownership checks.
-- Select at most one current wild candidate.
-- Call `SetTarget` only when target/session changes; call `ClearTarget` on empty state or transition.
+- Copy every current accepted wild candidate up to `MAX_DISPLAY_TARGETS`.
+- Call `ClearTarget` before each non-empty snapshot, then call `SetTarget` once per accepted target.
 - Do not increase scan frequency for rendering.
 
 ### Task 6: Draw the Top-Anchored Guide
 
 - Create one viewport overlay Widget with stable full-screen dimensions.
-- Project the target actor location each Widget frame.
-- Draw a thin line from `(viewport width / 2, TOP_ANCHOR_Y)` to the projected target.
+- Project each target actor location in one Widget `OnPaint` pass.
+- Draw a thin line from `(viewport width / 2, TOP_ANCHOR_Y)` to every projected target.
 - Hide the line for invalid, destroyed, behind-camera, or off-world targets.
 - Do not place the line origin at screen center.
 
@@ -136,13 +149,13 @@ The `LogicMod/Content/Mods/PalworldResourceESP` directory is project-owned. The 
 
 - Package the unique chunk.
 - Rename the produced chunk to `PalworldResourceESP.pak`.
-- Preflight `Pal/Content/Paks/LogicMods` and preserve any existing target via a dated `__DEPRECATED_` rename.
+- Preflight `Pal/Content/Paks/LogicMods` and preserve any existing target in a dated `__DEPRECATED_` rollback snapshot before replacement.
 - Keep the Lua Junction deployment unchanged unless the bridge integration requires a documented update.
 
 ### Task 9: Execute the Phase 2 Smoke Matrix
 
 - Launch, enter the existing single-player save, and wait near a wild Pal.
-- Verify bridge-ready, `candidate_player_count=0`, one top line, and gender evidence.
+- Verify bridge-ready, `candidate_player_count=0`, simultaneous top lines, and gender evidence.
 - Move/rotate to confirm the endpoint tracks the Pal without changing the top anchor.
 - Return to title, wait, and exit normally.
 - Record build/tool versions, logs, screenshot evidence, and crash-report timestamps.
@@ -169,3 +182,5 @@ Runtime validation remains required because static checks cannot validate Bluepr
 ## Phase Gate
 
 Phase 2 passes only when the minimal bridge, top-anchored guide, Blueprint-local gender adapter, player exclusion invariant, map teardown, and normal exit all pass in the maintainer's Steam single-player environment. Multiplayer remains community-pending.
+
+Outcome (2026-07-16): `PASS`. BP-01 through BP-11 passed on Steam build `24181527`. The final run emitted `BLUEPRINT_GENDER value=female`, retained `candidate_player_count=0`, cleared 23 candidates before returning to Title, and exited without a new crash. Capture and death cleanup passed in dedicated runs. The deployed eight-file pak SHA-256 is `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14`.

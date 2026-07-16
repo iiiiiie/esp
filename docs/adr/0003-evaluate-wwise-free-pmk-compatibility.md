@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Date
 
@@ -18,11 +18,11 @@ After installing the Windows 11 SDK 10.0.26100.0, the no-Wwise `PalEditor` build
 
 ## Decision
 
-We will pursue a Wwise-free PMK development path for the ESP, initially as an isolated experiment:
+We will use the validated Wwise-free PMK development path for this non-audio ESP:
 
 - Keep Wwise disabled and do not require an Audiokinetic account for product contributors.
 - Provide a minimal local `AkAudio` compatibility module only for the Pal source declarations required by the PMK build. The compatibility module is a no-op for audio and is not a replacement game audio system.
-- Keep all compatibility-layer changes outside the product repository until a clean UE 5.1.1 build and single-player smoke test pass.
+- Keep all compatibility-layer changes outside the product repository. The accepted evidence is a clean UE 5.1.1 build, asset generation, cooking, packaging, and the Steam single-player smoke matrix.
 - Do not add Wwise SDK files, generated audio assets, credentials, memory readers, or server components to this repository.
 - Retain pure UE4SS Lua as a fallback acquisition path, but do not expand its known unsafe enum/struct probes until the Blueprint bridge is evaluated.
 
@@ -68,7 +68,7 @@ Disadvantages:
 
 ## Rationale
 
-The ESP has no audio requirement, so carrying Wwise solely to compile unrelated Pal declarations is undesirable. A small compatibility module is a narrower experiment than rewriting the Pal source or switching immediately to an unproven C++ runtime. The proposal remains unaccepted until UHT, UBT, packaging, and the single-player smoke matrix pass.
+The ESP has no audio requirement, so carrying Wwise solely to compile unrelated Pal declarations is undesirable. A small compatibility module is narrower than rewriting the Pal source or switching immediately to an unproven C++ runtime. The path is accepted because UHT/UBT, headless asset generation, `407/407` cooking, eight-file packaging, and the Phase 2 Steam single-player smoke matrix all passed.
 
 ## Consequences
 
@@ -91,5 +91,5 @@ Negative effects:
 - [x] Run UHT/UBT; the stub passed UHT and the incremental `PalEditor` build completed.
 - [x] Launch the no-Wwise editor target headlessly; `AkAudioStub` mounted without a module-initialization error. The first asset scan required a normal window-close request after `Quit` before the editor exited.
 - [ ] Reconcile the UE 5.1 UBT compiler selector with the pinned MSVC 14.38 family; the successful probe used MSVC 14.39.
-- [ ] Package the bridge and run the approved Steam single-player smoke matrix.
-- [ ] Change this ADR to `Accepted` only after the no-Wwise path passes those checks.
+- [x] Package the bridge and run the approved Steam single-player smoke matrix.
+- [x] Change this ADR to `Accepted` only after the no-Wwise path passes those checks.
