@@ -86,6 +86,23 @@ local FIELD_PROBES = {
     },
 }
 
+local NORMALIZED_FIELD_NAMES = {
+    "is_wild",
+    "level",
+    "distance_m",
+    "species",
+    "gender",
+    "passive_skills",
+    "iv_hp",
+    "iv_attack",
+    "iv_melee",
+    "iv_defense",
+    "lucky",
+    "alpha_boss",
+    "elements",
+    "capture_count",
+}
+
 local state = {
     classes = {},
     candidates = {},
@@ -97,6 +114,8 @@ local state = {
     adapters_registered = false,
     selected = nil,
     notification_registered = false,
+    notification_dirty = false,
+    notification_deferred_logged = false,
     lifecycle_hooks_registered = false,
     load_map_hooks_registered = false,
     bridge_event_registered = false,
@@ -113,6 +132,7 @@ local state = {
     draw_hook_registered = false,
     reconcile_started = false,
     reconcile_handle = nil,
+    reconcile_job = nil,
     bootstrap_pending = false,
     lifecycle_generation = 0,
     world_transitioning = false,
@@ -121,6 +141,7 @@ local state = {
     pal_accept_logged = false,
     session_index = 0,
     field_path_logged = {},
+    field_states_logged = false,
     rejection_reason_logged = {},
     draw_callback_logged = false,
     draw_block_reason_logged = {},
@@ -135,6 +156,7 @@ local state = {
         rejected_unknown = 0,
         invalidated = 0,
         notification_count = 0,
+        notifications_deferred = 0,
         scan_count = 0,
         scan_seconds = 0.0,
         draw_callbacks = 0,
@@ -150,6 +172,9 @@ local state = {
         display_truncated = 0,
         discovery_seconds = 0.0,
         admission_seconds = 0.0,
+        reconcile_batches = 0,
+        reconcile_batch_max_seconds = 0.0,
+        reconcile_busy_skips = 0,
         filter_seconds = 0.0,
         order_seconds = 0.0,
         budget_seconds = 0.0,
@@ -560,20 +585,22 @@ local function get_trainer_status(component)
     return nil
 end
 
-local function classify_actor(actor)
+local function classify_actor(actor, player_gate_already_passed)
     actor = unwrap(actor)
     if not is_valid(actor) then
         return "invalid", nil, nil
     end
 
-    if is_a(actor, resolve_class("player")) then
-        return "player_class", nil, nil
-    end
-    if is_a(actor, resolve_class("player_controller")) then
-        return "player_controller", nil, nil
-    end
-    if is_a(actor, resolve_class("player_state")) then
-        return "player_state", nil, nil
+    if not player_gate_already_passed then
+        if is_a(actor, resolve_class("player")) then
+            return "player_class", nil, nil
+        end
+        if is_a(actor, resolve_class("player_controller")) then
+            return "player_controller", nil, nil
+        end
+        if is_a(actor, resolve_class("player_state")) then
+            return "player_state", nil, nil
+        end
     end
     if not is_a(actor, resolve_class("monster")) then
         return "unknown_type", nil, nil
@@ -726,6 +753,34 @@ local function probe_candidate_fields(actor, component, parameter, save_paramete
     return fields
 end
 
+local function probe_entity_core_fields(parameter)
+    local found, value, path = probe_source_value(parameter, {
+        methods = { "GetLevel" },
+    })
+    local fields = {
+        level = {
+            available = found,
+            value = value,
+            path = found and ("parameter." .. path) or nil,
+            note = "Lua-safe scalar required by Entity Core",
+        },
+    }
+
+    if not state.field_path_logged.level then
+        state.field_path_logged.level = true
+        if found then
+            log_event("FIELD_PATH", string.format(
+                "field=level status=available path=%s value=%s",
+                fields.level.path,
+                value_to_text(value)
+            ))
+        else
+            log_event("FIELD_PATH", "field=level status=unavailable note=Lua-safe scalar not available")
+        end
+    end
+    return fields
+end
+
 local function remove_candidate(actor, reason)
     local record = state.candidates[actor]
     if record == nil then
@@ -833,6 +888,14 @@ end
 
 local function clear_candidate_cache(reason)
     local previous_count = state.candidate_count
+    local reconcile_job = state.reconcile_job
+    if reconcile_job ~= nil then
+        reconcile_job.cancelled = true
+        reconcile_job.objects = {}
+        reconcile_job.generation = nil
+        state.reconcile_job = nil
+        debug_event("RECONCILE_CANCELLED", string.format("reason=%s", reason))
+    end
     entity_snapshot.clear(state.entity_store, reason)
     state.candidates = {}
     state.candidate_count = 0
@@ -842,6 +905,7 @@ local function clear_candidate_cache(reason)
     state.metrics.matched = 0
     state.metrics.displayed = 0
     state.metrics.display_truncated = 0
+    state.notification_dirty = false
     state.selected = nil
 
     if previous_count > 0 then
@@ -942,12 +1006,14 @@ end
 
 local entity_runtime = {
     reject_player_representation = reject_player_representation,
-    classify_pal = classify_actor,
-    probe_pal_fields = function(actor, component, parameter, save_parameter)
+    classify_pal = function(actor)
+        return classify_actor(actor, true)
+    end,
+    probe_pal_fields = function(_actor, _component, parameter, _save_parameter)
         if not config.FIELD_PROBES_ENABLED then
             return {}
         end
-        return probe_candidate_fields(actor, component, parameter, save_parameter)
+        return probe_entity_core_fields(parameter)
     end,
     distance_m = distance_m,
     find_all = find_all,
@@ -1044,6 +1110,20 @@ local function add_entity_candidate(actor, source, generation, context)
     end
 
     state.metrics.accepted = state.metrics.accepted + 1
+    if not state.field_states_logged then
+        state.field_states_logged = true
+        for _, field_name in ipairs(NORMALIZED_FIELD_NAMES) do
+            local cell = record.fields[field_name]
+            if cell ~= nil then
+                log_event("FIELD_STATE", string.format(
+                    "field=%s state=%s detail=%s",
+                    field_name,
+                    cell.state,
+                    cell.source or cell.reason or "unspecified"
+                ))
+            end
+        end
+    end
     if not state.pal_accept_logged then
         state.pal_accept_logged = true
         local level_cell = record.fields.level
@@ -1157,6 +1237,7 @@ local function scan_monsters(source)
     state.metrics.discovery_seconds = state.metrics.discovery_seconds + (os.clock() - discovery_started_at)
     if not ok or type(objects) ~= "table" then
         entity_snapshot.replace(state.entity_store, generation)
+        state.notification_dirty = false
         refresh_pipeline_output(source)
         state.metrics.raw_monsters = 0
         state.metrics.scan_seconds = state.metrics.scan_seconds + (os.clock() - started_at)
@@ -1182,6 +1263,7 @@ local function scan_monsters(source)
     state.metrics.admission_seconds = state.metrics.admission_seconds + (os.clock() - admission_started_at)
 
     entity_snapshot.replace(state.entity_store, generation)
+    state.notification_dirty = false
     refresh_pipeline_output(source)
 
     local elapsed = os.clock() - started_at
@@ -1292,7 +1374,7 @@ local function emit_metrics(force)
     ]]
     local current = entity_snapshot.current(state.entity_store)
     log_event("METRIC", string.format(
-        "session=%d generation=%d raw=%d admitted=%d matched=%d displayed=%d admission_rejected=%d display_truncated=%d accepted_total=%d rejected_player=%d rejected_owned=%d rejected_dead=%d rejected_unknown=%d notifications=%d scans=%d scan_ms=%.3f discovery_ms=%.3f admission_ms=%.3f filter_ms=%.3f order_ms=%.3f budget_ms=%.3f bridge_syncs=%d bridge_set_calls=%d bridge_sync_ms=%.3f",
+        "session=%d generation=%d raw=%d admitted=%d matched=%d displayed=%d admission_rejected=%d display_truncated=%d accepted_total=%d rejected_player=%d rejected_owned=%d rejected_dead=%d rejected_unknown=%d notifications=%d notifications_deferred=%d scans=%d reconcile_batches=%d max_batch_ms=%.3f busy_skips=%d scan_ms=%.3f discovery_ms=%.3f admission_ms=%.3f filter_ms=%.3f order_ms=%.3f budget_ms=%.3f bridge_syncs=%d bridge_set_calls=%d bridge_sync_ms=%.3f",
         state.session_index,
         current.generation_id,
         state.metrics.raw_monsters,
@@ -1307,7 +1389,11 @@ local function emit_metrics(force)
         state.metrics.rejected_dead,
         state.metrics.rejected_unknown,
         state.metrics.notification_count,
+        state.metrics.notifications_deferred,
         state.metrics.scan_count,
+        state.metrics.reconcile_batches,
+        state.metrics.reconcile_batch_max_seconds * 1000.0,
+        state.metrics.reconcile_busy_skips,
         state.metrics.scan_seconds * 1000.0,
         state.metrics.discovery_seconds * 1000.0,
         state.metrics.admission_seconds * 1000.0,
@@ -1321,6 +1407,194 @@ local function emit_metrics(force)
 end
 
 local sync_bridge_target
+
+local process_reconcile_batch
+
+local function abandon_reconcile_job(job, reason)
+    if state.reconcile_job ~= job then
+        return
+    end
+    job.cancelled = true
+    job.objects = {}
+    job.generation = nil
+    state.reconcile_job = nil
+    debug_event("RECONCILE_CANCELLED", string.format("reason=%s", reason))
+end
+
+local function reconcile_job_is_current(job)
+    return state.reconcile_job == job
+        and not job.cancelled
+        and not state.world_transitioning
+        and state.gameplay_active
+        and job.lifecycle_generation == state.lifecycle_generation
+        and job.session_id == state.entity_store.session_id
+end
+
+local function finish_reconcile_job(job)
+    if not reconcile_job_is_current(job) then
+        abandon_reconcile_job(job, "stale_before_finish")
+        return
+    end
+
+    state.metrics.raw_monsters = #job.objects
+    entity_snapshot.replace(state.entity_store, job.generation)
+    state.notification_dirty = state.metrics.notifications_deferred > job.notification_version
+
+    local pipeline_started_at = os.clock()
+    refresh_pipeline_output(job.source)
+    local pipeline_seconds = os.clock() - pipeline_started_at
+    local scan_seconds = job.discovery_seconds + job.admission_seconds + pipeline_seconds
+    state.metrics.scan_seconds = state.metrics.scan_seconds + scan_seconds
+
+    local raw_count = #job.objects
+    local batch_count = job.batch_count
+    local max_batch_seconds = job.max_batch_seconds
+    job.objects = {}
+    job.generation = nil
+    state.reconcile_job = nil
+
+    log_event("SCAN_DONE", string.format(
+        "source=%s raw=%d admitted=%d matched=%d displayed=%d elapsed_ms=%.3f batches=%d max_batch_ms=%.3f",
+        job.source,
+        raw_count,
+        state.metrics.admitted,
+        state.metrics.matched,
+        state.metrics.displayed,
+        scan_seconds * 1000.0,
+        batch_count,
+        max_batch_seconds * 1000.0
+    ))
+
+    if config.DRAW_ENABLED then
+        select_target()
+    end
+    sync_bridge_target()
+    emit_metrics(false)
+end
+
+local function schedule_reconcile_batch(job)
+    if not reconcile_job_is_current(job) then
+        abandon_reconcile_job(job, "stale_before_schedule")
+        return false
+    end
+    if type(ExecuteInGameThreadWithDelay) ~= "function" then
+        log_event("ERROR_RECONCILE_BATCH", "reason=scheduler_unavailable")
+        abandon_reconcile_job(job, "scheduler_unavailable")
+        return false
+    end
+
+    local delay_ms = math.max(0, tonumber(config.RECONCILE_BATCH_DELAY_MS) or 0)
+    local ok, err = pcall(function()
+        ExecuteInGameThreadWithDelay(delay_ms, function()
+            local batch_ok, batch_error = pcall(function()
+                process_reconcile_batch(job)
+            end)
+            if not batch_ok then
+                log_event("ERROR_RECONCILE_BATCH", tostring(batch_error))
+                abandon_reconcile_job(job, "batch_callback_error")
+            end
+        end)
+    end)
+    if not ok then
+        log_event("ERROR_RECONCILE_BATCH", tostring(err))
+        abandon_reconcile_job(job, "batch_schedule_error")
+        return false
+    end
+    return true
+end
+
+process_reconcile_batch = function(job)
+    if not reconcile_job_is_current(job) then
+        abandon_reconcile_job(job, "stale_batch")
+        return
+    end
+
+    local batch_started_at = os.clock()
+    local batch_size = math.max(1, math.floor(tonumber(config.RECONCILE_BATCH_SIZE) or 1))
+    local last_index = math.min(#job.objects, job.index + batch_size - 1)
+    for index = job.index, last_index do
+        local actor = job.objects[index]
+        local added_ok, added_error = pcall(function()
+            add_entity_candidate(actor, job.source, job.generation, job.context)
+        end)
+        if not added_ok then
+            log_event("ERROR_CANDIDATE", tostring(added_error))
+        end
+    end
+    job.index = last_index + 1
+
+    local batch_seconds = os.clock() - batch_started_at
+    job.admission_seconds = job.admission_seconds + batch_seconds
+    job.batch_count = job.batch_count + 1
+    job.max_batch_seconds = math.max(job.max_batch_seconds, batch_seconds)
+    state.metrics.admission_seconds = state.metrics.admission_seconds + batch_seconds
+    state.metrics.reconcile_batches = state.metrics.reconcile_batches + 1
+    state.metrics.reconcile_batch_max_seconds = math.max(
+        state.metrics.reconcile_batch_max_seconds,
+        batch_seconds
+    )
+
+    if job.index > #job.objects then
+        finish_reconcile_job(job)
+        return
+    end
+    schedule_reconcile_batch(job)
+end
+
+local function start_chunked_reconcile()
+    if state.reconcile_job ~= nil then
+        state.metrics.reconcile_busy_skips = state.metrics.reconcile_busy_skips + 1
+        debug_event("RECONCILE_SKIPPED", "reason=job_in_progress")
+        return false
+    end
+
+    local descriptor = state.entity_registry:get("pal")
+    local generation = entity_snapshot.begin_generation(state.entity_store, "reconcile", now())
+    state.metrics.scan_count = state.metrics.scan_count + 1
+    state.metrics.admission_rejected = 0
+
+    local discovery_started_at = os.clock()
+    local ok, objects = pcall(function()
+        return descriptor and descriptor.find_all(entity_runtime) or nil
+    end)
+    local discovery_seconds = os.clock() - discovery_started_at
+    state.metrics.discovery_seconds = state.metrics.discovery_seconds + discovery_seconds
+    if not ok or type(objects) ~= "table" then
+        objects = {}
+    end
+
+    local job = {
+        source = "reconcile",
+        objects = objects,
+        generation = generation,
+        context = {
+            source = "reconcile",
+            camera_location = get_camera_location(find_player_controller()),
+        },
+        index = 1,
+        session_id = state.entity_store.session_id,
+        lifecycle_generation = state.lifecycle_generation,
+        notification_version = state.metrics.notifications_deferred,
+        discovery_seconds = discovery_seconds,
+        admission_seconds = 0.0,
+        batch_count = 0,
+        max_batch_seconds = 0.0,
+        cancelled = false,
+    }
+    state.reconcile_job = job
+
+    if #objects == 0 then
+        finish_reconcile_job(job)
+        return true
+    end
+    debug_event("RECONCILE_CHUNKED", string.format(
+        "raw=%d batch_size=%d delay_ms=%d",
+        #objects,
+        math.max(1, math.floor(tonumber(config.RECONCILE_BATCH_SIZE) or 1)),
+        math.max(0, tonumber(config.RECONCILE_BATCH_DELAY_MS) or 0)
+    ))
+    return schedule_reconcile_batch(job)
+end
 
 local function reconcile()
     if not config.ENABLED then
@@ -1345,16 +1619,15 @@ local function reconcile()
     end
 
     state.last_scan_skip_reason = nil
-    -- __DEPRECATED_20260716__ [reason: scan_monsters atomically replaces the complete generation]
-    -- clear_candidate_cache("reconcile_rebuild")
+    --[[ __DEPRECATED_20260716__ [reason: synchronous full admission caused 200-300 ms GameThread stalls]
     scan_monsters("reconcile")
-    -- __DEPRECATED_20260716__ [reason: Blueprint receives all candidates; nearest selection remains Lua-draw-only]
-    -- if config.DRAW_ENABLED or config.BLUEPRINT_BRIDGE_ENABLED then
     if config.DRAW_ENABLED then
         select_target()
     end
     sync_bridge_target()
     emit_metrics(false)
+    ]]
+    start_chunked_reconcile()
 end
 
 local function reconcile_safely()
@@ -1843,11 +2116,18 @@ local function register_monster_notification()
     end
 
     local ok, err = pcall(function()
-        NotifyOnNewObject("/Script/Pal.PalMonsterCharacter", function(constructed_object)
+        NotifyOnNewObject("/Script/Pal.PalMonsterCharacter", function(_constructed_object)
             state.metrics.notification_count = state.metrics.notification_count + 1
             if state.world_transitioning or not state.gameplay_active then
                 return
             end
+            state.notification_dirty = true
+            state.metrics.notifications_deferred = state.metrics.notifications_deferred + 1
+            if not state.notification_deferred_logged then
+                state.notification_deferred_logged = true
+                log_event("NOTIFY_DEFERRED", "mode=next_reconcile")
+            end
+            --[[ __DEPRECATED_20260716__ [reason: construction-time classification caused load-time GameThread stalls]
             state.metrics.raw_monsters = state.metrics.raw_monsters + 1
             local actor = unwrap(constructed_object)
             run_on_game_thread(function()
@@ -1868,6 +2148,7 @@ local function register_monster_notification()
                 end
                 sync_bridge_target()
             end)
+            ]]
         end)
     end)
     if not ok then

@@ -5,6 +5,8 @@ config.DEBUG = true
 
 config.BOOTSTRAP_DELAY_MS = 3000
 config.RECONCILE_INTERVAL_MS = 5000
+config.RECONCILE_BATCH_SIZE = 2
+config.RECONCILE_BATCH_DELAY_MS = 16
 config.METRIC_INTERVAL_SECONDS = 30
 
 -- __DEPRECATED_20260716__ [reason: admission and display budgets are now separate]

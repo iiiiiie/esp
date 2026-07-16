@@ -41,17 +41,137 @@ const source = `
 package.path = [[${packagePaths}]] .. ";" .. package.path
 dofile([[${entrypoint}]])
 
-StaticFindObject = function(path) return { path = path } end
+local runtime_logs = {}
+local original_print = print
+print = function(message)
+    runtime_logs[#runtime_logs + 1] = tostring(message)
+    original_print(message)
+end
+
+local classes = {}
+StaticFindObject = function(path)
+    classes[path] = classes[path] or { path = path }
+    return classes[path]
+end
 RegisterCustomEvent = function() end
 RegisterBeginPlayPostHook = function() return 1 end
 NotifyOnNewObject = function() end
 RegisterHook = function() return 1, 2 end
-RegisterLoadMapPreHook = function() end
+local load_map_pre_hook = nil
+RegisterLoadMapPreHook = function(callback)
+    load_map_pre_hook = callback
+end
 RegisterLoadMapPostHook = function() end
-LoopInGameThreadWithDelay = function() return true end
-ExecuteInGameThreadWithDelay = function() end
+
+local reconcile_loop = nil
+local delayed_callbacks = {}
+LoopInGameThreadWithDelay = function(_, callback)
+    reconcile_loop = callback
+    return true
+end
+ExecuteInGameThreadWithDelay = function(_, callback)
+    delayed_callbacks[#delayed_callbacks + 1] = callback
+end
+
+local player = {}
+function player:IsA(class_object)
+    return class_object.path == "/Script/Pal.PalPlayerCharacter"
+end
+
+local camera_manager = {}
+function camera_manager:GetCameraLocation()
+    return { X = 0, Y = 0, Z = 0 }
+end
+local controller = { PlayerCameraManager = camera_manager }
+FindFirstOf = function()
+    return controller
+end
+
+local monsters = {}
+for index = 1, 4 do
+    local component = { Trainer = nil, NPCSpawnedOtomoTrainer = nil }
+    function component:IsDead()
+        return false
+    end
+
+    local parameter = {
+        SaveParameter = {
+            IsPlayer = false,
+            OwnerPlayerUId = { A = 0, B = 0, C = 0, D = 0 },
+        },
+    }
+    function parameter:GetLevel()
+        return index
+    end
+
+    local actor = {}
+    function actor:IsA(class_object)
+        return class_object.path == "/Script/Pal.PalMonsterCharacter"
+    end
+    function actor:GetCharacterParameterComponent()
+        return component
+    end
+    function actor:GetIndividualParameter()
+        return parameter
+    end
+    function actor:K2_GetActorLocation()
+        return { X = index * 100, Y = 0, Z = 0 }
+    end
+    monsters[#monsters + 1] = actor
+end
+
+FindAllOf = function(class_name)
+    if class_name == "PalPlayerCharacter" then
+        return { player }
+    end
+    if class_name == "PalMonsterCharacter" then
+        return monsters
+    end
+    return {}
+end
+
 dofile([[${runtimeEntrypoint}]])
 print("Runtime entrypoint load passed")
+
+assert(type(reconcile_loop) == "function", "reconcile loop was not captured")
+delayed_callbacks = {}
+reconcile_loop()
+assert(#delayed_callbacks == 1, "first reconcile batch was not scheduled")
+
+local executed_callbacks = 0
+while #delayed_callbacks > 0 do
+    executed_callbacks = executed_callbacks + 1
+    assert(executed_callbacks <= 10, "reconcile batch queue did not terminate")
+    local callback = table.remove(delayed_callbacks, 1)
+    callback()
+end
+assert(executed_callbacks == 2, "expected two reconcile batches")
+
+local found_chunked_result = false
+for _, message in ipairs(runtime_logs) do
+    if message:match("SCAN_DONE.*admitted=4.*batches=2") then
+        found_chunked_result = true
+        break
+    end
+end
+assert(found_chunked_result, "chunked reconcile result was not logged")
+print("Chunked reconcile stub passed")
+
+assert(type(load_map_pre_hook) == "function", "load-map pre-hook was not captured")
+reconcile_loop()
+assert(#delayed_callbacks == 1, "cancellable reconcile batch was not scheduled")
+load_map_pre_hook()
+local stale_callback = table.remove(delayed_callbacks, 1)
+stale_callback()
+
+local scan_done_count = 0
+for _, message in ipairs(runtime_logs) do
+    if message:match("SCAN_DONE") then
+        scan_done_count = scan_done_count + 1
+    end
+end
+assert(scan_done_count == 1, "cancelled reconcile committed a stale generation")
+print("Chunked reconcile cancellation passed")
 `;
 
 const L = lauxlib.luaL_newstate();

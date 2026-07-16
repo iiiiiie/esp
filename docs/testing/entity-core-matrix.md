@@ -2,7 +2,7 @@
 
 ## Status
 
-- Implementation: complete, runtime regression pending
+- Implementation: complete; chunked reconcile runtime regression pending
 - Maintainer-required environment: Steam PC single-player
 - Server environments: community pending and not a Phase 2 gate
 - Human player invariant: every runtime run must report `candidate_player_count=0`
@@ -18,8 +18,8 @@
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
 | LogicMod pak SHA-256 | `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14` |
-| `main.lua` SHA-256 | `9E3617DB781C409A3C4C9E9D2059151E3CA1CADD8A993524F7C3B061BA8EB583`; source and active Junction match |
-| `config.lua` SHA-256 | `C43B30E3B984668431F5A28D4ECCF1F4750FBF7249E07F4ABA09D9977F609C31` |
+| `main.lua` SHA-256 | `224005B71890E1E0E6AAC97169DD66B2E4FB248EACD63F2F3A7A920F35ABF4D6`; chunked reconcile checkpoint |
+| `config.lua` SHA-256 | `C75215D7AF748169332DB2973F0EE57ECE13BF4393CA67BCD0304FC8AE9D5945` |
 | Newest pre-test crash | `2026-07-16 09:56:11`, `UECC-Windows-FCB962FF452A9E89E36EB182C7EE5C0C_0000` |
 | Runtime baseline backup | `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp_backups/20260716_entity_core_baseline` |
 
@@ -41,23 +41,35 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-10 | Runtime entrypoint load | Stubbed UE4SS registration sequence loads without an error | Pass | Adapter, bridge, notification, lifecycle, draw, and loop registration completes |
 | AT-11 | Dependency audit | Development dependency audit has no known vulnerability | Pass | `fengari 0.1.5`, `tmp 0.2.7`, `luaparse 0.3.1`; `npm audit` reports zero |
 | AT-12 | Capability/privacy scan | No sensitive player diagnostics or prohibited mutation primitives | Pass | Both source scans return no matches |
+| AT-13 | Chunked reconcile | Four simulated Pal actors complete in two scheduled batches and one atomic replacement | Pass | Stub emitted `admitted=4`, `batches=2`, and terminated its delayed queue |
+| AT-14 | Chunk cancellation | Map pre-load cancels a pending job without committing its stale generation | Pass | Queued stale callback completed without a second `SCAN_DONE` |
+
+## Performance Investigation
+
+| Run | Implementation | Observed result |
+|---|---|---|
+| 2026-07-16 18:38 | Synchronous Entity Core | Functional pass; scans reached `239 ms` at 33 raw actors; admission consumed `1028 / 1581 ms` cumulative |
+| 2026-07-16 19:10 | Deferred notifications and reduced probes | Functional pass but no perceived stutter improvement; scans reached `300 ms` at 37 raw actors; admission consumed `2038 / 3085 ms` cumulative |
+| Offline checkpoint | Two actors per delayed GameThread batch, 16 ms between batches | Four simulated actors completed in two batches and one atomic replacement; real UE4SS timing remains unverified |
+
+Both real runs passed capture cleanup, death cleanup, return to Title, normal exit, and the player boundary. The second run deferred all 42 active construction notifications, proving that construction-time classification was not the remaining dominant stall. The unresolved spike is synchronous full-snapshot admission; the current checkpoint splits that admission across scheduled batches while keeping replacement atomic.
 
 ## Runtime Matrix
 
 | ID | Scenario | Required evidence | Status | Actual/Notes |
 |---|---|---|---|---|
-| EC-01 | Boot and adapter registration | `ADAPTER_REGISTERED id=pal`, `BOOT_FILE_LOADED`, no import/load error | Pending | Stub load passes; real UE4SS run required |
-| EC-02 | Player boundary | `PLAYER_AUDIT ... candidate_player_count=0`; no player record or bridge actor | Pending | Release-blocking invariant |
-| EC-03 | Generation replacement | `ENTITY_SNAPSHOT` generation increments; counts do not accumulate across scans | Pending | Unit lifecycle passes |
-| EC-04 | Field states | Level/distance are known when available; unsafe fields remain bridge/unavailable | Pending | Unit normalization passes; inspect runtime field logs |
+| EC-01 | Boot and adapter registration | `ADAPTER_REGISTERED id=pal`, `BOOT_FILE_LOADED`, no import/load error | Regression pending | Two pre-chunk real runs passed; chunked checkpoint has stub coverage only |
+| EC-02 | Player boundary | `PLAYER_AUDIT ... candidate_player_count=0`; no player record or bridge actor | Regression pending | Both real runs reported `candidate_player_count=0`; recheck current checkpoint |
+| EC-03 | Generation replacement | `ENTITY_SNAPSHOT` generation increments; counts do not accumulate across scans | Regression pending | Real generations incremented without accumulation; chunked atomic replacement has stub coverage |
+| EC-04 | Field states | Level/distance are known when available; unsafe fields remain bridge/unavailable | Regression pending | Real `FIELD_STATE` evidence passed before chunking |
 | EC-05 | Filter semantics | Automated predicate suite passes | Pass | Covered by AT-05 |
-| EC-06 | Ordering and budget | Counts satisfy `raw >= admitted >= matched >= displayed`; displayed is at most 64 | Pending | Unit ordering passes; runtime bridge count required |
-| EC-07 | Notification/reconcile interaction | Notification adds no duplicate wrapper in the current generation; next scan replaces it | Pending | Current-generation lookup is covered by AT-04 |
-| EC-08 | Capture and death | Captured and dead targets disappear and stay absent after reconciliation | Pending | Previous bridge baseline passed; Entity Core regression required |
-| EC-09 | Return to Title | Snapshot and bridge clear before old-world teardown | Pending | Return, wait 10 seconds, then inspect lifecycle log order |
-| EC-10 | Performance | `discovery_ms`, `admission_ms`, `filter_ms`, `order_ms`, `budget_ms`, and bridge timing emit | Pending | Instrumentation exists; runtime values required |
+| EC-06 | Ordering and budget | Counts satisfy `raw >= admitted >= matched >= displayed`; displayed is at most 64 | Regression pending | Pre-chunk runs passed with up to 31 displayed; recheck current checkpoint |
+| EC-07 | Notification/reconcile interaction | Construction notifications defer safely; next scan replaces the generation without duplicates | Regression pending | Pre-chunk deferral reached 42 notifications; chunked interaction needs a real run |
+| EC-08 | Capture and death | Captured and dead targets disappear and stay absent after reconciliation | Regression pending | Maintainer confirmed both behaviors twice without a crash; recheck current checkpoint |
+| EC-09 | Return to Title | Pending reconcile cancels without dereferencing actors; bridge clears before teardown | Regression pending | Pre-chunk teardown passed; chunk cancellation has static/stub coverage only |
+| EC-10 | Performance | `max_batch_ms` remains acceptable and visible stutter materially improves | Pending | Synchronous path failed subjective and timing gate; chunked checkpoint is unverified in UE4SS |
 | EC-11 | Adapter extension | Synthetic second adapter changes no gate/filter/renderer module | Pass | Covered by AT-08 |
-| EC-12 | Normal exit | No new crash report; source and active deployment hashes match | Pending | Game is not running |
+| EC-12 | Normal exit | No new crash report; source and active deployment hashes match | Regression pending | Both pre-chunk runs exited normally; no crash newer than `09:56:11` |
 
 ## Runtime Procedure
 

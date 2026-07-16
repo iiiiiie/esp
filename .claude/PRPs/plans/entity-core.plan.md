@@ -2,7 +2,7 @@
 
 ## Status
 
-`APPROVED - implementation in progress`
+`IMPLEMENTED - chunked performance validation pending`
 
 ## Summary
 
