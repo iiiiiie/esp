@@ -3,6 +3,7 @@ local adapter_registry = require("core.adapter_registry")
 local entity_snapshot = require("core.entity_snapshot")
 local filter_engine = require("core.filter_engine")
 local runtime_profiles = require("core.runtime_profiles")
+local user_settings = require("core.user_settings")
 local pal_adapter = require("adapters.pal")
 
 local MOD_NAME = "PalworldResourceESP"
@@ -153,9 +154,19 @@ local state = {
     control_pending_logged = false,
     panel_filter_key = "level:nil:nil;distance:nil:nil",
     show_top_guide_line = config.SHOW_TOP_GUIDE_LINE,
+    show_name = config.SHOW_NAME,
     show_level = config.SHOW_LEVEL,
     show_distance = config.SHOW_DISTANCE,
     gender_filter_id = 0,
+    language_id = 0,
+    settings_path = nil,
+    settings_io = nil,
+    settings_loaded = nil,
+    settings_last_serialized = nil,
+    settings_pending = nil,
+    settings_save_due_at = nil,
+    settings_bridge_applied = false,
+    settings_save_error_logged = false,
     panel_keybind_registered = false,
     panel_toggle_pending = false,
     panel_toggle_sequence = 0,
@@ -291,6 +302,164 @@ local function safe_get_property(object, property_name)
     end
 
     return true, unwrap(result)
+end
+
+local function safe_set_property(object, property_name, value)
+    object = unwrap(object)
+    if not is_valid(object) then
+        return false
+    end
+    local ok = pcall(function()
+        object[property_name] = value
+    end)
+    return ok
+end
+
+local SETTINGS_PROPERTIES = {
+    { name = "runtime_enabled", property = "ESP_RuntimeEnabled" },
+    { name = "profile_id", property = "ESP_ProfileId" },
+    { name = "preset_id", property = "ESP_PresetId" },
+    { name = "language_id", property = "ESP_LanguageId" },
+    { name = "level_min", property = "ESP_LevelMin" },
+    { name = "level_max", property = "ESP_LevelMax" },
+    { name = "distance_max", property = "ESP_DistanceMax" },
+    { name = "display_limit", property = "ESP_DisplayTargetLimit" },
+    { name = "show_top", property = "ESP_ShowTopGuideLine" },
+    { name = "show_name", property = "ESP_ShowName" },
+    { name = "show_level", property = "ESP_ShowLevel" },
+    { name = "show_distance", property = "ESP_ShowDistance" },
+    { name = "gender", property = "ESP_GenderFilterId" },
+}
+
+local function initialize_user_settings()
+    local override_path = rawget(_G, "PalworldResourceESPSettingsPath")
+    local override_io = rawget(_G, "PalworldResourceESPSettingsIO")
+    state.settings_io = type(override_io) == "table" and override_io or io
+    if override_path == false then
+        debug_event("USER_SETTINGS_DISABLED", "reason=path_override")
+        return
+    end
+
+    if type(override_path) == "string" and override_path ~= "" then
+        state.settings_path = override_path
+    else
+        local source = nil
+        if type(debug) == "table" and type(debug.getinfo) == "function" then
+            local ok, info = pcall(debug.getinfo, 1, "S")
+            if ok and type(info) == "table" then
+                source = info.source
+            end
+        end
+        state.settings_path = user_settings.path_for_script(source)
+    end
+
+    if state.settings_path == nil or type(state.settings_io) ~= "table" then
+        log_event("USER_SETTINGS_UNAVAILABLE", "reason=storage_path")
+        return
+    end
+
+    local loaded, load_reason = user_settings.load_latest(state.settings_path, state.settings_io)
+    if loaded == nil then
+        debug_event("USER_SETTINGS_DEFAULT", string.format("reason=%s", tostring(load_reason)))
+        return
+    end
+    state.settings_loaded = loaded
+    state.settings_last_serialized = user_settings.serialize(loaded)
+    log_event("USER_SETTINGS_LOADED", "version=v1")
+end
+
+local function apply_loaded_settings_to_bridge()
+    if state.settings_bridge_applied or not is_valid(state.bridge_actor) then
+        return state.settings_bridge_applied
+    end
+    if state.settings_loaded == nil then
+        state.settings_bridge_applied = true
+        return true
+    end
+
+    local previous = {}
+    for _, mapping in ipairs(SETTINGS_PROPERTIES) do
+        local ok, value = safe_get_property(state.bridge_actor, mapping.property)
+        if not ok then
+            log_event("USER_SETTINGS_APPLY_FAILED", string.format("property=%s stage=read", mapping.property))
+            return false
+        end
+        previous[mapping.property] = value
+    end
+    local revision_ok, revision = safe_get_property(state.bridge_actor, "ESP_ControlRevision")
+    revision = revision_ok and tonumber(revision) or nil
+    if revision == nil then
+        log_event("USER_SETTINGS_APPLY_FAILED", "property=ESP_ControlRevision stage=read")
+        return false
+    end
+
+    local applied = {}
+    for _, mapping in ipairs(SETTINGS_PROPERTIES) do
+        if not safe_set_property(state.bridge_actor, mapping.property, state.settings_loaded[mapping.name]) then
+            for _, property_name in ipairs(applied) do
+                safe_set_property(state.bridge_actor, property_name, previous[property_name])
+            end
+            log_event("USER_SETTINGS_APPLY_FAILED", string.format("property=%s stage=write", mapping.property))
+            return false
+        end
+        applied[#applied + 1] = mapping.property
+    end
+    if not safe_set_property(state.bridge_actor, "ESP_ControlRevision", math.floor(revision) + 1) then
+        for _, property_name in ipairs(applied) do
+            safe_set_property(state.bridge_actor, property_name, previous[property_name])
+        end
+        log_event("USER_SETTINGS_APPLY_FAILED", "property=ESP_ControlRevision stage=write")
+        return false
+    end
+
+    state.settings_bridge_applied = true
+    state.control_revision = -1
+    log_event("USER_SETTINGS_APPLIED", "version=v1")
+    return true
+end
+
+local function schedule_user_settings_save(values)
+    if state.settings_path == nil or type(state.settings_io) ~= "table" then
+        return
+    end
+    local normalized = user_settings.normalize(values)
+    local serialized = user_settings.serialize(normalized)
+    if serialized == state.settings_last_serialized then
+        state.settings_pending = nil
+        state.settings_save_due_at = nil
+        return
+    end
+    if state.settings_pending ~= nil
+        and serialized == user_settings.serialize(state.settings_pending) then
+        return
+    end
+    state.settings_pending = normalized
+    state.settings_save_due_at = now() + 0.75
+end
+
+local function flush_user_settings_if_due()
+    if state.settings_pending == nil or state.settings_save_due_at == nil
+        or now() < state.settings_save_due_at then
+        return
+    end
+    local saved, save_error = user_settings.append(
+        state.settings_path,
+        state.settings_pending,
+        state.settings_io
+    )
+    if not saved then
+        if not state.settings_save_error_logged then
+            state.settings_save_error_logged = true
+            log_event("USER_SETTINGS_SAVE_FAILED", tostring(save_error))
+        end
+        state.settings_save_due_at = now() + 5.0
+        return
+    end
+    state.settings_last_serialized = user_settings.serialize(state.settings_pending)
+    state.settings_pending = nil
+    state.settings_save_due_at = nil
+    state.settings_save_error_logged = false
+    debug_event("USER_SETTINGS_SAVED", "version=v1")
 end
 
 local function safe_call_no_args(object, method_name)
@@ -1843,6 +2012,7 @@ local function clear_bridge_cache(reason)
     state.bridge_target_count = 0
     state.bridge_gender_logged = false
     state.bridge_gender_pending_reason = nil
+    state.settings_bridge_applied = false
     state.control_revision = -1
     state.control_pending_logged = false
 
@@ -1882,9 +2052,11 @@ local function register_blueprint_bridge_discovery()
             state.bridge_target_count = 0
             state.bridge_gender_logged = false
             state.bridge_gender_pending_reason = nil
+            state.settings_bridge_applied = false
             state.control_revision = -1
             state.control_pending_logged = false
             log_event("BRIDGE_READY", "mode=lua_discovery class=ModActor_C")
+            apply_loaded_settings_to_bridge()
             sync_bridge_target()
         end)
     end)
@@ -2285,23 +2457,33 @@ local function normalize_gender_filter_id(raw_id)
     return math.max(0, math.min(2, math.floor(raw_id)))
 end
 
-local function apply_display_styles(show_top_guide_line, show_level, show_distance, raw_gender_filter_id)
+local function apply_display_styles(show_top_guide_line, show_name, show_level, show_distance, raw_gender_filter_id)
     local gender_filter_id = normalize_gender_filter_id(raw_gender_filter_id)
     if show_top_guide_line == state.show_top_guide_line
+        and show_name == state.show_name
         and show_level == state.show_level
         and show_distance == state.show_distance
         and gender_filter_id == state.gender_filter_id then
         return false
     end
     state.show_top_guide_line = show_top_guide_line
+    state.show_name = show_name
     state.show_level = show_level
     state.show_distance = show_distance
     state.gender_filter_id = gender_filter_id
-    call_bridge(BRIDGE_METHOD_SET_DISPLAY_STYLE, show_top_guide_line, show_level, show_distance, gender_filter_id)
+    call_bridge(
+        BRIDGE_METHOD_SET_DISPLAY_STYLE,
+        show_top_guide_line,
+        show_name,
+        show_level,
+        show_distance,
+        gender_filter_id
+    )
     local gender_filter_names = { [0] = "all", [1] = "male", [2] = "female" }
     log_event("DISPLAY_STYLE", string.format(
-        "top_guide_line=%s show_level=%s show_distance=%s gender_filter=%s",
+        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s gender_filter=%s",
         tostring(show_top_guide_line),
+        tostring(show_name),
         tostring(show_level),
         tostring(show_distance),
         gender_filter_names[gender_filter_id]
@@ -2354,16 +2536,18 @@ local function poll_panel_controls()
     -- local distance_min = read_panel_number("ESP_DistanceMin")
     local distance_max = read_panel_number("ESP_DistanceMax")
     local show_top_guide_line = read_panel_boolean("ESP_ShowTopGuideLine")
+    local show_name = read_panel_boolean("ESP_ShowName")
     local show_level = read_panel_boolean("ESP_ShowLevel")
     local show_distance = read_panel_boolean("ESP_ShowDistance")
     local gender_filter_id = read_panel_number("ESP_GenderFilterId")
+    local language_id = read_panel_number("ESP_LanguageId")
     local display_target_limit = read_panel_number("ESP_DisplayTargetLimit")
     if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil
         -- __DEPRECATED_20260717__ [reason: minimum distance is no longer required]
         -- or level_min == nil or level_max == nil or distance_min == nil or distance_max == nil
         or level_min == nil or level_max == nil or distance_max == nil
-        or show_top_guide_line == nil or show_level == nil or show_distance == nil or gender_filter_id == nil
-        or display_target_limit == nil then
+        or show_top_guide_line == nil or show_name == nil or show_level == nil or show_distance == nil
+        or gender_filter_id == nil or language_id == nil or display_target_limit == nil then
         if not state.control_pending_logged then
             state.control_pending_logged = true
             debug_event("PANEL_CONTROL_PENDING", "reason=property_unavailable")
@@ -2376,19 +2560,36 @@ local function poll_panel_controls()
     -- __DEPRECATED_20260717__ [reason: minimum distance is no longer applied]
     -- local filters_changed = apply_panel_filters(level_min, level_max, distance_min, distance_max)
     local filters_changed = apply_panel_filters(level_min, level_max, distance_max)
-    apply_display_styles(show_top_guide_line, show_level, show_distance, gender_filter_id)
+    apply_display_styles(show_top_guide_line, show_name, show_level, show_distance, gender_filter_id)
     local limit_changed = apply_display_target_limit(display_target_limit)
     if runtime_enabled() and state.gameplay_active and (filters_changed or limit_changed) then
         clear_candidate_cache("panel_query_change")
         start_safe_reconcile("panel_query_change")
     end
     set_capture_active(capture_requested, "panel_revision")
+    state.language_id = math.max(0, math.min(1, math.floor(language_id)))
+    schedule_user_settings_save({
+        runtime_enabled = master_enabled,
+        profile_id = profile_id,
+        preset_id = preset_id,
+        language_id = state.language_id,
+        level_min = level_min,
+        level_max = level_max,
+        distance_max = distance_max,
+        display_limit = display_target_limit,
+        show_top = show_top_guide_line,
+        show_name = show_name,
+        show_level = show_level,
+        show_distance = show_distance,
+        gender = gender_filter_id,
+    })
     state.control_revision = revision
     debug_event("PANEL_CONTROL_APPLIED", string.format("revision=%d", revision))
 end
 
 local function runtime_tick()
     poll_panel_controls()
+    flush_user_settings_if_due()
 
     if state.runtime_profile.event_admission and state.notification_dirty
         and state.gameplay_active and state.reconcile_job == nil then
@@ -2507,9 +2708,11 @@ local function register_blueprint_bridge()
                 state.bridge_target_count = 0
                 state.bridge_gender_logged = false
                 state.bridge_gender_pending_reason = nil
+                state.settings_bridge_applied = false
                 state.control_revision = -1
                 state.control_pending_logged = false
                 log_event("BRIDGE_READY", string.format("event=%s", BRIDGE_READY_EVENT))
+                apply_loaded_settings_to_bridge()
                 sync_bridge_target()
             end)
         end)
@@ -3023,6 +3226,7 @@ if not config.ENABLED then
     return
 end
 
+initialize_user_settings()
 resolve_required_classes()
 register_entity_adapters()
 register_blueprint_bridge()

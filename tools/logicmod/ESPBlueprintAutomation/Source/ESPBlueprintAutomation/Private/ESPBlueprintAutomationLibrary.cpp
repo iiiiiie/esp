@@ -65,10 +65,12 @@ const FName OverlayTargetsVariableName(TEXT("ESP_Targets"));
 const FName OverlayTargetLevelsVariableName(TEXT("ESP_TargetLevels"));
 const FName OverlayTargetDistancesVariableName(TEXT("ESP_TargetDistances"));
 const FName OverlayTargetGendersVariableName(TEXT("ESP_TargetGenders"));
+const FName OverlayTargetNamesVariableName(TEXT("ESP_TargetNames"));
 const FName OverlayGenderLoggedVariableName(TEXT("ESP_GenderLogged"));
 const FName OverlayGenderDiagnosticVariableName(TEXT("ESP_GenderDiagnostic"));
 const FName OverlayGenderDiagnosticCodeVariableName(TEXT("ESP_GenderDiagnosticCode"));
 const FName OverlayTopGuideEnabledVariableName(TEXT("ESP_ShowTopGuideLine"));
+const FName OverlayShowNameVariableName(TEXT("ESP_ShowName"));
 const FName OverlayShowLevelVariableName(TEXT("ESP_ShowLevel"));
 const FName OverlayShowDistanceVariableName(TEXT("ESP_ShowDistance"));
 const FName OverlayGenderFilterIdVariableName(TEXT("ESP_GenderFilterId"));
@@ -88,12 +90,14 @@ const FName LevelMaxVariableName(TEXT("ESP_LevelMax"));
 const FName DistanceMinVariableName(TEXT("ESP_DistanceMin"));
 const FName DistanceMaxVariableName(TEXT("ESP_DistanceMax"));
 const FName ShowTopGuideLineVariableName(TEXT("ESP_ShowTopGuideLine"));
+const FName ShowNameVariableName(TEXT("ESP_ShowName"));
 const FName ShowLevelVariableName(TEXT("ESP_ShowLevel"));
 const FName ShowDistanceVariableName(TEXT("ESP_ShowDistance"));
 const FName GenderFilterIdVariableName(TEXT("ESP_GenderFilterId"));
 const FName DisplayTargetLimitVariableName(TEXT("ESP_DisplayTargetLimit"));
 const FName PanelInitializeControlsEventName(TEXT("PalworldResourceESP_InitializeControls"));
 const FName PanelInitializeControlsV2EventName(TEXT("PalworldResourceESP_InitializeControlsV2"));
+const FName PanelInitializeLanguageEventName(TEXT("PalworldResourceESP_InitializeLanguage"));
 
 UBlueprint* LoadBlueprint(const TCHAR* Path) {
     return LoadObject<UBlueprint>(nullptr, Path);
@@ -149,6 +153,12 @@ FEdGraphPinType BoolPin() {
 FEdGraphPinType StringPin() {
     FEdGraphPinType PinType;
     PinType.PinCategory = UEdGraphSchema_K2::PC_String;
+    return PinType;
+}
+
+FEdGraphPinType StringArrayPin() {
+    FEdGraphPinType PinType = StringPin();
+    PinType.ContainerType = EPinContainerType::Array;
     return PinType;
 }
 
@@ -630,6 +640,39 @@ UK2Node_ComponentBoundEvent* AddSpinBoxValueChangedEvent(
     return Node;
 }
 
+UK2Node_ComponentBoundEvent* AddSpinBoxValueCommittedEvent(
+    UWidgetBlueprint* Blueprint,
+    USpinBox* SpinBox,
+    int32 X,
+    int32 Y) {
+    if (!Blueprint || !SpinBox || !Blueprint->SkeletonGeneratedClass) {
+        return nullptr;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    FObjectProperty* ComponentProperty = FindFProperty<FObjectProperty>(
+        Blueprint->SkeletonGeneratedClass,
+        SpinBox->GetFName()
+    );
+    FMulticastDelegateProperty* DelegateProperty = FindFProperty<FMulticastDelegateProperty>(
+        USpinBox::StaticClass(),
+        GET_MEMBER_NAME_CHECKED(USpinBox, OnValueCommitted)
+    );
+    if (!Graph || !ComponentProperty || !DelegateProperty) {
+        return nullptr;
+    }
+    UK2Node_ComponentBoundEvent* Node = NewObject<UK2Node_ComponentBoundEvent>(Graph);
+    if (!Node) {
+        return nullptr;
+    }
+    Node->InitializeComponentBoundEventParams(ComponentProperty, DelegateProperty);
+    Node->NodePosX = X;
+    Node->NodePosY = Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->AllocateDefaultPins();
+    return Node;
+}
+
 UK2Node_ComponentBoundEvent* AddSliderValueChangedEvent(
     UWidgetBlueprint* Blueprint,
     USlider* Slider,
@@ -652,6 +695,40 @@ UK2Node_ComponentBoundEvent* AddSliderValueChangedEvent(
         return nullptr;
     }
 
+    UK2Node_ComponentBoundEvent* Node = NewObject<UK2Node_ComponentBoundEvent>(Graph);
+    if (!Node) {
+        return nullptr;
+    }
+    Node->InitializeComponentBoundEventParams(ComponentProperty, DelegateProperty);
+    Node->NodePosX = X;
+    Node->NodePosY = Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->AllocateDefaultPins();
+    return Node;
+}
+
+UK2Node_ComponentBoundEvent* AddSliderCaptureEndEvent(
+    UWidgetBlueprint* Blueprint,
+    USlider* Slider,
+    const FName& DelegateName,
+    int32 X,
+    int32 Y) {
+    if (!Blueprint || !Slider || !Blueprint->SkeletonGeneratedClass) {
+        return nullptr;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    FObjectProperty* ComponentProperty = FindFProperty<FObjectProperty>(
+        Blueprint->SkeletonGeneratedClass,
+        Slider->GetFName()
+    );
+    FMulticastDelegateProperty* DelegateProperty = FindFProperty<FMulticastDelegateProperty>(
+        USlider::StaticClass(),
+        DelegateName
+    );
+    if (!Graph || !ComponentProperty || !DelegateProperty) {
+        return nullptr;
+    }
     UK2Node_ComponentBoundEvent* Node = NewObject<UK2Node_ComponentBoundEvent>(Graph);
     if (!Node) {
         return nullptr;
@@ -865,6 +942,15 @@ bool BuildOverlay(
         Blueprint->NewVariables[ExistingTargetGendersIndex].VarType = IntArrayPin();
     }
 
+    const int32 ExistingTargetNamesIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayTargetNamesVariableName);
+    if (ExistingTargetNamesIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayTargetNamesVariableName, StringArrayPin())) {
+            return false;
+        }
+    } else {
+        Blueprint->NewVariables[ExistingTargetNamesIndex].VarType = StringArrayPin();
+    }
+
     const int32 ExistingGenderLoggedIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayGenderLoggedVariableName);
     if (ExistingGenderLoggedIndex == INDEX_NONE) {
         if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayGenderLoggedVariableName, BoolPin())) {
@@ -904,6 +990,19 @@ bool BuildOverlay(
     }
     Blueprint->NewVariables[ExistingTopGuideEnabledIndex].VarType = BoolPin();
     Blueprint->NewVariables[ExistingTopGuideEnabledIndex].DefaultValue = TEXT("true");
+
+    int32 ExistingShowNameIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayShowNameVariableName);
+    if (ExistingShowNameIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayShowNameVariableName, BoolPin())) {
+            return false;
+        }
+        ExistingShowNameIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayShowNameVariableName);
+    }
+    if (ExistingShowNameIndex == INDEX_NONE) {
+        return false;
+    }
+    Blueprint->NewVariables[ExistingShowNameIndex].VarType = BoolPin();
+    Blueprint->NewVariables[ExistingShowNameIndex].DefaultValue = TEXT("true");
 
     int32 ExistingShowLevelIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayShowLevelVariableName);
     if (ExistingShowLevelIndex == INDEX_NONE) {
@@ -966,10 +1065,12 @@ bool BuildOverlay(
     UK2Node_CallArrayFunction* ClearDistanceArray = AddArrayCall(Graph, TEXT("Array_Clear"), 120, -300);
     UK2Node_VariableGet* ClearGendersGet = AddVariableGet(Graph, OverlayTargetGendersVariableName, 380, -140);
     UK2Node_CallArrayFunction* ClearGenderArray = AddArrayCall(Graph, TEXT("Array_Clear"), 660, -300);
+    UK2Node_VariableGet* ClearNamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, 920, -140);
+    UK2Node_CallArrayFunction* ClearNameArray = AddArrayCall(Graph, TEXT("Array_Clear"), 1200, -300);
     if (!AddTarget || !AddTargetsGet || !AddTargetItem || !AddLevelsGet || !AddLevelItem
         || !AddDistancesGet || !AddDistanceItem || !ClearTargets || !ClearTargetsGet || !ClearTargetArray
         || !ClearLevelsGet || !ClearLevelArray || !ClearDistancesGet || !ClearDistanceArray
-        || !ClearGendersGet || !ClearGenderArray
+        || !ClearGendersGet || !ClearGenderArray || !ClearNamesGet || !ClearNameArray
         || !Link(AddTarget, UEdGraphSchema_K2::PN_Then, AddTargetItem, UEdGraphSchema_K2::PN_Execute)
         || !Link(AddTargetsGet, OverlayTargetsVariableName, AddTargetItem, TEXT("TargetArray"))
         || !Link(AddTarget, TEXT("Target"), AddTargetItem, TEXT("NewItem"))
@@ -986,7 +1087,9 @@ bool BuildOverlay(
         || !Link(ClearLevelArray, UEdGraphSchema_K2::PN_Then, ClearDistanceArray, UEdGraphSchema_K2::PN_Execute)
         || !Link(ClearDistancesGet, OverlayTargetDistancesVariableName, ClearDistanceArray, TEXT("TargetArray"))
         || !Link(ClearDistanceArray, UEdGraphSchema_K2::PN_Then, ClearGenderArray, UEdGraphSchema_K2::PN_Execute)
-        || !Link(ClearGendersGet, OverlayTargetGendersVariableName, ClearGenderArray, TEXT("TargetArray"))) {
+        || !Link(ClearGendersGet, OverlayTargetGendersVariableName, ClearGenderArray, TEXT("TargetArray"))
+        || !Link(ClearGenderArray, UEdGraphSchema_K2::PN_Then, ClearNameArray, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ClearNamesGet, OverlayTargetNamesVariableName, ClearNameArray, TEXT("TargetArray"))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay target array graph failed"));
         return false;
     }
@@ -1062,23 +1165,36 @@ bool BuildOverlay(
     }
 #endif
 
-    auto AddGenderResultPath = [&](UEdGraphNode* ExecNode, const FName& ExecPin, const TCHAR* Value, int32 Code, int32 X, int32 Y) -> bool {
+    auto AddGenderResultPath = [&](UEdGraphNode* ExecNode, const FName& ExecPin, const TCHAR* Value, int32 Code, bool bUseName, int32 X, int32 Y) -> bool {
         UK2Node_VariableGet* GendersGet = AddVariableGet(Graph, OverlayTargetGendersVariableName, X, Y + 120);
         UK2Node_CallArrayFunction* AddGenderItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 260, Y);
-        UK2Node_VariableGet* LoggedGet = AddVariableGet(Graph, OverlayGenderLoggedVariableName, X + 520, Y + 160);
-        UK2Node_CallFunction* NotLogged = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 780, Y + 160);
-        UK2Node_IfThenElse* LogBranch = AddBranch(Graph, X + 1040, Y);
-        UK2Node_VariableSet* StoreDiagnostic = AddVariableSet(Graph, OverlayGenderDiagnosticVariableName, X + 1300, Y);
-        UK2Node_VariableSet* StoreDiagnosticCode = AddVariableSet(Graph, OverlayGenderDiagnosticCodeVariableName, X + 1560, Y);
-        UK2Node_CallFunction* Print = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), X + 1820, Y);
-        UK2Node_VariableSet* MarkLogged = AddVariableSet(Graph, OverlayGenderLoggedVariableName, X + 2080, Y);
+        UK2Node_VariableGet* NamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, X + 520, Y + 120);
+        UK2Node_CallArrayFunction* AddNameItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 780, Y);
+        UK2Node_CallFunction* Nickname = bUseName
+            ? AddStaticCall(Graph, CharacterParameterComponentClass, TEXT("GetNickname"), X + 520, Y + 260)
+            : nullptr;
+        UK2Node_VariableGet* LoggedGet = AddVariableGet(Graph, OverlayGenderLoggedVariableName, X + 1040, Y + 160);
+        UK2Node_CallFunction* NotLogged = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 1300, Y + 160);
+        UK2Node_IfThenElse* LogBranch = AddBranch(Graph, X + 1560, Y);
+        UK2Node_VariableSet* StoreDiagnostic = AddVariableSet(Graph, OverlayGenderDiagnosticVariableName, X + 1820, Y);
+        UK2Node_VariableSet* StoreDiagnosticCode = AddVariableSet(Graph, OverlayGenderDiagnosticCodeVariableName, X + 2080, Y);
+        UK2Node_CallFunction* Print = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), X + 2340, Y);
+        UK2Node_VariableSet* MarkLogged = AddVariableSet(Graph, OverlayGenderLoggedVariableName, X + 2600, Y);
         const FString Message = FString::Printf(TEXT("[PalworldResourceESP] BLUEPRINT_GENDER value=%s"), Value);
-        return GendersGet && AddGenderItem && LoggedGet && NotLogged && LogBranch
+        const bool bNameSourceReady = bUseName
+            ? Nickname
+                && Link(CharacterParameter, UEdGraphSchema_K2::PN_ReturnValue, Nickname, UEdGraphSchema_K2::PN_Self)
+                && Link(Nickname, TEXT("outName"), AddNameItem, TEXT("NewItem"))
+            : SetPinDefault(AddNameItem, TEXT("NewItem"), TEXT(""));
+        return GendersGet && AddGenderItem && NamesGet && AddNameItem && bNameSourceReady
+            && LoggedGet && NotLogged && LogBranch
             && StoreDiagnostic && StoreDiagnosticCode && Print && MarkLogged
             && Link(ExecNode, ExecPin, AddGenderItem, UEdGraphSchema_K2::PN_Execute)
             && Link(GendersGet, OverlayTargetGendersVariableName, AddGenderItem, TEXT("TargetArray"))
             && SetPinDefault(AddGenderItem, TEXT("NewItem"), FString::FromInt(Code))
-            && Link(AddGenderItem, UEdGraphSchema_K2::PN_Then, LogBranch, UEdGraphSchema_K2::PN_Execute)
+            && Link(AddGenderItem, UEdGraphSchema_K2::PN_Then, AddNameItem, UEdGraphSchema_K2::PN_Execute)
+            && Link(NamesGet, OverlayTargetNamesVariableName, AddNameItem, TEXT("TargetArray"))
+            && Link(AddNameItem, UEdGraphSchema_K2::PN_Then, LogBranch, UEdGraphSchema_K2::PN_Execute)
             && Link(LoggedGet, OverlayGenderLoggedVariableName, NotLogged, TEXT("A"))
             && Link(NotLogged, UEdGraphSchema_K2::PN_ReturnValue, LogBranch, UEdGraphSchema_K2::PN_Condition)
             && Link(LogBranch, UEdGraphSchema_K2::PN_Then, StoreDiagnostic, UEdGraphSchema_K2::PN_Execute)
@@ -1093,21 +1209,24 @@ bool BuildOverlay(
             && SetPinDefault(Print, TEXT("bPrintToLog"), TEXT("true"))
             && SetPinDefault(MarkLogged, OverlayGenderLoggedVariableName, TEXT("true"));
     };
-    if (!AddGenderResultPath(GenderTargetBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, 1740, -1040)
-        || !AddGenderResultPath(CharacterParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, 1740, -880)
-        || !AddGenderResultPath(IndividualParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, 1740, -720)
-        || !AddGenderResultPath(GenderSwitch, TEXT("None"), TEXT("unknown"), 0, 1740, -560)
-        || !AddGenderResultPath(GenderSwitch, TEXT("Male"), TEXT("male"), 1, 1740, -400)
-        || !AddGenderResultPath(GenderSwitch, TEXT("Female"), TEXT("female"), 2, 1740, -240)) {
+    if (!AddGenderResultPath(GenderTargetBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, false, 1740, -1040)
+        || !AddGenderResultPath(CharacterParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, false, 1740, -880)
+        || !AddGenderResultPath(IndividualParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, true, 1740, -720)
+        || !AddGenderResultPath(GenderSwitch, TEXT("None"), TEXT("unknown"), 0, true, 1740, -560)
+        || !AddGenderResultPath(GenderSwitch, TEXT("Male"), TEXT("male"), 1, true, 1740, -400)
+        || !AddGenderResultPath(GenderSwitch, TEXT("Female"), TEXT("female"), 2, true, 1740, -240)) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay gender result graph failed"));
         return false;
     }
 
     UK2Node_Event* OnPaint = AddOverrideEvent(Blueprint, Graph, UUserWidget::StaticClass(), TEXT("OnPaint"), -1500, 80);
     UK2Node_VariableGet* TopGuideEnabledGet = AddVariableGet(Graph, OverlayTopGuideEnabledVariableName, -1500, 200);
+    UK2Node_VariableGet* ShowNameGet = AddVariableGet(Graph, OverlayShowNameVariableName, -1500, 280);
     UK2Node_VariableGet* ShowLevelGet = AddVariableGet(Graph, OverlayShowLevelVariableName, -1500, 360);
     UK2Node_VariableGet* ShowDistanceGet = AddVariableGet(Graph, OverlayShowDistanceVariableName, -1500, 520);
     UK2Node_VariableGet* GenderFilterGet = AddVariableGet(Graph, OverlayGenderFilterIdVariableName, -1500, 680);
+    UK2Node_CallFunction* MetadataEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), -20, 320);
+    UK2Node_CallFunction* VisibleNameEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), -20, 480);
     UK2Node_CallFunction* LabelsEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 260, 320);
     UK2Node_ExecutionSequence* PaintSequence = AddSequence(Graph, 0, 80);
     UK2Node_IfThenElse* LabelEnabledBranch = AddBranch(Graph, 520, 260);
@@ -1116,6 +1235,9 @@ bool BuildOverlay(
     UK2Node_MacroInstance* ForEachTarget = AddForEachLoop(Graph, -1000, 80);
     UK2Node_VariableGet* TargetLevelsGet = AddVariableGet(Graph, OverlayTargetLevelsVariableName, -1000, 1040);
     UK2Node_CallArrayFunction* TargetLevelGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1040);
+    UK2Node_VariableGet* TargetNamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, -1000, 880);
+    UK2Node_CallArrayFunction* TargetNameGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 880);
+    UK2Node_CallFunction* NameNotEmpty = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), -440, 880);
     UK2Node_VariableGet* TargetGendersGet = AddVariableGet(Graph, OverlayTargetGendersVariableName, -1000, 1440);
     UK2Node_CallArrayFunction* TargetGenderGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1440);
     UK2Node_CallFunction* GenderFilterAll = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -440, 1440);
@@ -1136,6 +1258,10 @@ bool BuildOverlay(
     UK2Node_CallFunction* SelectWithLevel = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 1320, 1040);
     UK2Node_CallFunction* SelectWithoutLevel = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 1320, 1280);
     UK2Node_CallFunction* SelectLabel = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 1600, 1120);
+    UK2Node_CallFunction* NameWithNewline = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 1880, 880);
+    UK2Node_CallFunction* NameAndMetadata = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 2160, 960);
+    UK2Node_CallFunction* SelectNameLabel = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 2440, 960);
+    UK2Node_CallFunction* SelectFinalLabel = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 2720, 1040);
     UK2Node_CallFunction* TargetValid = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("IsValid"), -940, 300);
     UK2Node_IfThenElse* TargetBranch = AddBranch(Graph, -700, 80);
     UK2Node_CallFunction* TargetDead = AddStaticCall(Graph, PalUtilityClass, TEXT("IsDead"), -700, 440);
@@ -1157,23 +1283,65 @@ bool BuildOverlay(
     UK2Node_CallFunction* MakeLabelOffset = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("MakeVector2D"), 240, 1040);
     UK2Node_CallFunction* LabelPosition = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Add_Vector2DVector2D"), 520, 1040);
     UK2Node_CallFunction* DrawText = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("DrawText"), 240, 260);
-    if (!OnPaint || !TopGuideEnabledGet || !ShowLevelGet || !ShowDistanceGet || !GenderFilterGet || !LabelsEnabled
+    const TArray<FVector2D> OutlineOffsets = {
+        FVector2D(-1.0f, 0.0f),
+        FVector2D(1.0f, 0.0f),
+        FVector2D(0.0f, -1.0f),
+        FVector2D(0.0f, 1.0f),
+    };
+    UEdGraphNode* OutlineExecTail = LabelEnabledBranch;
+    int32 OutlineX = 800;
+    for (const FVector2D& Offset : OutlineOffsets) {
+        UK2Node_CallFunction* MakeOutlineOffset = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("MakeVector2D"), OutlineX, 560);
+        UK2Node_CallFunction* OutlinePosition = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("Add_Vector2DVector2D"), OutlineX + 260, 560);
+        UK2Node_CallFunction* DrawOutline = AddStaticCall(
+            Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("DrawText"), OutlineX + 520, 260);
+        if (!MakeOutlineOffset || !OutlinePosition || !DrawOutline
+            || !Link(OutlineExecTail, UEdGraphSchema_K2::PN_Then, DrawOutline, UEdGraphSchema_K2::PN_Execute)
+            || !Link(OnPaint, TEXT("Context"), DrawOutline, TEXT("Context"))
+            || !Link(SelectFinalLabel, UEdGraphSchema_K2::PN_ReturnValue, DrawOutline, TEXT("InString"))
+            || !Link(LabelPosition, UEdGraphSchema_K2::PN_ReturnValue, OutlinePosition, TEXT("A"))
+            || !Link(MakeOutlineOffset, UEdGraphSchema_K2::PN_ReturnValue, OutlinePosition, TEXT("B"))
+            || !Link(OutlinePosition, UEdGraphSchema_K2::PN_ReturnValue, DrawOutline, TEXT("Position"))
+            || !SetPinDefault(MakeOutlineOffset, TEXT("X"), FString::SanitizeFloat(Offset.X))
+            || !SetPinDefault(MakeOutlineOffset, TEXT("Y"), FString::SanitizeFloat(Offset.Y))
+            || !SetPinDefault(DrawOutline, TEXT("Tint"), TEXT("(R=0.0,G=0.0,B=0.0,A=1.0)"))) {
+            UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay text outline graph failed"));
+            return false;
+        }
+        OutlineExecTail = DrawOutline;
+        OutlineX += 840;
+    }
+    if (!OnPaint || !TopGuideEnabledGet || !ShowNameGet || !ShowLevelGet || !ShowDistanceGet || !GenderFilterGet
+        || !MetadataEnabled || !VisibleNameEnabled || !LabelsEnabled
         || !PaintSequence || !LabelEnabledBranch || !TopGuideEnabledBranch || !TargetsGet || !ForEachTarget
-        || !TargetLevelsGet || !TargetLevelGet || !TargetGendersGet || !TargetGenderGet
+        || !TargetLevelsGet || !TargetLevelGet || !TargetNamesGet || !TargetNameGet || !NameNotEmpty
+        || !TargetGendersGet || !TargetGenderGet
         || !GenderFilterAll || !GenderFilterMatch || !GenderFilterAccepted
         || !BuildLevelText || !PlayerPawn || !PlayerLocation
         || !LiveDistance || !DistanceMeters || !RoundDistance || !BuildDistanceText || !LevelWithSpacing
         || !LevelAndDistance || !SelectWithLevel || !SelectWithoutLevel || !SelectLabel
+        || !NameWithNewline || !NameAndMetadata || !SelectNameLabel || !SelectFinalLabel
         || !TargetValid || !TargetBranch || !TargetDead || !TargetNotDead
         || !TargetAliveBranch || !GenderFilterBranch || !ActorLocation || !Self || !PlayerController
         || !Project || !ProjectBranch || !ViewportSize || !ViewportScale || !BreakViewport || !RemoveScale
         || !HalfWidth || !MakeStart || !DrawLine || !MakeLabelOffset || !LabelPosition || !DrawText
         || !Link(OnPaint, UEdGraphSchema_K2::PN_Then, ForEachTarget, TEXT("Exec"))
         || !Link(TopGuideEnabledGet, OverlayTopGuideEnabledVariableName, TopGuideEnabledBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(ShowLevelGet, OverlayShowLevelVariableName, LabelsEnabled, TEXT("A"))
-        || !Link(ShowDistanceGet, OverlayShowDistanceVariableName, LabelsEnabled, TEXT("B"))
+        || !Link(ShowLevelGet, OverlayShowLevelVariableName, MetadataEnabled, TEXT("A"))
+        || !Link(ShowDistanceGet, OverlayShowDistanceVariableName, MetadataEnabled, TEXT("B"))
+        || !Link(ShowNameGet, OverlayShowNameVariableName, VisibleNameEnabled, TEXT("A"))
+        || !Link(NameNotEmpty, UEdGraphSchema_K2::PN_ReturnValue, VisibleNameEnabled, TEXT("B"))
+        || !Link(VisibleNameEnabled, UEdGraphSchema_K2::PN_ReturnValue, LabelsEnabled, TEXT("A"))
+        || !Link(MetadataEnabled, UEdGraphSchema_K2::PN_ReturnValue, LabelsEnabled, TEXT("B"))
         || !Link(LabelsEnabled, UEdGraphSchema_K2::PN_ReturnValue, LabelEnabledBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(TargetsGet, OverlayTargetsVariableName, ForEachTarget, TEXT("Array"))
+        || !Link(TargetNamesGet, OverlayTargetNamesVariableName, TargetNameGet, TEXT("TargetArray"))
+        || !Link(ForEachTarget, TEXT("Array Index"), TargetNameGet, TEXT("Index"))
+        || !Link(TargetNameGet, TEXT("Item"), NameNotEmpty, TEXT("A"))
+        || !SetPinDefault(NameNotEmpty, TEXT("B"), TEXT(""))
         || !Link(TargetLevelsGet, OverlayTargetLevelsVariableName, TargetLevelGet, TEXT("TargetArray"))
         || !Link(ForEachTarget, TEXT("Array Index"), TargetLevelGet, TEXT("Index"))
         || !Link(TargetLevelGet, TEXT("Item"), BuildLevelText, TEXT("InInt"))
@@ -1204,6 +1372,16 @@ bool BuildOverlay(
         || !Link(SelectWithLevel, UEdGraphSchema_K2::PN_ReturnValue, SelectLabel, TEXT("A"))
         || !Link(SelectWithoutLevel, UEdGraphSchema_K2::PN_ReturnValue, SelectLabel, TEXT("B"))
         || !Link(ShowLevelGet, OverlayShowLevelVariableName, SelectLabel, TEXT("bPickA"))
+        || !Link(TargetNameGet, TEXT("Item"), NameWithNewline, TEXT("A"))
+        || !SetPinDefault(NameWithNewline, TEXT("B"), TEXT("\n"))
+        || !Link(NameWithNewline, UEdGraphSchema_K2::PN_ReturnValue, NameAndMetadata, TEXT("A"))
+        || !Link(SelectLabel, UEdGraphSchema_K2::PN_ReturnValue, NameAndMetadata, TEXT("B"))
+        || !Link(NameAndMetadata, UEdGraphSchema_K2::PN_ReturnValue, SelectNameLabel, TEXT("A"))
+        || !Link(TargetNameGet, TEXT("Item"), SelectNameLabel, TEXT("B"))
+        || !Link(MetadataEnabled, UEdGraphSchema_K2::PN_ReturnValue, SelectNameLabel, TEXT("bPickA"))
+        || !Link(SelectNameLabel, UEdGraphSchema_K2::PN_ReturnValue, SelectFinalLabel, TEXT("A"))
+        || !Link(SelectLabel, UEdGraphSchema_K2::PN_ReturnValue, SelectFinalLabel, TEXT("B"))
+        || !Link(VisibleNameEnabled, UEdGraphSchema_K2::PN_ReturnValue, SelectFinalLabel, TEXT("bPickA"))
         // __DEPRECATED_20260716__ [reason: UE 5.1 StandardMacros exposes this pin as LoopBody]
         // || !Link(ForEachTarget, TEXT("Loop Body"), TargetBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(ForEachTarget, TEXT("LoopBody"), TargetBranch, UEdGraphSchema_K2::PN_Execute)
@@ -1224,11 +1402,11 @@ bool BuildOverlay(
         || !Link(Project, UEdGraphSchema_K2::PN_ReturnValue, ProjectBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(ProjectBranch, UEdGraphSchema_K2::PN_Then, PaintSequence, UEdGraphSchema_K2::PN_Execute)
         || !Link(PaintSequence, TEXT("Then_0"), LabelEnabledBranch, UEdGraphSchema_K2::PN_Execute)
-        || !Link(LabelEnabledBranch, UEdGraphSchema_K2::PN_Then, DrawText, UEdGraphSchema_K2::PN_Execute)
+        || !Link(OutlineExecTail, UEdGraphSchema_K2::PN_Then, DrawText, UEdGraphSchema_K2::PN_Execute)
         || !Link(PaintSequence, TEXT("Then_1"), TopGuideEnabledBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(TopGuideEnabledBranch, UEdGraphSchema_K2::PN_Then, DrawLine, UEdGraphSchema_K2::PN_Execute)
         || !Link(OnPaint, TEXT("Context"), DrawText, TEXT("Context"))
-        || !Link(SelectLabel, UEdGraphSchema_K2::PN_ReturnValue, DrawText, TEXT("InString"))
+        || !Link(SelectFinalLabel, UEdGraphSchema_K2::PN_ReturnValue, DrawText, TEXT("InString"))
         || !Link(Project, TEXT("ScreenPosition"), LabelPosition, TEXT("A"))
         || !Link(MakeLabelOffset, UEdGraphSchema_K2::PN_ReturnValue, LabelPosition, TEXT("B"))
         || !Link(LabelPosition, UEdGraphSchema_K2::PN_ReturnValue, DrawText, TEXT("Position"))
@@ -1306,6 +1484,7 @@ bool PrepareModActorControls(UBlueprint* Blueprint) {
         || !EnsureMemberVariable(Blueprint, DistanceMaxVariableName, IntPin(), TEXT("330"))
         || !EnsureMemberVariable(Blueprint, DisplayTargetLimitVariableName, IntPin(), TEXT("64"))
         || !EnsureMemberVariable(Blueprint, ShowTopGuideLineVariableName, BoolPin(), TEXT("true"))
+        || !EnsureMemberVariable(Blueprint, ShowNameVariableName, BoolPin(), TEXT("true"))
         || !EnsureMemberVariable(Blueprint, ShowLevelVariableName, BoolPin(), TEXT("true"))
         || !EnsureMemberVariable(Blueprint, ShowDistanceVariableName, BoolPin(), TEXT("true"))
         || !EnsureMemberVariable(Blueprint, GenderFilterIdVariableName, IntPin(), TEXT("0"))) {
@@ -1970,30 +2149,43 @@ bool BuildPanelNumericEventV2(
     int32 Y) {
     UEdGraph* Graph = EventGraph(Blueprint);
     UK2Node_ComponentBoundEvent* SliderEvent = AddSliderValueChangedEvent(Blueprint, Control.Slider, -1500, Y);
-    UK2Node_VariableGet* SliderBridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1240, Y + 160);
     UK2Node_VariableGet* SpinBoxGet = AddVariableGet(Graph, Control.SpinBox->GetFName(), -1240, Y + 280);
     UK2Node_CallFunction* SyncSpinBox = AddStaticCall(Graph, USpinBox::StaticClass(), TEXT("SetValue"), -980, Y);
-    UK2Node_CallFunction* SliderRound = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Round"), -980, Y + 160);
-    UK2Node_VariableSet* SliderStore = AddExternalVariableSet(Graph, VariableName, ModActorClass, -700, Y);
-    UEdGraphNode* SliderExecTail = SliderStore;
-    if (!Graph || !SliderEvent || !SliderBridgeGet || !SpinBoxGet || !SyncSpinBox || !SliderRound || !SliderStore
+    if (!Graph || !SliderEvent || !SpinBoxGet || !SyncSpinBox
         || !Link(SliderEvent, UEdGraphSchema_K2::PN_Then, SyncSpinBox, UEdGraphSchema_K2::PN_Execute)
         || !Link(SliderEvent, TEXT("Value"), SyncSpinBox, TEXT("NewValue"))
-        || !Link(SpinBoxGet, Control.SpinBox->GetFName(), SyncSpinBox, UEdGraphSchema_K2::PN_Self)
-        || !Link(SliderEvent, TEXT("Value"), SliderRound, TEXT("A"))
-        || !Link(SyncSpinBox, UEdGraphSchema_K2::PN_Then, SliderStore, UEdGraphSchema_K2::PN_Execute)
-        || !Link(SliderRound, UEdGraphSchema_K2::PN_ReturnValue, SliderStore, VariableName)
-        || !Link(SliderBridgeGet, PanelBridgeVariableName, SliderStore, UEdGraphSchema_K2::PN_Self)
-        || !AppendRevisionIncrement(Graph, ModActorClass, SliderBridgeGet, SliderExecTail, -420, Y)) {
+        || !Link(SpinBoxGet, Control.SpinBox->GetFName(), SyncSpinBox, UEdGraphSchema_K2::PN_Self)) {
         return false;
     }
 
-    UK2Node_ComponentBoundEvent* SpinEvent = AddSpinBoxValueChangedEvent(Blueprint, Control.SpinBox, -1500, Y + 420);
+    auto BuildSliderCommit = [&](const FName& DelegateName, int32 CommitY) -> bool {
+        UK2Node_ComponentBoundEvent* CommitEvent = AddSliderCaptureEndEvent(
+            Blueprint, Control.Slider, DelegateName, -1500, CommitY);
+        UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1240, CommitY + 160);
+        UK2Node_VariableGet* SliderGet = AddVariableGet(Graph, Control.Slider->GetFName(), -1240, CommitY + 280);
+        UK2Node_CallFunction* GetValue = AddStaticCall(Graph, USlider::StaticClass(), TEXT("GetValue"), -980, CommitY + 160);
+        UK2Node_CallFunction* Round = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Round"), -700, CommitY + 160);
+        UK2Node_VariableSet* Store = AddExternalVariableSet(Graph, VariableName, ModActorClass, -420, CommitY);
+        UEdGraphNode* ExecTail = Store;
+        return CommitEvent && BridgeGet && SliderGet && GetValue && Round && Store
+            && Link(CommitEvent, UEdGraphSchema_K2::PN_Then, Store, UEdGraphSchema_K2::PN_Execute)
+            && Link(SliderGet, Control.Slider->GetFName(), GetValue, UEdGraphSchema_K2::PN_Self)
+            && Link(GetValue, UEdGraphSchema_K2::PN_ReturnValue, Round, TEXT("A"))
+            && Link(Round, UEdGraphSchema_K2::PN_ReturnValue, Store, VariableName)
+            && Link(BridgeGet, PanelBridgeVariableName, Store, UEdGraphSchema_K2::PN_Self)
+            && AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, ExecTail, -140, CommitY);
+    };
+    if (!BuildSliderCommit(GET_MEMBER_NAME_CHECKED(USlider, OnMouseCaptureEnd), Y + 420)
+        || !BuildSliderCommit(GET_MEMBER_NAME_CHECKED(USlider, OnControllerCaptureEnd), Y + 840)) {
+        return false;
+    }
+
+    UK2Node_ComponentBoundEvent* SpinEvent = AddSpinBoxValueCommittedEvent(Blueprint, Control.SpinBox, -1500, Y + 1260);
     UK2Node_VariableGet* SpinBridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1240, Y + 580);
     UK2Node_VariableGet* SliderGet = AddVariableGet(Graph, Control.Slider->GetFName(), -1240, Y + 700);
-    UK2Node_CallFunction* SyncSlider = AddStaticCall(Graph, USlider::StaticClass(), TEXT("SetValue"), -980, Y + 420);
+    UK2Node_CallFunction* SyncSlider = AddStaticCall(Graph, USlider::StaticClass(), TEXT("SetValue"), -980, Y + 1260);
     UK2Node_CallFunction* SpinRound = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Round"), -980, Y + 580);
-    UK2Node_VariableSet* SpinStore = AddExternalVariableSet(Graph, VariableName, ModActorClass, -700, Y + 420);
+    UK2Node_VariableSet* SpinStore = AddExternalVariableSet(Graph, VariableName, ModActorClass, -700, Y + 1260);
     UEdGraphNode* SpinExecTail = SpinStore;
     if (!SpinEvent || !SpinBridgeGet || !SliderGet || !SyncSlider || !SpinRound || !SpinStore
         || !Link(SpinEvent, UEdGraphSchema_K2::PN_Then, SyncSlider, UEdGraphSchema_K2::PN_Execute)
@@ -2003,7 +2195,7 @@ bool BuildPanelNumericEventV2(
         || !Link(SyncSlider, UEdGraphSchema_K2::PN_Then, SpinStore, UEdGraphSchema_K2::PN_Execute)
         || !Link(SpinRound, UEdGraphSchema_K2::PN_ReturnValue, SpinStore, VariableName)
         || !Link(SpinBridgeGet, PanelBridgeVariableName, SpinStore, UEdGraphSchema_K2::PN_Self)
-        || !AppendRevisionIncrement(Graph, ModActorClass, SpinBridgeGet, SpinExecTail, -420, Y + 420)) {
+        || !AppendRevisionIncrement(Graph, ModActorClass, SpinBridgeGet, SpinExecTail, -420, Y + 1260)) {
         return false;
     }
     return true;
@@ -2017,6 +2209,7 @@ bool BuildPanelInitializeControlsV2(
     const FPanelNumericControlV2& DistanceMax,
     UCheckBox* RuntimeEnabled,
     UCheckBox* ShowTopGuideLine,
+    UCheckBox* ShowName,
     UCheckBox* ShowLevel,
     UCheckBox* ShowDistance,
     UTextBlock* GenderStatus,
@@ -2033,9 +2226,11 @@ bool BuildPanelInitializeControlsV2(
             TPair<FName, FEdGraphPinType>(FName("DistanceMax"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("RuntimeEnabled"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowTopGuideLine"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowName"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin()),
-            TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin())
+            TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin())
         });
     }
     if (!Graph || !Event) {
@@ -2081,6 +2276,7 @@ bool BuildPanelInitializeControlsV2(
     const TArray<FBooleanInitializerV2> BooleanInitializers = {
         {RuntimeEnabled, TEXT("RuntimeEnabled")},
         {ShowTopGuideLine, TEXT("ShowTopGuideLine")},
+        {ShowName, TEXT("ShowName")},
         {ShowLevel, TEXT("ShowLevel")},
         {ShowDistance, TEXT("ShowDistance")},
     };
@@ -2154,7 +2350,8 @@ bool BuildPanelLanguageEvent(
     UClass* ModActorClass,
     int32 LanguageId,
     const TArray<FPanelTranslation>& Translations,
-    int32 Y) {
+    int32 Y,
+    const TArray<UButton*>* LanguageButtons = nullptr) {
     UEdGraph* Graph = EventGraph(Blueprint);
     UK2Node_ComponentBoundEvent* Event = AddButtonEvent(Blueprint, Button, -1400, Y);
     UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1160, Y + 120);
@@ -2180,7 +2377,95 @@ bool BuildPanelLanguageEvent(
         }
         X += 560;
     }
+    if (LanguageButtons
+        && !AppendPanelSegmentVisualsConstant(
+            Graph, *LanguageButtons, LanguageId, ExecTail, X, Y)) {
+        return false;
+    }
+    X += LanguageButtons ? LanguageButtons->Num() * 520 : 0;
     return AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, ExecTail, X, Y);
+}
+
+bool BuildPanelInitializeLanguage(
+    UWidgetBlueprint* Blueprint,
+    const TArray<FPanelTranslation>& Translations,
+    const TArray<UButton*>& LanguageButtons,
+    int32 Y) {
+    UEdGraph* Graph = EventGraph(Blueprint);
+    UK2Node_CustomEvent* Event = AddCustomEvent(
+        Blueprint,
+        Graph,
+        *PanelInitializeLanguageEventName.ToString(),
+        -1600,
+        Y,
+        {TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin())}
+    );
+    UK2Node_CallFunction* IsEnglish = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -1320, Y + 160);
+    UK2Node_CallFunction* IsChinese = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), -1040, Y + 160);
+    if (!Graph || !Event || !IsEnglish || !IsChinese
+        || !Link(Event, TEXT("LanguageId"), IsEnglish, TEXT("A"))
+        || !SetPinDefault(IsEnglish, TEXT("B"), TEXT("1"))
+        || !Link(IsEnglish, UEdGraphSchema_K2::PN_ReturnValue, IsChinese, TEXT("A"))) {
+        return false;
+    }
+
+    UEdGraphNode* ExecTail = Event;
+    int32 X = -760;
+    for (const FPanelTranslation& Translation : Translations) {
+        UK2Node_CallFunction* Select = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X, Y + 220);
+        UK2Node_CallFunction* ToText = AddStaticCall(
+            Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), X + 260, Y + 220);
+        UK2Node_VariableGet* TextGet = AddVariableGet(Graph, Translation.TextName, X + 260, Y + 380);
+        UK2Node_CallFunction* SetText = AddStaticCall(
+            Graph, UTextBlock::StaticClass(), TEXT("SetText"), X + 520, Y);
+        if (!Select || !ToText || !TextGet || !SetText
+            || !SetPinDefault(Select, TEXT("A"), Translation.English)
+            || !SetPinDefault(Select, TEXT("B"), Translation.Chinese)
+            || !Link(IsEnglish, UEdGraphSchema_K2::PN_ReturnValue, Select, TEXT("bPickA"))
+            || !Link(Select, UEdGraphSchema_K2::PN_ReturnValue, ToText, TEXT("InString"))
+            || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetText, UEdGraphSchema_K2::PN_Execute)
+            || !Link(TextGet, Translation.TextName, SetText, UEdGraphSchema_K2::PN_Self)
+            || !Link(ToText, UEdGraphSchema_K2::PN_ReturnValue, SetText, TEXT("InText"))) {
+            return false;
+        }
+        ExecTail = SetText;
+        X += 820;
+    }
+
+    if (LanguageButtons.Num() != 2) {
+        return false;
+    }
+    const TArray<UK2Node_CallFunction*> Conditions = {IsChinese, IsEnglish};
+    for (int32 Index = 0; Index < LanguageButtons.Num(); ++Index) {
+        UButton* Button = LanguageButtons[Index];
+        UK2Node_CallFunction* SelectAlpha = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectFloat"), X, Y + 220);
+        UK2Node_CallFunction* SelectColor = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("LinearColorLerp"), X + 260, Y + 220);
+        UK2Node_VariableGet* ButtonGet = Button
+            ? AddVariableGet(Graph, Button->GetFName(), X + 520, Y + 380)
+            : nullptr;
+        UK2Node_CallFunction* SetBackground = AddStaticCall(
+            Graph, UButton::StaticClass(), TEXT("SetBackgroundColor"), X + 780, Y);
+        if (!SelectAlpha || !SelectColor || !ButtonGet || !SetBackground
+            || !SetPinDefault(SelectAlpha, TEXT("A"), TEXT("1.0"))
+            || !SetPinDefault(SelectAlpha, TEXT("B"), TEXT("0.0"))
+            || !Link(Conditions[Index], UEdGraphSchema_K2::PN_ReturnValue, SelectAlpha, TEXT("bPickA"))
+            || !SetPinDefault(SelectColor, TEXT("A"), PanelV2Style::SurfaceRaised.ToString())
+            || !SetPinDefault(SelectColor, TEXT("B"), PanelV2Style::Accent.ToString())
+            || !Link(SelectAlpha, UEdGraphSchema_K2::PN_ReturnValue, SelectColor, TEXT("Alpha"))
+            || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetBackground, UEdGraphSchema_K2::PN_Execute)
+            || !Link(ButtonGet, Button->GetFName(), SetBackground, UEdGraphSchema_K2::PN_Self)
+            || !Link(SelectColor, UEdGraphSchema_K2::PN_ReturnValue, SetBackground, TEXT("InBackgroundColor"))) {
+            return false;
+        }
+        ExecTail = SetBackground;
+        X += 1040;
+    }
+    return true;
 }
 
 // __DEPRECATED_20260717__ [reason: replaced by the compact slider-and-toggle panel; retained for rollback]
@@ -2450,6 +2735,8 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     UTextBlock* StyleHeading = AddPanelTextV2(Blueprint, Content, TEXT("ESP_StyleHeadingText"), TEXT("显示"), 15);
     UCheckBox* TopGuide = AddPanelToggleV2(
         Blueprint, Content, TEXT("ESP_TopGuideRow"), TEXT("ESP_TopGuideText"), TEXT("ESP_TopGuideToggle"), TEXT("顶部引导线"), true);
+    UCheckBox* ShowName = AddPanelToggleV2(
+        Blueprint, Content, TEXT("ESP_ShowNameRow"), TEXT("ESP_ShowNameText"), TEXT("ESP_ShowNameToggle"), TEXT("姓名"), true);
     UCheckBox* ShowLevel = AddPanelToggleV2(
         Blueprint, Content, TEXT("ESP_ShowLevelRow"), TEXT("ESP_ShowLevelText"), TEXT("ESP_ShowLevelToggle"), TEXT("等级"), true);
     UCheckBox* ShowDistance = AddPanelToggleV2(
@@ -2510,6 +2797,8 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     UButton* English = LanguageRow
         ? AddPanelButtonV2(Blueprint, LanguageRow, TEXT("ESP_EnglishButton"), TEXT("ESP_EnglishText"), TEXT("English"))
         : nullptr;
+    ConfigurePanelSegmentButtonV2(Chinese, true);
+    ConfigurePanelSegmentButtonV2(English, false);
 
     UButton* AdvancedExpand = AddPanelButtonV2(
         Blueprint, Content, TEXT("ESP_AdvancedExpandButton"), TEXT("ESP_AdvancedExpandText"), TEXT("高级诊断"));
@@ -2564,7 +2853,7 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         ? AddPanelButtonV2(Blueprint, Advanced, TEXT("ESP_AdvancedCollapseButton"), TEXT("ESP_AdvancedCollapseText"), TEXT("收起"))
         : nullptr;
 
-    if (!Title || !RuntimeEnabled || !StyleHeading || !TopGuide || !ShowLevel || !ShowDistance
+    if (!Title || !RuntimeEnabled || !StyleHeading || !TopGuide || !ShowName || !ShowLevel || !ShowDistance
         || !FilterHeading || !DisplayLimit.Slider || !DisplayLimit.SpinBox || !LevelHeading
         || !LevelMin.Slider || !LevelMin.SpinBox || !LevelMax.Slider || !LevelMax.SpinBox
         || !DistanceMax.Slider || !DistanceMax.SpinBox || !GenderHeading || !GenderStatus || !GenderRow
@@ -2612,9 +2901,11 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
             TPair<FName, FEdGraphPinType>(FName("DistanceMax"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("RuntimeEnabled"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowTopGuideLine"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowName"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin()),
-            TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin())
+            TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin())
         }
     );
     if (!LegacyInitializeCompatibility || !PanelInitializeV2) {
@@ -2653,15 +2944,16 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     int32 Y = -1600;
     if (!BuildPanelBooleanEvent(Blueprint, RuntimeEnabled, ModActorClass, RuntimeEnabledVariableName, Y)
         || !BuildPanelBooleanEvent(Blueprint, TopGuide, ModActorClass, ShowTopGuideLineVariableName, Y + 360)
-        || !BuildPanelBooleanEvent(Blueprint, ShowLevel, ModActorClass, ShowLevelVariableName, Y + 720)
-        || !BuildPanelBooleanEvent(Blueprint, ShowDistance, ModActorClass, ShowDistanceVariableName, Y + 1080)
-        || !BuildPanelNumericEventV2(Blueprint, DisplayLimit, ModActorClass, DisplayTargetLimitVariableName, Y + 1440)
-        || !BuildPanelNumericEventV2(Blueprint, LevelMin, ModActorClass, LevelMinVariableName, Y + 2400)
-        || !BuildPanelNumericEventV2(Blueprint, LevelMax, ModActorClass, LevelMaxVariableName, Y + 3360)
-        || !BuildPanelNumericEventV2(Blueprint, DistanceMax, ModActorClass, DistanceMaxVariableName, Y + 4320)) {
+        || !BuildPanelBooleanEvent(Blueprint, ShowName, ModActorClass, ShowNameVariableName, Y + 720)
+        || !BuildPanelBooleanEvent(Blueprint, ShowLevel, ModActorClass, ShowLevelVariableName, Y + 1080)
+        || !BuildPanelBooleanEvent(Blueprint, ShowDistance, ModActorClass, ShowDistanceVariableName, Y + 1440)
+        || !BuildPanelNumericEventV2(Blueprint, DisplayLimit, ModActorClass, DisplayTargetLimitVariableName, Y + 1800)
+        || !BuildPanelNumericEventV2(Blueprint, LevelMin, ModActorClass, LevelMinVariableName, Y + 2760)
+        || !BuildPanelNumericEventV2(Blueprint, LevelMax, ModActorClass, LevelMaxVariableName, Y + 3720)
+        || !BuildPanelNumericEventV2(Blueprint, DistanceMax, ModActorClass, DistanceMaxVariableName, Y + 4680)) {
         return false;
     }
-    Y += 5400;
+    Y += 5760;
     auto Control = [&](UButton* Button, const TArray<FPanelControlAssignment>& Assignments, const FName& StatusName, const TCHAR* Status) {
         const bool bOk = BuildPanelControlEvent(Blueprint, Button, ModActorClass, Assignments, StatusName, Status, Y);
         Y += 360;
@@ -2692,7 +2984,7 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
 
     if (!BuildPanelInitializeControlsV2(
             Blueprint, DisplayLimit, LevelMin, LevelMax, DistanceMax,
-            RuntimeEnabled, TopGuide, ShowLevel, ShowDistance,
+            RuntimeEnabled, TopGuide, ShowName, ShowLevel, ShowDistance,
             GenderStatus, GenderButtons, Y, PanelInitializeV2)) {
         return false;
     }
@@ -2708,6 +3000,7 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         {TEXT("ESP_RuntimeText"), TEXT("启用 Mod"), TEXT("Enable Mod")},
         {TEXT("ESP_StyleHeadingText"), TEXT("显示"), TEXT("Display")},
         {TEXT("ESP_TopGuideText"), TEXT("顶部引导线"), TEXT("Top guide lines")},
+        {TEXT("ESP_ShowNameText"), TEXT("姓名"), TEXT("Name")},
         {TEXT("ESP_ShowLevelText"), TEXT("等级"), TEXT("Level")},
         {TEXT("ESP_ShowDistanceText"), TEXT("距离"), TEXT("Distance")},
         {TEXT("ESP_FilterHeadingText"), TEXT("筛选与数量"), TEXT("Filters & count")},
@@ -2730,8 +3023,10 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         {TEXT("ESP_CaptureStopText"), TEXT("停止采集"), TEXT("Stop capture")},
         {TEXT("ESP_AdvancedCollapseText"), TEXT("收起"), TEXT("Collapse")},
     };
-    if (!BuildPanelLanguageEvent(Blueprint, Chinese, ModActorClass, 0, Translations, Y)
-        || !BuildPanelLanguageEvent(Blueprint, English, ModActorClass, 1, Translations, Y + 720)) {
+    const TArray<UButton*> LanguageButtons = {Chinese, English};
+    if (!BuildPanelInitializeLanguage(Blueprint, Translations, LanguageButtons, Y)
+        || !BuildPanelLanguageEvent(Blueprint, Chinese, ModActorClass, 0, Translations, Y + 720, &LanguageButtons)
+        || !BuildPanelLanguageEvent(Blueprint, English, ModActorClass, 1, Translations, Y + 1440, &LanguageButtons)) {
         return false;
     }
 
@@ -2805,6 +3100,7 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     });
     UK2Node_CustomEvent* SetDisplayStyle = AddCustomEvent(Blueprint, Graph, TEXT("PalworldResourceESP_SetDisplayStyle"), -900, 1200, {
         TPair<FName, FEdGraphPinType>(FName("ShowTopGuideLine"), BoolPin()),
+        TPair<FName, FEdGraphPinType>(FName("ShowName"), BoolPin()),
         TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
         TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin()),
         TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin())
@@ -2844,6 +3140,7 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     // __DEPRECATED_20260717__ [reason: V2 initializes sliders and all visible toggle states]
     // UK2Node_CallFunction* InitializePanel = AddStaticCall(Graph, PanelClass, *PanelInitializeControlsEventName.ToString(), 1540, 1760);
     UK2Node_CallFunction* InitializePanel = AddStaticCall(Graph, PanelClass, *PanelInitializeControlsV2EventName.ToString(), 1540, 1760);
+    UK2Node_CallFunction* InitializeLanguage = AddStaticCall(Graph, PanelClass, *PanelInitializeLanguageEventName.ToString(), 1820, 1760);
     UK2Node_VariableGet* PanelDisplayLimit = AddVariableGet(Graph, DisplayTargetLimitVariableName, 1260, 2080);
     UK2Node_VariableGet* PanelLevelMin = AddVariableGet(Graph, LevelMinVariableName, 1540, 2080);
     UK2Node_VariableGet* PanelLevelMax = AddVariableGet(Graph, LevelMaxVariableName, 1820, 2080);
@@ -2855,15 +3152,17 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableGet* PanelRuntimeEnabled = AddVariableGet(Graph, RuntimeEnabledVariableName, 3220, 2080);
     UK2Node_VariableGet* PanelTopGuide = AddVariableGet(Graph, ShowTopGuideLineVariableName, 3500, 2080);
     UK2Node_VariableGet* PanelGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 3780, 2080);
+    UK2Node_VariableGet* PanelShowName = AddVariableGet(Graph, ShowNameVariableName, 4060, 2080);
+    UK2Node_VariableGet* PanelLanguage = AddVariableGet(Graph, LanguageIdVariableName, 4340, 2080);
     UK2Node_CallFunction* AddPanelToViewport = AddStaticCall(Graph, UUserWidget::StaticClass(), TEXT("AddToViewport"), 2100, 1760);
     UK2Node_VariableSet* ShowCursor = AddExternalVariableSet(Graph, TEXT("bShowMouseCursor"), APlayerController::StaticClass(), 2380, 1760);
     UK2Node_CallFunction* UiOnly = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("SetInputMode_UIOnlyEx"), 2660, 1760);
 
     if (!PanelGet || !PanelValid || !PanelBranch || !RemovePanel || !ClearPanel || !CloseController || !CloseWorldContext
         || !HideCursor || !GameOnly || !OpenController || !OpenWorldContext || !CreatePanel || !CastPanel || !StorePanel
-        || !SetPanelBridge || !ActorSelf || !InitializePanel || !PanelDisplayLimit || !PanelLevelMin
+        || !SetPanelBridge || !ActorSelf || !InitializePanel || !InitializeLanguage || !PanelDisplayLimit || !PanelLevelMin
         || !PanelLevelMax || !PanelDistanceMax || !PanelShowLevel || !PanelShowDistance
-        || !PanelRuntimeEnabled || !PanelTopGuide || !PanelGenderFilter
+        || !PanelRuntimeEnabled || !PanelTopGuide || !PanelGenderFilter || !PanelShowName || !PanelLanguage
         || !AddPanelToViewport || !ShowCursor || !UiOnly
         || !SetClassPin(CreatePanel, TEXT("WidgetType"), PanelClass)
         || !SetPinDefault(CloseController, TEXT("PlayerIndex"), TEXT("0"))
@@ -2904,10 +3203,15 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(PanelDistanceMax, DistanceMaxVariableName, InitializePanel, TEXT("DistanceMax"))
         || !Link(PanelRuntimeEnabled, RuntimeEnabledVariableName, InitializePanel, TEXT("RuntimeEnabled"))
         || !Link(PanelTopGuide, ShowTopGuideLineVariableName, InitializePanel, TEXT("ShowTopGuideLine"))
+        || !Link(PanelShowName, ShowNameVariableName, InitializePanel, TEXT("ShowName"))
         || !Link(PanelShowLevel, ShowLevelVariableName, InitializePanel, TEXT("ShowLevel"))
         || !Link(PanelShowDistance, ShowDistanceVariableName, InitializePanel, TEXT("ShowDistance"))
         || !Link(PanelGenderFilter, GenderFilterIdVariableName, InitializePanel, TEXT("GenderFilterId"))
-        || !Link(InitializePanel, UEdGraphSchema_K2::PN_Then, AddPanelToViewport, UEdGraphSchema_K2::PN_Execute)
+        || !Link(PanelLanguage, LanguageIdVariableName, InitializePanel, TEXT("LanguageId"))
+        || !Link(InitializePanel, UEdGraphSchema_K2::PN_Then, InitializeLanguage, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, InitializeLanguage, UEdGraphSchema_K2::PN_Self)
+        || !Link(PanelLanguage, LanguageIdVariableName, InitializeLanguage, TEXT("LanguageId"))
+        || !Link(InitializeLanguage, UEdGraphSchema_K2::PN_Then, AddPanelToViewport, UEdGraphSchema_K2::PN_Execute)
         || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, AddPanelToViewport, UEdGraphSchema_K2::PN_Self)
         || !Link(AddPanelToViewport, UEdGraphSchema_K2::PN_Then, ShowCursor, UEdGraphSchema_K2::PN_Execute)
         || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, ShowCursor, UEdGraphSchema_K2::PN_Self)
@@ -2930,6 +3234,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_CallFunction* AddNewTarget = AddStaticCall(Graph, OverlayClass, *OverlayAddTargetEventName.ToString(), 1260, 760);
     UK2Node_VariableGet* ExistingTopGuideEnabled = AddVariableGet(Graph, ShowTopGuideLineVariableName, 420, 360);
     UK2Node_VariableSet* StoreExistingTopGuideEnabled = AddExternalVariableSet(Graph, OverlayTopGuideEnabledVariableName, OverlayClass, 700, 360);
+    UK2Node_VariableGet* ExistingShowName = AddVariableGet(Graph, ShowNameVariableName, 700, 200);
+    UK2Node_VariableSet* StoreExistingShowName = AddExternalVariableSet(Graph, OverlayShowNameVariableName, OverlayClass, 980, 200);
     UK2Node_VariableGet* ExistingShowLevel = AddVariableGet(Graph, ShowLevelVariableName, 700, 280);
     UK2Node_VariableSet* StoreExistingShowLevel = AddExternalVariableSet(Graph, OverlayShowLevelVariableName, OverlayClass, 980, 360);
     UK2Node_VariableGet* ExistingShowDistance = AddVariableGet(Graph, ShowDistanceVariableName, 980, 280);
@@ -2942,6 +3248,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreExistingGenderDiagnosticCode = AddVariableSet(Graph, BridgeGenderDiagnosticCodeVariableName, 980, 520);
     UK2Node_VariableGet* NewTopGuideEnabled = AddVariableGet(Graph, ShowTopGuideLineVariableName, 1540, 560);
     UK2Node_VariableSet* StoreNewTopGuideEnabled = AddExternalVariableSet(Graph, OverlayTopGuideEnabledVariableName, OverlayClass, 1820, 560);
+    UK2Node_VariableGet* NewShowName = AddVariableGet(Graph, ShowNameVariableName, 1820, 400);
+    UK2Node_VariableSet* StoreNewShowName = AddExternalVariableSet(Graph, OverlayShowNameVariableName, OverlayClass, 2100, 400);
     UK2Node_VariableGet* NewShowLevel = AddVariableGet(Graph, ShowLevelVariableName, 1820, 480);
     UK2Node_VariableSet* StoreNewShowLevel = AddExternalVariableSet(Graph, OverlayShowLevelVariableName, OverlayClass, 2100, 560);
     UK2Node_VariableGet* NewShowDistance = AddVariableGet(Graph, ShowDistanceVariableName, 2100, 480);
@@ -2954,11 +3262,13 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreNewGenderDiagnosticCode = AddVariableSet(Graph, BridgeGenderDiagnosticCodeVariableName, 2100, 720);
     if (!OverlayGet || !OverlayValid || !OverlayBranch || !CreateWidget || !CastOverlay || !StoreOverlay || !AddToViewport
         || !AddExistingTarget || !AddNewTarget || !ExistingTopGuideEnabled || !StoreExistingTopGuideEnabled
+        || !ExistingShowName || !StoreExistingShowName
         || !ExistingShowLevel || !StoreExistingShowLevel || !ExistingShowDistance || !StoreExistingShowDistance
         || !ExistingGenderFilter || !StoreExistingGenderFilter
         || !ExistingGenderDiagnostic || !StoreExistingGenderDiagnostic
         || !ExistingGenderDiagnosticCode || !StoreExistingGenderDiagnosticCode
-        || !NewTopGuideEnabled || !StoreNewTopGuideEnabled || !NewShowLevel || !StoreNewShowLevel
+        || !NewTopGuideEnabled || !StoreNewTopGuideEnabled || !NewShowName || !StoreNewShowName
+        || !NewShowLevel || !StoreNewShowLevel
         || !NewShowDistance || !StoreNewShowDistance || !NewGenderFilter || !StoreNewGenderFilter
         || !NewGenderDiagnostic || !StoreNewGenderDiagnostic
         || !NewGenderDiagnosticCode || !StoreNewGenderDiagnosticCode
@@ -2986,7 +3296,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(AddExistingTarget, UEdGraphSchema_K2::PN_Then, StoreExistingTopGuideEnabled, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingTopGuideEnabled, ShowTopGuideLineVariableName, StoreExistingTopGuideEnabled, OverlayTopGuideEnabledVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingTopGuideEnabled, UEdGraphSchema_K2::PN_Self)
-        || !Link(StoreExistingTopGuideEnabled, UEdGraphSchema_K2::PN_Then, StoreExistingShowLevel, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreExistingTopGuideEnabled, UEdGraphSchema_K2::PN_Then, StoreExistingShowName, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ExistingShowName, ShowNameVariableName, StoreExistingShowName, OverlayShowNameVariableName)
+        || !Link(OverlayGet, OverlayVariableName, StoreExistingShowName, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreExistingShowName, UEdGraphSchema_K2::PN_Then, StoreExistingShowLevel, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingShowLevel, ShowLevelVariableName, StoreExistingShowLevel, OverlayShowLevelVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingShowLevel, UEdGraphSchema_K2::PN_Self)
         || !Link(StoreExistingShowLevel, UEdGraphSchema_K2::PN_Then, StoreExistingShowDistance, UEdGraphSchema_K2::PN_Execute)
@@ -3004,7 +3317,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(AddNewTarget, UEdGraphSchema_K2::PN_Then, StoreNewTopGuideEnabled, UEdGraphSchema_K2::PN_Execute)
         || !Link(NewTopGuideEnabled, ShowTopGuideLineVariableName, StoreNewTopGuideEnabled, OverlayTopGuideEnabledVariableName)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewTopGuideEnabled, UEdGraphSchema_K2::PN_Self)
-        || !Link(StoreNewTopGuideEnabled, UEdGraphSchema_K2::PN_Then, StoreNewShowLevel, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreNewTopGuideEnabled, UEdGraphSchema_K2::PN_Then, StoreNewShowName, UEdGraphSchema_K2::PN_Execute)
+        || !Link(NewShowName, ShowNameVariableName, StoreNewShowName, OverlayShowNameVariableName)
+        || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewShowName, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreNewShowName, UEdGraphSchema_K2::PN_Then, StoreNewShowLevel, UEdGraphSchema_K2::PN_Execute)
         || !Link(NewShowLevel, ShowLevelVariableName, StoreNewShowLevel, OverlayShowLevelVariableName)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewShowLevel, UEdGraphSchema_K2::PN_Self)
         || !Link(StoreNewShowLevel, UEdGraphSchema_K2::PN_Then, StoreNewShowDistance, UEdGraphSchema_K2::PN_Execute)
@@ -3027,10 +3343,11 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_CallFunction* StyleOverlayValid = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("IsValid"), -380, 2440);
     UK2Node_IfThenElse* StyleOverlayBranch = AddBranch(Graph, -120, 2320);
     UK2Node_VariableSet* StyleTopGuide = AddExternalVariableSet(Graph, OverlayTopGuideEnabledVariableName, OverlayClass, 140, 2320);
-    UK2Node_VariableSet* StyleLevel = AddExternalVariableSet(Graph, OverlayShowLevelVariableName, OverlayClass, 420, 2320);
-    UK2Node_VariableSet* StyleDistance = AddExternalVariableSet(Graph, OverlayShowDistanceVariableName, OverlayClass, 700, 2320);
-    UK2Node_VariableSet* StyleGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 980, 2320);
-    if (!StyleOverlayGet || !StyleOverlayValid || !StyleOverlayBranch || !StyleTopGuide || !StyleLevel || !StyleDistance
+    UK2Node_VariableSet* StyleName = AddExternalVariableSet(Graph, OverlayShowNameVariableName, OverlayClass, 420, 2320);
+    UK2Node_VariableSet* StyleLevel = AddExternalVariableSet(Graph, OverlayShowLevelVariableName, OverlayClass, 700, 2320);
+    UK2Node_VariableSet* StyleDistance = AddExternalVariableSet(Graph, OverlayShowDistanceVariableName, OverlayClass, 980, 2320);
+    UK2Node_VariableSet* StyleGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 1260, 2320);
+    if (!StyleOverlayGet || !StyleOverlayValid || !StyleOverlayBranch || !StyleTopGuide || !StyleName || !StyleLevel || !StyleDistance
         || !StyleGenderFilter
         || !Link(SetDisplayStyle, UEdGraphSchema_K2::PN_Then, StyleOverlayBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleOverlayValid, TEXT("Object"))
@@ -3038,7 +3355,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StyleOverlayBranch, UEdGraphSchema_K2::PN_Then, StyleTopGuide, UEdGraphSchema_K2::PN_Execute)
         || !Link(SetDisplayStyle, TEXT("ShowTopGuideLine"), StyleTopGuide, OverlayTopGuideEnabledVariableName)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleTopGuide, UEdGraphSchema_K2::PN_Self)
-        || !Link(StyleTopGuide, UEdGraphSchema_K2::PN_Then, StyleLevel, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StyleTopGuide, UEdGraphSchema_K2::PN_Then, StyleName, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SetDisplayStyle, TEXT("ShowName"), StyleName, OverlayShowNameVariableName)
+        || !Link(StyleOverlayGet, OverlayVariableName, StyleName, UEdGraphSchema_K2::PN_Self)
+        || !Link(StyleName, UEdGraphSchema_K2::PN_Then, StyleLevel, UEdGraphSchema_K2::PN_Execute)
         || !Link(SetDisplayStyle, TEXT("ShowLevel"), StyleLevel, OverlayShowLevelVariableName)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleLevel, UEdGraphSchema_K2::PN_Self)
         || !Link(StyleLevel, UEdGraphSchema_K2::PN_Then, StyleDistance, UEdGraphSchema_K2::PN_Execute)

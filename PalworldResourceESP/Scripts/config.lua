@@ -47,6 +47,7 @@ config.DRAW_MODE = "disabled"
 config.TOP_ANCHOR_Y = 28.0
 config.LINE_THICKNESS = 1.5
 config.SHOW_TOP_GUIDE_LINE = true
+config.SHOW_NAME = true
 config.SHOW_LEVEL = true
 config.SHOW_DISTANCE = true
 config.LINE_COLOR = {

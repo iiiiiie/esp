@@ -2,7 +2,7 @@
 
 ## Status
 
-- Implementation: wrapper-safe snapshots, live target distance, independent metadata visibility, numeric panel ranges, gender filtering, and capture tooling complete; gender/runtime regression pending
+- Implementation: wrapper-safe snapshots, live target distance, independent metadata visibility, numeric panel ranges, gender filtering, and capture tooling complete; slider/name/settings runtime regression pending
 - Maintainer-required environment: Steam PC single-player
 - Server environments: community pending and not a Phase 2 gate
 - Human player invariant: every runtime run must report `candidate_player_count=0`
@@ -17,9 +17,10 @@
 | Active UE4SS root | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss` |
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
-| LogicMod pak SHA-256 | `5C107B9E427DAB13FB5DC516FE17A86099DAEFE321B179F1315013DCD23C0251`; gender-selector-highlight checkpoint |
-| `main.lua` SHA-256 | `0F80D0C261B4A3E58926F7F4A37C75AB5027A0AEA26D32D6725D3A29881EE40F` |
-| `config.lua` SHA-256 | `8DFE28F204DF66F1F2E212665F2D23B0A6D1789DA118FCF56717B0F7A19699C9` |
+| LogicMod pak SHA-256 | `E4FC5A5DC70DCC0DC02B2B7EAB4431FC2F4398DB49B81A58F7F8CD4FE7438C3F`; slider/name/settings checkpoint |
+| `main.lua` SHA-256 | `5FA9C2AE907B0EDFC54EDC04EC6C3812CCDB192D4CAC926EB22230BD6C51CC63` |
+| `config.lua` SHA-256 | `00C56472CC7B2BBA2A7BA1488093EEB3C6B0C2D9BB5DE3B0E9B8A0881763F33E` |
+| `user_settings.lua` SHA-256 | `3E123871CAD66C6CF4B073CAFA07BA612C98C49EFD30B83FB5D835FAE55D4ECA` |
 | Newest recorded crash | `2026-07-17 15:07:26`, `UECC-Windows-226A46F0425C013D3C68EAA1329F05E1_0000`; delayed-wrapper reconcile during movement |
 | Runtime baseline backup | `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp_backups/20260716_entity_core_baseline` |
 
@@ -29,7 +30,7 @@ Record final source hashes and the implementation commit immediately before the 
 
 | ID | Check | Required result | Status | Evidence |
 |---|---|---|---|---|
-| AT-01 | Lua parser | Every shipped and test Lua file parses as Lua 5.3 | Pass | `npm test` parsed 14 files |
+| AT-01 | Lua parser | Every shipped and test Lua file parses as Lua 5.3 | Pass | `npm test` parsed 16 files |
 | AT-02 | Pure core isolation | Core modules contain no UE4SS runtime globals | Pass | Test runner static check passed |
 | AT-03 | Snapshot cells | Only finite scalars or scalar lists can be `known` | Pass | Opaque-value test rejects a function value |
 | AT-04 | Generation lifecycle | Replacement drops the old lookup; clear does not dereference actors | Pass | Snapshot generation and teardown tests pass |
@@ -49,13 +50,16 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-18 | Capture segmentation | Concatenated UE4SS markers and PresentMon absolute timestamps split by mode with a 2-second transition exclusion | Pass | Synthetic parser plus 31-frame end-to-end segmented analysis pass |
 | AT-19 | Panel range filters | Level endpoints compose with a fixed 0m distance lower bound; unavailable fields remain fail-closed | Pass | Stubbed runtime ignores legacy `ESP_DistanceMin=999`, clamps the maximum to 330m, and validates both 0-0m and 0-330m ranges |
 | AT-20 | Top-guide style control | The panel boolean round-trips through scalar polling without resubmitting snapshot Actors | Pass | Stubbed runtime records both hidden and shown actor-free style transitions |
-| AT-21 | LogicMod package | Generated package contains exactly five `.uasset` and five `.uexp` files with no runtime DLL | Pass | Clean Cook completed 408/408 with 0 errors; UnrealPak lists 10 files, 0 DLL, SHA-256 `5C107B9E427DAB13FB5DC516FE17A86099DAEFE321B179F1315013DCD23C0251` |
+| AT-21 | LogicMod package | Generated package contains exactly five `.uasset` and five `.uexp` files with no runtime DLL | Pass | Clean Cook completed 408/408 with 0 errors; UnrealPak lists 10 files, 0 DLL, SHA-256 `E4FC5A5DC70DCC0DC02B2B7EAB4431FC2F4398DB49B81A58F7F8CD4FE7438C3F` |
 | AT-22 | Target display metadata | The exact Entity Core level and rounded snapshot distance accompany each submitted target | Pass | Stubbed bridge receives level 1 and distance 1m for the first synthetic target |
 | AT-23 | Numeric panel controls | Slider plus exact numeric input preserves scalar polling for level endpoints, 0-330m maximum distance, and the 1-100 display limit | Pass | Stubbed runtime reduces five displayed targets to three, clamps an attempted 999-target limit to 100, and restores the configured limit |
 | AT-24 | Metadata visibility | Level and distance booleans round-trip independently through the actor-free style bridge | Pass | Stub records hidden and shown combinations without resubmitting snapshot Actors |
 | AT-25 | Live distance graph | Overlay computes meters from current player and target locations during each paint pass | Pass | Generator links `GetPlayerPawn`, both live Actor locations, `Vector_Distance`, meter conversion, and integer text; final Blueprint statuses are warning-only/up-to-date |
 | AT-26 | Gender filter bridge | Scalar all/male/female control reaches Blueprint without resubmitting Actors; invalid selectors clamp to female | Pass | Stub records `0/1/2`, generator stores one normalized gender code per admitted target, and OnPaint filters before projection |
 | AT-27 | Gender selector visual state | Click and panel initialization set exactly one segment to the green accent and reset the other two | Pass | Generated panel graph uses `SetBackgroundColor` on all three segments in every click path, clamps initialization to `0..2`, and derives colors from `GenderFilterId`; Blueprint compiles with status 3 |
+| AT-28 | Versioned local settings | Only whitelisted bounded scalars round-trip; invalid lines fail closed; the last valid snapshot wins | Pass | Unit suite covers parsing, clamping, append format, path derivation, and coalesced runtime writes |
+| AT-29 | Slider deferred commit | Slider movement only updates the paired SpinBox; mouse/controller release and SpinBox commit each increment once | Pass | Source contract test passes; regenerated panel compiles with status 3 and clean Cook completes with 0 errors |
+| AT-30 | Name and outlined labels | Blueprint nickname remains indexed with each target; name visibility is independent and text has a black outline | Pass | Overlay stores one nickname per target, compiles with status 5, and clean Cook completes with 0 errors; UE 5.1 outline uses four black offset draws plus white foreground |
 
 ## Performance Investigation
 
@@ -85,7 +89,9 @@ All three real runs passed capture cleanup, death cleanup, return to Title, norm
 | EC-10 | Performance | PresentMon A/B frame-time gates pass and Mod stage timings identify no over-budget callback | Pending | Chunked run reached `max_batch_ms=24`; standardized Mod-on/off captures are required |
 | EC-11 | Adapter extension | Synthetic second adapter changes no gate/filter/renderer module | Pass | Covered by AT-08 |
 | EC-12 | Normal exit | No new crash report; source and active deployment hashes match | Regression pending | Both pre-chunk runs exited normally; no crash newer than `09:56:11` |
-| EC-13 | Gender filtering | All shows both known genders; male/female modes show only matching targets; reopening the panel preserves the value and highlighted segment | Regression pending | Maintainer confirmed male/female filtering and normal exit; the first package failed to highlight the selected segment, and the rebuilt highlight path requires verification |
+| EC-13 | Gender filtering | All shows both known genders; male/female modes show only matching targets; reopening the panel preserves the value and highlighted segment | Pass | Maintainer confirmed filtering, selected-state highlighting, and normal exit. |
+| EC-14 | Slider commit and label rendering | Dragging remains responsive; release applies once; name/level/distance text is outlined and independently switchable | Pending | Current runtime package has not been tested. |
+| EC-15 | Settings restart | Last stable controls and language restore after a full restart; capture remains stopped | Pending | Current runtime package has not been tested. |
 
 ## Runtime Procedure
 
@@ -100,4 +106,4 @@ All three real runs passed capture cleanup, death cleanup, return to Title, norm
 
 ## Completion Rule
 
-ADR-0005 remains `Proposed` until EC-01 through EC-13 pass. After that evidence is recorded, change the ADR to `Accepted`, mark Phase 2 complete in the PRD, update source/deployment hashes, and make the Draft PR ready for review. Multiplayer remains community-pending.
+ADR-0005 remains `Proposed` until EC-01 through EC-15 pass. After that evidence is recorded, change the ADR to `Accepted`, mark Phase 2 complete in the PRD, update source/deployment hashes, and make the Draft PR ready for review. Multiplayer remains community-pending.

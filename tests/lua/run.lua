@@ -4,6 +4,7 @@ local specs = {
     "adapter_registry_spec",
     "pal_adapter_spec",
     "runtime_profiles_spec",
+    "user_settings_spec",
 }
 
 local passed = 0

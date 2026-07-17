@@ -96,7 +96,7 @@ The delayed chunking option is therefore rejected for the functional baseline. T
 
 ## Panel Interaction Amendment (2026-07-17)
 
-[Material slider](https://m3.material.io/components/sliders/overview), [Carbon slider](https://carbondesignsystem.com/components/slider/usage/), and [Carbon toggle](https://carbondesignsystem.com/components/toggle/usage/) guidance is applied to the generated UMG panel: sliders expose the complete supported range and take effect immediately, exact values remain editable beside the track, binary settings use one reversible toggle, and command actions remain buttons. UE 5.1 UMG has no native two-thumb RangeSlider, so the level range uses two compact synchronized Slider/SpinBox endpoint rows rather than a custom runtime widget.
+[Material slider](https://m3.material.io/components/sliders/overview), [Carbon slider](https://carbondesignsystem.com/components/slider/usage/), and [Carbon toggle](https://carbondesignsystem.com/components/toggle/usage/) guidance is applied to the generated UMG panel: sliders expose the complete supported range and preview their numeric value while dragging, then commit one scalar revision when mouse or controller capture ends. Exact SpinBox values commit once through `OnValueCommitted`. Binary settings use one reversible toggle, and command actions remain buttons. UE 5.1 UMG has no native two-thumb RangeSlider, so the level range uses two compact synchronized Slider/SpinBox endpoint rows rather than a custom runtime widget.
 
 ## Follow-ups
 
@@ -106,7 +106,7 @@ The delayed chunking option is therefore rejected for the functional baseline. T
 - [x] Validate Shift+Y button clicks and UI/game input restoration after the `UIOnlyEx` fix.
 - [x] Validate the V2 Slider/SpinBox synchronization, 1-100 target ceiling, fixed 0m distance lower bound, and 330m distance ceiling in Steam single-player.
 - [x] Validate all/male/female filtering in Steam single-player.
-- [ ] Validate selected-segment highlighting and restoration after reopening the panel.
+- [x] Validate selected-segment highlighting and restoration after reopening the panel.
 - [ ] Run forward and reverse fixed-view profile sequences with PresentMon.
 - [ ] Run one movement capture after a steady-state strategy passes.
 - [ ] Accept this ADR only after panel lifecycle, capture segmentation, and normal exit pass.

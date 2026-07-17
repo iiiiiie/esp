@@ -30,6 +30,33 @@ for (const file of luaFiles(path.join(runtimeRoot, "core"))) {
   }
 }
 
+const generatorPath = path.join(
+  root,
+  "tools",
+  "logicmod",
+  "ESPBlueprintAutomation",
+  "Source",
+  "ESPBlueprintAutomation",
+  "Private",
+  "ESPBlueprintAutomationLibrary.cpp",
+);
+const generatorSource = fs.readFileSync(generatorPath, "utf8");
+const numericStart = generatorSource.indexOf("bool BuildPanelNumericEventV2(");
+const numericEnd = generatorSource.indexOf("bool BuildPanelInitializeControlsV2(", numericStart);
+const numericSource = generatorSource.slice(numericStart, numericEnd);
+if (numericStart < 0 || numericEnd < 0
+    || !numericSource.includes("OnMouseCaptureEnd")
+    || !numericSource.includes("OnControllerCaptureEnd")
+    || !numericSource.includes("AddSpinBoxValueCommittedEvent")
+    || numericSource.includes("AddSpinBoxValueChangedEvent(Blueprint, Control.SpinBox")) {
+  throw new Error("V2 numeric controls do not use release/commit-only application");
+}
+if (!generatorSource.includes('TEXT("GetNickname")')
+    || !generatorSource.includes("const TArray<FVector2D> OutlineOffsets")
+    || !generatorSource.includes('TEXT("(R=0.0,G=0.0,B=0.0,A=1.0)")')) {
+  throw new Error("Blueprint name or outlined-label contract is incomplete");
+}
+
 const normalize = (value) => value.replaceAll("\\", "/");
 const packagePaths = [
   `${normalize(runtimeRoot)}/?.lua`,
@@ -53,6 +80,40 @@ local fake_time = 1000
 os.time = function()
     return fake_time
 end
+
+local runtime_settings_writes = {}
+local runtime_settings_snapshot = "v1 runtime_enabled=true profile_id=2 preset_id=1 language_id=0 level_min=0 level_max=0 distance_max=330 display_limit=64 show_top=true show_name=true show_level=true show_distance=true gender=0"
+PalworldResourceESPSettingsPath = "memory-user-settings.log"
+PalworldResourceESPSettingsIO = {
+    open = function(_, mode)
+        if mode == "r" then
+            local emitted = false
+            return {
+                lines = function()
+                    return function()
+                        if emitted then
+                            return nil
+                        end
+                        emitted = true
+                        return runtime_settings_snapshot
+                    end
+                end,
+                close = function() end,
+            }
+        end
+        if mode == "a" then
+            return {
+                write = function(_, value)
+                    runtime_settings_writes[#runtime_settings_writes + 1] = value
+                    return true
+                end,
+                flush = function() end,
+                close = function() end,
+            }
+        end
+        return nil, "unsupported_mode"
+    end,
+}
 
 local classes = {}
 StaticFindObject = function(path)
@@ -181,12 +242,14 @@ local bridge_actor = {
     ESP_ProfileId = 2,
     ESP_PresetId = 1,
     ESP_CaptureRequested = false,
+    ESP_LanguageId = 0,
     ESP_LevelMin = 0,
     ESP_LevelMax = 0,
     -- __DEPRECATED_20260717__ Legacy property remains only to prove the runtime ignores it.
     ESP_DistanceMin = 999,
     ESP_DistanceMax = 330,
     ESP_ShowTopGuideLine = true,
+    ESP_ShowName = true,
     ESP_ShowLevel = true,
     ESP_ShowDistance = true,
     ESP_GenderFilterId = 0,
@@ -208,9 +271,10 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
     }
 end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
-function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_level, show_distance, gender_filter_id)
+function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, gender_filter_id)
     bridge_style_payloads[#bridge_style_payloads + 1] = {
         show_top = show_top,
+        show_name = show_name,
         show_level = show_level,
         show_distance = show_distance,
         gender_filter_id = gender_filter_id,
@@ -253,6 +317,7 @@ assert(type(panel_keybind) == "function", "Shift+Y keybind was not captured")
 assert(panel_key == Key.Y, "panel keybind did not use Y")
 assert(panel_modifiers[1] == ModifierKey.SHIFT, "panel keybind did not require Shift")
 bridge_begin_play_hook(bridge_actor)
+assert(bridge_actor.ESP_ControlRevision == 1, "saved settings were not applied to the bridge")
 assert(#bridge_target_payloads == 4, "bridge did not receive all initial display payloads")
 assert(bridge_target_payloads[1].level == 1, "bridge level metadata did not match the snapshot")
 assert(bridge_target_payloads[1].distance_meters == 1, "bridge distance metadata did not match the snapshot")
@@ -399,6 +464,12 @@ bridge_actor.ESP_ShowLevel = false
 bridge_actor.ESP_ShowDistance = false
 bridge_actor.ESP_ControlRevision = 51
 reconcile_loop()
+bridge_actor.ESP_ShowName = false
+bridge_actor.ESP_ControlRevision = 511
+reconcile_loop()
+bridge_actor.ESP_ShowName = true
+bridge_actor.ESP_ControlRevision = 512
+reconcile_loop()
 bridge_actor.ESP_ShowLevel = true
 bridge_actor.ESP_ShowDistance = true
 bridge_actor.ESP_ControlRevision = 52
@@ -416,6 +487,8 @@ local top_guide_hidden_found = false
 local top_guide_shown_found = false
 local metadata_hidden_found = false
 local metadata_shown_found = false
+local name_hidden_found = false
+local name_shown_found = false
 local gender_male_found = false
 local gender_female_found = false
 local gender_clamped_found = false
@@ -426,6 +499,8 @@ for _, message in ipairs(runtime_logs) do
         or message:match("DISPLAY_STYLE.*show_level=false.*show_distance=false") ~= nil
     metadata_shown_found = metadata_shown_found
         or message:match("DISPLAY_STYLE.*show_level=true.*show_distance=true") ~= nil
+    name_hidden_found = name_hidden_found or message:match("DISPLAY_STYLE.*show_name=false") ~= nil
+    name_shown_found = name_shown_found or message:match("DISPLAY_STYLE.*show_name=true") ~= nil
     gender_male_found = gender_male_found or message:match("DISPLAY_STYLE.*gender_filter=male") ~= nil
     gender_female_found = gender_female_found or message:match("DISPLAY_STYLE.*gender_filter=female") ~= nil
     gender_clamped_found = gender_clamped_found
@@ -433,10 +508,12 @@ for _, message in ipairs(runtime_logs) do
 end
 assert(top_guide_hidden_found and top_guide_shown_found, "panel top-guide style did not round-trip")
 assert(metadata_hidden_found and metadata_shown_found, "panel metadata styles did not round-trip")
+assert(name_hidden_found and name_shown_found, "panel name style did not round-trip")
 assert(gender_male_found and gender_female_found, "panel gender filters did not round-trip")
 assert(gender_clamped_found, "invalid gender filter was not clamped")
 assert(#bridge_style_payloads >= 4, "display styles were not sent through the actor-free bridge event")
 assert(bridge_style_payloads[#bridge_style_payloads].gender_filter_id == 2, "gender filter clamp did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].show_name == true, "name style did not reach the bridge")
 print("Panel display styles passed")
 
 assert(type(load_map_pre_hook) == "function", "load-map pre-hook was not captured")
@@ -452,6 +529,9 @@ for _, message in ipairs(runtime_logs) do
     end
 end
 reconcile_loop()
+assert(#runtime_settings_writes == 1, "stable settings changes were not coalesced into one append")
+assert(runtime_settings_writes[1]:match("^v1 "), "saved settings did not use the versioned format")
+assert(runtime_settings_writes[1]:match("show_name=true"), "saved settings omitted the name toggle")
 assert(#delayed_callbacks == 0, "periodic reconcile retained actors in delayed callbacks")
 local scan_done_count_after = 0
 for _, message in ipairs(runtime_logs) do
@@ -478,6 +558,7 @@ if (status !== lua.LUA_OK) {
 
 console.log(`Parsed Lua files: ${files.length}`);
 console.log("Pure core runtime-global check passed");
+console.log("Blueprint slider/name/outline source contract passed");
 
 if (process.platform === "win32") {
   const performanceTests = path.join(root, "tests", "performance", "run-performance-tests.ps1");
