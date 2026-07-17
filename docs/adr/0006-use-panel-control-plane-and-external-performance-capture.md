@@ -23,12 +23,15 @@ Add a dedicated `WBP_ESPPanel` controlled by `Shift+Y` and keep it separate from
 - While open, the panel owns input through `UIOnlyEx`; closing restores `GameOnly`. Both transitions flush pending input.
 - The panel writes only scalar control properties and a monotonically increasing revision on the passive `ModActor`.
 - User-facing level, distance, and display-limit controls use integer SpinBox inputs. Level and distance use zero for an inactive bound; the display limit is clamped to 1-512.
-- Recreated panel widgets initialize their numeric controls from the passive `ModActor`; programmatic initialization still crosses only the Blueprint-to-Blueprint boundary.
+- Level and distance visibility use independent checkboxes. Recreated panel widgets initialize numeric and visibility controls from the passive `ModActor`; programmatic initialization still crosses only the Blueprint-to-Blueprint boundary.
+- Visible distance is computed from live player and target locations in the Blueprint paint pass. The snapshot distance remains the filter and ordering value.
 - Lua polls those properties every 250 ms and applies changes on the GameThread.
 - No panel option can bypass the registry-owned human-player rejection gate.
 - Runtime profiles are `off`, `snapshot_once`, `chunked_current`, and `event_first`.
-- During the experiment, `chunked_current` reconciles every 5 seconds in batches of two, while `event_first` performs a 30-second integrity reconciliation and admits notifications one at a time.
-- Profile transitions invalidate prior reconcile jobs and pending notification work before applying the new profile.
+- The internal profile IDs remain `off`, `snapshot_once`, `chunked_current`, and `event_first` for marker compatibility, but the UI labels profile 2 as `safe snapshot` after the chunking experiment was rejected.
+- Reconciliation normalizes every `FindAllOf` result before returning from the discovery callback. No UE4SS Actor wrapper may be retained in a delayed Lua admission job.
+- `event_first` treats construction notifications as dirty markers and starts a fresh safe snapshot on the next runtime tick; it never queues the notification's Actor wrapper.
+- Filter and display-limit changes rebuild a fresh snapshot. Actor-free style changes use `PalworldResourceESP_SetDisplayStyle` and do not resubmit old targets.
 - Capture buttons emit timestamped `PERF_SESSION_START`, `PERF_MODE_CHANGED`, and `PERF_SESSION_STOP` log markers.
 - A repository PowerShell companion controls PresentMon and writes benchmark data outside the repository. The packaged Mod never launches a process or adds a runtime DLL.
 - Fixed-view segmented captures measure steady-state behavior. A separate movement capture remains required for entity-streaming behavior.
@@ -74,13 +77,19 @@ Option 3 isolates benchmark modes without expanding runtime authority. Scalar po
 
 Positive effects:
 - The maintainer can run a complete segmented comparison from inside the game.
-- Runtime-off, render-only, current chunking, and event-first behavior can be compared in one process.
+- Runtime-off, render-only, safe-snapshot, and event-first behavior can be compared in one process.
 - Benchmark logs remain free of player identity and coordinates.
 
 Negative effects:
 - The panel and polling loop remain loaded when ESP discovery is off.
 - A separate fully-disabled launch is still needed to quantify that fixed control-plane overhead.
-- Event-first admission must retain the existing map-teardown and wrapper-lifetime safeguards.
+- Immediate admission can produce a larger single GameThread callback than chunking; performance optimization resumes only after the crash-free functional baseline is restored.
+
+## Runtime Safety Amendment (2026-07-17)
+
+Two movement runs crashed at `15:04:37` and `15:07:26` with the same GameThread stack hash `2FA5718AD4F57F6F86CD5562225EC795F904F1AE` and access address `0x000000010000201b`. In the latter run, the last completed events were repeated two-target snapshot synchronizations; the next two-Actor/16-ms reconcile had discovered 33 wrappers and had not completed its first admission batch. UE4SS `pcall` cannot contain this native failure.
+
+The delayed chunking option is therefore rejected for the functional baseline. This amendment favors wrapper lifetime safety over frame-time smoothing and follows ADR-0007's rule that a reproducible crash blocks feature work. A future performance design must avoid retaining UE4SS wrappers across callbacks, for example by moving the hot path into a native or Blueprint-owned representation.
 
 ## Follow-ups
 

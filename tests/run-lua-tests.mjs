@@ -186,10 +186,13 @@ local bridge_actor = {
     ESP_DistanceMin = 0,
     ESP_DistanceMax = 0,
     ESP_ShowTopGuideLine = true,
+    ESP_ShowLevel = true,
+    ESP_ShowDistance = true,
     ESP_DisplayTargetLimit = 64,
     ESP_BridgeGenderDiagnosticCode = 0,
 }
 local bridge_target_payloads = {}
+local bridge_style_payloads = {}
 function bridge_actor:GetClass()
     return bridge_class
 end
@@ -203,6 +206,13 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
     }
 end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
+function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_level, show_distance)
+    bridge_style_payloads[#bridge_style_payloads + 1] = {
+        show_top = show_top,
+        show_level = show_level,
+        show_distance = show_distance,
+    }
+end
 function bridge_actor:PalworldResourceESP_TogglePanel()
     panel_toggle_count = panel_toggle_count + 1
 end
@@ -223,26 +233,17 @@ print("Runtime entrypoint load passed")
 assert(type(reconcile_loop) == "function", "reconcile loop was not captured")
 delayed_callbacks = {}
 reconcile_loop()
-assert(#delayed_callbacks == 1, "first reconcile batch was not scheduled")
+assert(#delayed_callbacks == 0, "safe reconcile retained actors in delayed callbacks")
 
-local executed_callbacks = 0
-while #delayed_callbacks > 0 do
-    executed_callbacks = executed_callbacks + 1
-    assert(executed_callbacks <= 10, "reconcile batch queue did not terminate")
-    local callback = table.remove(delayed_callbacks, 1)
-    callback()
-end
-assert(executed_callbacks == 2, "expected two reconcile batches")
-
-local found_chunked_result = false
+local found_safe_result = false
 for _, message in ipairs(runtime_logs) do
-    if message:match("SCAN_DONE.*admitted=4.*batches=2") then
-        found_chunked_result = true
+    if message:match("RECONCILE_IMMEDIATE.*wrapper_lifetime_safety") then
+        found_safe_result = true
         break
     end
 end
-assert(found_chunked_result, "chunked reconcile result was not logged")
-print("Chunked reconcile stub passed")
+assert(found_safe_result, "wrapper-safe reconcile result was not logged")
+print("Wrapper-safe reconcile stub passed")
 
 assert(type(bridge_begin_play_hook) == "function", "bridge discovery hook was not captured")
 assert(type(panel_keybind) == "function", "Shift+Y keybind was not captured")
@@ -289,13 +290,11 @@ bridge_actor.ESP_RuntimeEnabled = true
 bridge_actor.ESP_ProfileId = 3
 bridge_actor.ESP_ControlRevision = 4
 reconcile_loop()
-while #delayed_callbacks > 0 do
-    local callback = table.remove(delayed_callbacks, 1)
-    callback()
-end
+assert(#delayed_callbacks == 0, "profile entry retained actors in delayed callbacks")
+monsters[#monsters + 1] = event_actor
 monster_notification(event_actor)
-assert(#delayed_callbacks == 1, "event-first notification did not schedule one queued admission")
-table.remove(delayed_callbacks, 1)()
+assert(#delayed_callbacks == 0, "event-first notification retained a UObject wrapper")
+reconcile_loop()
 
 local capture_start_found = false
 local capture_mode_found = false
@@ -305,11 +304,11 @@ for _, message in ipairs(runtime_logs) do
     capture_start_found = capture_start_found or message:match("PERF_SESSION_START") ~= nil
     capture_mode_found = capture_mode_found or message:match("PERF_MODE_CHANGED.*profile=off") ~= nil
     capture_stop_found = capture_stop_found or message:match("PERF_SESSION_STOP") ~= nil
-    event_admission_found = event_admission_found or message:match("ENTITY_SNAPSHOT.*source=notify_queue.*admitted=5") ~= nil
+    event_admission_found = event_admission_found or message:match("ENTITY_SNAPSHOT.*source=notify_integrity.*admitted=5") ~= nil
 end
 assert(capture_start_found and capture_mode_found and capture_stop_found, "capture markers were incomplete")
-assert(event_admission_found, "event-first queued actor was not admitted")
-print("Panel controls and event-first queue passed")
+assert(event_admission_found, "event-first safe snapshot did not admit the new actor")
+print("Panel controls and event-first safe snapshot passed")
 
 bridge_actor.ESP_RuntimeEnabled = true
 bridge_actor.ESP_ProfileId = 3
@@ -364,44 +363,55 @@ reconcile_loop()
 bridge_actor.ESP_ShowTopGuideLine = true
 bridge_actor.ESP_ControlRevision = 46
 reconcile_loop()
+bridge_actor.ESP_ShowLevel = false
+bridge_actor.ESP_ShowDistance = false
+bridge_actor.ESP_ControlRevision = 47
+reconcile_loop()
+bridge_actor.ESP_ShowLevel = true
+bridge_actor.ESP_ShowDistance = true
+bridge_actor.ESP_ControlRevision = 48
+reconcile_loop()
 local top_guide_hidden_found = false
 local top_guide_shown_found = false
+local metadata_hidden_found = false
+local metadata_shown_found = false
 for _, message in ipairs(runtime_logs) do
     top_guide_hidden_found = top_guide_hidden_found or message:match("DISPLAY_STYLE.*top_guide_line=false") ~= nil
     top_guide_shown_found = top_guide_shown_found or message:match("DISPLAY_STYLE.*top_guide_line=true") ~= nil
+    metadata_hidden_found = metadata_hidden_found
+        or message:match("DISPLAY_STYLE.*show_level=false.*show_distance=false") ~= nil
+    metadata_shown_found = metadata_shown_found
+        or message:match("DISPLAY_STYLE.*show_level=true.*show_distance=true") ~= nil
 end
 assert(top_guide_hidden_found and top_guide_shown_found, "panel top-guide style did not round-trip")
-print("Panel top-guide style passed")
+assert(metadata_hidden_found and metadata_shown_found, "panel metadata styles did not round-trip")
+assert(#bridge_style_payloads >= 4, "display styles were not sent through the actor-free bridge event")
+print("Panel display styles passed")
 
 assert(type(load_map_pre_hook) == "function", "load-map pre-hook was not captured")
 bridge_actor.ESP_ProfileId = 2
 bridge_actor.ESP_ControlRevision = 5
 reconcile_loop()
-while #delayed_callbacks > 0 do
-    local callback = table.remove(delayed_callbacks, 1)
-    callback()
-end
+assert(#delayed_callbacks == 0, "profile change retained actors in delayed callbacks")
 fake_time = fake_time + 6
+local scan_done_count_before = 0
+for _, message in ipairs(runtime_logs) do
+    if message:match("SCAN_DONE") then
+        scan_done_count_before = scan_done_count_before + 1
+    end
+end
 reconcile_loop()
-assert(#delayed_callbacks == 1, "cancellable reconcile batch was not scheduled")
-local scan_done_count_before_cancel = 0
+assert(#delayed_callbacks == 0, "periodic reconcile retained actors in delayed callbacks")
+local scan_done_count_after = 0
 for _, message in ipairs(runtime_logs) do
     if message:match("SCAN_DONE") then
-        scan_done_count_before_cancel = scan_done_count_before_cancel + 1
+        scan_done_count_after = scan_done_count_after + 1
     end
 end
+assert(scan_done_count_after == scan_done_count_before + 1, "periodic safe reconcile did not complete inline")
 load_map_pre_hook()
-local stale_callback = table.remove(delayed_callbacks, 1)
-stale_callback()
-
-local scan_done_count_after_cancel = 0
-for _, message in ipairs(runtime_logs) do
-    if message:match("SCAN_DONE") then
-        scan_done_count_after_cancel = scan_done_count_after_cancel + 1
-    end
-end
-assert(scan_done_count_after_cancel == scan_done_count_before_cancel, "cancelled reconcile committed a stale generation")
-print("Chunked reconcile cancellation passed")
+assert(#delayed_callbacks == 0, "map teardown left a stale actor callback")
+print("Wrapper-safe map teardown passed")
 `;
 
 const L = lauxlib.luaL_newstate();

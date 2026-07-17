@@ -11,6 +11,7 @@ local BRIDGE_METHOD_RESET_SESSION = "PalworldResourceESP_ResetSession"
 local BRIDGE_METHOD_SET_TARGET = "PalworldResourceESP_SetTarget"
 local BRIDGE_METHOD_CLEAR_TARGET = "PalworldResourceESP_ClearTarget"
 local BRIDGE_METHOD_TOGGLE_PANEL = "PalworldResourceESP_TogglePanel"
+local BRIDGE_METHOD_SET_DISPLAY_STYLE = "PalworldResourceESP_SetDisplayStyle"
 local BRIDGE_CLASS_FULL_NAME = "BlueprintGeneratedClass /Game/Mods/PalworldResourceESP/ModActor.ModActor_C"
 
 local CLASS_PATHS = {
@@ -152,6 +153,8 @@ local state = {
     control_pending_logged = false,
     panel_filter_key = "level:nil:nil;distance:nil:nil",
     show_top_guide_line = config.SHOW_TOP_GUIDE_LINE,
+    show_level = config.SHOW_LEVEL,
+    show_distance = config.SHOW_DISTANCE,
     panel_keybind_registered = false,
     panel_toggle_pending = false,
     panel_toggle_sequence = 0,
@@ -1608,6 +1611,37 @@ local function finish_reconcile_job(job)
     emit_metrics(false)
 end
 
+local function process_reconcile_immediately(job)
+    if not reconcile_job_is_current(job) then
+        abandon_reconcile_job(job, "stale_immediate_scan")
+        return false
+    end
+
+    local admission_started_at = os.clock()
+    for _, actor in ipairs(job.objects) do
+        local added_ok, added_error = pcall(function()
+            add_entity_candidate(actor, job.source, job.generation, job.context)
+        end)
+        if not added_ok then
+            log_event("ERROR_CANDIDATE", tostring(added_error))
+        end
+    end
+    local admission_seconds = os.clock() - admission_started_at
+    job.admission_seconds = admission_seconds
+    job.batch_count = #job.objects > 0 and 1 or 0
+    job.max_batch_seconds = admission_seconds
+    job.index = #job.objects + 1
+    state.metrics.admission_seconds = state.metrics.admission_seconds + admission_seconds
+    state.metrics.reconcile_batches = state.metrics.reconcile_batches + job.batch_count
+    state.metrics.reconcile_batch_max_seconds = math.max(
+        state.metrics.reconcile_batch_max_seconds,
+        admission_seconds
+    )
+    finish_reconcile_job(job)
+    return true
+end
+
+--[[ __DEPRECATED_20260717__ [reason: retaining UE4SS UObject wrappers across delayed callbacks caused GameThread access violations]
 local function schedule_reconcile_batch(job)
     if not reconcile_job_is_current(job) then
         abandon_reconcile_job(job, "stale_before_schedule")
@@ -1676,8 +1710,9 @@ process_reconcile_batch = function(job)
     end
     schedule_reconcile_batch(job)
 end
+]]
 
-local function start_chunked_reconcile(source)
+local function start_safe_reconcile(source)
     if state.reconcile_job ~= nil then
         state.metrics.reconcile_busy_skips = state.metrics.reconcile_busy_skips + 1
         debug_event("RECONCILE_SKIPPED", "reason=job_in_progress")
@@ -1727,14 +1762,15 @@ local function start_chunked_reconcile(source)
         finish_reconcile_job(job)
         return true
     end
-    debug_event("RECONCILE_CHUNKED", string.format(
-        "raw=%d batch_size=%d delay_ms=%d",
-        #objects,
-        job.batch_size,
-        job.batch_delay_ms
+    debug_event("RECONCILE_IMMEDIATE", string.format(
+        "raw=%d reason=wrapper_lifetime_safety",
+        #objects
     ))
-    return schedule_reconcile_batch(job)
+    return process_reconcile_immediately(job)
 end
+
+-- __DEPRECATED_20260717__ [reason: delayed chunking was replaced by same-callback wrapper-safe admission]
+local start_chunked_reconcile = start_safe_reconcile
 
 local function reconcile()
     if not runtime_enabled() then
@@ -1767,7 +1803,7 @@ local function reconcile()
     sync_bridge_target()
     emit_metrics(false)
     ]]
-    start_chunked_reconcile()
+    start_safe_reconcile()
 end
 
 local function reconcile_safely()
@@ -2127,7 +2163,7 @@ local function apply_runtime_profile(master_enabled, profile_id, preset_id, reas
     end
 
     if runtime_enabled() and state.gameplay_active and not state.world_transitioning then
-        start_chunked_reconcile("profile_enter")
+        start_safe_reconcile("profile_enter")
         if next_profile.reconcile_interval_ms > 0 then
             state.next_reconcile_at = now() + (next_profile.reconcile_interval_ms / 1000.0)
         end
@@ -2195,8 +2231,6 @@ local function apply_panel_filters(level_min_raw, level_max_raw, distance_min_ra
     end
     config.ACTIVE_FILTERS = { fields = fields }
     state.panel_filter_key = key
-    refresh_pipeline_output("panel_filter")
-    sync_bridge_target()
     log_event("FILTER_CONFIG", string.format(
         "level_min=%s level_max=%s distance_min=%s distance_max=%s",
         tostring(level_min),
@@ -2207,15 +2241,21 @@ local function apply_panel_filters(level_min_raw, level_max_raw, distance_min_ra
     return true
 end
 
-local function apply_display_styles(show_top_guide_line)
-    if show_top_guide_line == state.show_top_guide_line then
+local function apply_display_styles(show_top_guide_line, show_level, show_distance)
+    if show_top_guide_line == state.show_top_guide_line
+        and show_level == state.show_level
+        and show_distance == state.show_distance then
         return false
     end
     state.show_top_guide_line = show_top_guide_line
-    sync_bridge_target()
+    state.show_level = show_level
+    state.show_distance = show_distance
+    call_bridge(BRIDGE_METHOD_SET_DISPLAY_STYLE, show_top_guide_line, show_level, show_distance)
     log_event("DISPLAY_STYLE", string.format(
-        "top_guide_line=%s",
-        tostring(show_top_guide_line)
+        "top_guide_line=%s show_level=%s show_distance=%s",
+        tostring(show_top_guide_line),
+        tostring(show_level),
+        tostring(show_distance)
     ))
     return true
 end
@@ -2233,8 +2273,6 @@ local function apply_display_target_limit(raw_limit)
         return false
     end
     config.MAX_DISPLAY_TARGETS = limit
-    refresh_pipeline_output("panel_display_limit")
-    sync_bridge_target()
     log_event("DISPLAY_TARGET_LIMIT", string.format("value=%d", limit))
     return true
 end
@@ -2266,10 +2304,13 @@ local function poll_panel_controls()
     local distance_min = read_panel_number("ESP_DistanceMin")
     local distance_max = read_panel_number("ESP_DistanceMax")
     local show_top_guide_line = read_panel_boolean("ESP_ShowTopGuideLine")
+    local show_level = read_panel_boolean("ESP_ShowLevel")
+    local show_distance = read_panel_boolean("ESP_ShowDistance")
     local display_target_limit = read_panel_number("ESP_DisplayTargetLimit")
     if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil
         or level_min == nil or level_max == nil or distance_min == nil or distance_max == nil
-        or show_top_guide_line == nil or display_target_limit == nil then
+        or show_top_guide_line == nil or show_level == nil or show_distance == nil
+        or display_target_limit == nil then
         if not state.control_pending_logged then
             state.control_pending_logged = true
             debug_event("PANEL_CONTROL_PENDING", "reason=property_unavailable")
@@ -2279,9 +2320,13 @@ local function poll_panel_controls()
 
     state.control_pending_logged = false
     apply_runtime_profile(master_enabled, profile_id, preset_id, "panel_revision")
-    apply_panel_filters(level_min, level_max, distance_min, distance_max)
-    apply_display_styles(show_top_guide_line)
-    apply_display_target_limit(display_target_limit)
+    local filters_changed = apply_panel_filters(level_min, level_max, distance_min, distance_max)
+    apply_display_styles(show_top_guide_line, show_level, show_distance)
+    local limit_changed = apply_display_target_limit(display_target_limit)
+    if runtime_enabled() and state.gameplay_active and (filters_changed or limit_changed) then
+        clear_candidate_cache("panel_query_change")
+        start_safe_reconcile("panel_query_change")
+    end
     set_capture_active(capture_requested, "panel_revision")
     state.control_revision = revision
     debug_event("PANEL_CONTROL_APPLIED", string.format("revision=%d", revision))
@@ -2290,8 +2335,10 @@ end
 local function runtime_tick()
     poll_panel_controls()
 
-    if state.runtime_profile.event_admission and event_queue_has_pending() then
-        schedule_event_queue_process()
+    if state.runtime_profile.event_admission and state.notification_dirty
+        and state.gameplay_active and state.reconcile_job == nil then
+        state.notification_dirty = false
+        start_safe_reconcile("notify_integrity")
     end
     if not runtime_enabled() or state.world_transitioning then
         emit_metrics(false)
@@ -2448,7 +2495,7 @@ local function bootstrap(reason)
     local gameplay_active, inactive_reason = gameplay_world_available()
     state.gameplay_active = gameplay_active
     if gameplay_active and runtime_enabled() then
-        start_chunked_reconcile("bootstrap")
+        start_safe_reconcile("bootstrap")
         if state.runtime_profile.reconcile_interval_ms > 0 then
             state.next_reconcile_at = now() + (state.runtime_profile.reconcile_interval_ms / 1000.0)
         end
@@ -2625,17 +2672,13 @@ local function register_monster_notification()
             state.notification_dirty = true
             state.metrics.notifications_deferred = state.metrics.notifications_deferred + 1
             if state.runtime_profile.event_admission then
-                local pending = math.max(0, #state.event_queue - state.event_queue_head + 1)
-                if pending >= config.MAX_EVENT_QUEUE then
-                    state.metrics.event_queue_overflow = state.metrics.event_queue_overflow + 1
-                    if not state.event_queue_overflow_logged then
-                        state.event_queue_overflow_logged = true
-                        log_event("EVENT_QUEUE_OVERFLOW", string.format("limit=%d", config.MAX_EVENT_QUEUE))
-                    end
-                    return
+                -- __DEPRECATED_20260717__ [reason: queued UObject wrappers can expire before the delayed callback]
+                -- state.event_queue[#state.event_queue + 1] = constructed_object
+                -- schedule_event_queue_process()
+                if not state.notification_deferred_logged then
+                    state.notification_deferred_logged = true
+                    log_event("NOTIFY_DEFERRED", "mode=next_safe_snapshot")
                 end
-                state.event_queue[#state.event_queue + 1] = constructed_object
-                schedule_event_queue_process()
                 return
             end
             if not state.notification_deferred_logged then
