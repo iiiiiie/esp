@@ -79,7 +79,7 @@ Negative effects:
 
 ## Follow-ups
 
-- [ ] Implement the first Pal filter/data adapter baseline.
+- [x] Implement the first Pal filter/data adapter baseline with known level and reconciliation-time distance fields.
 - [ ] Keep stage timing and PresentMon capture available for each new adapter.
 - [ ] Add event-burst coalescing and bridge-set deduplication after the feature baseline.
 - [ ] Run fixed-view and movement benchmarks with identical target behavior before accepting an optimization.

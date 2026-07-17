@@ -150,6 +150,8 @@ local state = {
     profile_generation = 0,
     control_revision = -1,
     control_pending_logged = false,
+    panel_filter_key = "level:nil:nil;distance:nil:nil",
+    show_top_guide_line = config.SHOW_TOP_GUIDE_LINE,
     panel_keybind_registered = false,
     panel_toggle_pending = false,
     panel_toggle_sequence = 0,
@@ -2135,6 +2137,75 @@ local function read_panel_boolean(property_name)
     return value
 end
 
+local function normalize_panel_filter_bound(value, minimum, maximum)
+    if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
+        return nil
+    end
+    value = math.floor(value)
+    if value <= 0 then
+        return nil
+    end
+    return math.max(minimum, math.min(maximum, value))
+end
+
+local function apply_panel_filters(level_min_raw, level_max_raw, distance_min_raw, distance_max_raw)
+    local level_min = normalize_panel_filter_bound(level_min_raw, 1, 100)
+    local level_max = normalize_panel_filter_bound(level_max_raw, 1, 100)
+    local distance_min = normalize_panel_filter_bound(
+        distance_min_raw,
+        config.MIN_DISTANCE_M,
+        config.MAX_DISTANCE_M
+    )
+    local distance_max = normalize_panel_filter_bound(
+        distance_max_raw,
+        config.MIN_DISTANCE_M,
+        config.MAX_DISTANCE_M
+    )
+    local key = string.format(
+        "level:%s:%s;distance:%s:%s",
+        tostring(level_min),
+        tostring(level_max),
+        tostring(distance_min),
+        tostring(distance_max)
+    )
+    if key == state.panel_filter_key then
+        return false
+    end
+
+    local fields = {}
+    if level_min ~= nil or level_max ~= nil then
+        fields.level = { mode = "range", min = level_min, max = level_max }
+    end
+    if distance_min ~= nil or distance_max ~= nil then
+        fields.distance_m = { mode = "range", min = distance_min, max = distance_max }
+    end
+    config.ACTIVE_FILTERS = { fields = fields }
+    state.panel_filter_key = key
+    refresh_pipeline_output("panel_filter")
+    sync_bridge_target()
+    log_event("FILTER_CONFIG", string.format(
+        "level_min=%s level_max=%s distance_min=%s distance_max=%s",
+        tostring(level_min),
+        tostring(level_max),
+        tostring(distance_min),
+        tostring(distance_max)
+    ))
+    return true
+end
+
+local function apply_display_styles(show_top_guide_line)
+    if show_top_guide_line == state.show_top_guide_line then
+        return false
+    end
+    state.show_top_guide_line = show_top_guide_line
+    sync_bridge_target()
+    log_event("DISPLAY_STYLE", string.format(
+        "top_guide_line=%s",
+        tostring(show_top_guide_line)
+    ))
+    return true
+end
+
 local function poll_panel_controls()
     if not is_valid(state.bridge_actor) then
         return
@@ -2157,7 +2228,14 @@ local function poll_panel_controls()
     local profile_id = read_panel_number("ESP_ProfileId")
     local preset_id = read_panel_number("ESP_PresetId")
     local capture_requested = read_panel_boolean("ESP_CaptureRequested")
-    if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil then
+    local level_min = read_panel_number("ESP_LevelMin")
+    local level_max = read_panel_number("ESP_LevelMax")
+    local distance_min = read_panel_number("ESP_DistanceMin")
+    local distance_max = read_panel_number("ESP_DistanceMax")
+    local show_top_guide_line = read_panel_boolean("ESP_ShowTopGuideLine")
+    if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil
+        or level_min == nil or level_max == nil or distance_min == nil or distance_max == nil
+        or show_top_guide_line == nil then
         if not state.control_pending_logged then
             state.control_pending_logged = true
             debug_event("PANEL_CONTROL_PENDING", "reason=property_unavailable")
@@ -2167,6 +2245,8 @@ local function poll_panel_controls()
 
     state.control_pending_logged = false
     apply_runtime_profile(master_enabled, profile_id, preset_id, "panel_revision")
+    apply_panel_filters(level_min, level_max, distance_min, distance_max)
+    apply_display_styles(show_top_guide_line)
     set_capture_active(capture_requested, "panel_revision")
     state.control_revision = revision
     debug_event("PANEL_CONTROL_APPLIED", string.format("revision=%d", revision))

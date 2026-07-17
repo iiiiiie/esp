@@ -181,6 +181,11 @@ local bridge_actor = {
     ESP_ProfileId = 2,
     ESP_PresetId = 1,
     ESP_CaptureRequested = false,
+    ESP_LevelMin = 0,
+    ESP_LevelMax = 0,
+    ESP_DistanceMin = 0,
+    ESP_DistanceMax = 0,
+    ESP_ShowTopGuideLine = true,
     ESP_BridgeGenderDiagnosticCode = 0,
 }
 function bridge_actor:GetClass()
@@ -293,6 +298,52 @@ end
 assert(capture_start_found and capture_mode_found and capture_stop_found, "capture markers were incomplete")
 assert(event_admission_found, "event-first queued actor was not admitted")
 print("Panel controls and event-first queue passed")
+
+bridge_actor.ESP_RuntimeEnabled = true
+bridge_actor.ESP_ProfileId = 3
+bridge_actor.ESP_LevelMin = 3
+bridge_actor.ESP_LevelMax = 4
+bridge_actor.ESP_DistanceMin = 0
+bridge_actor.ESP_DistanceMax = 500
+bridge_actor.ESP_ControlRevision = 41
+reconcile_loop()
+local filtered_result_found = false
+local filtered_config_found = false
+for _, message in ipairs(runtime_logs) do
+    filtered_result_found = filtered_result_found or message:match("FILTER_RESULT.*admitted=5.*matched=2") ~= nil
+    filtered_config_found = filtered_config_found or message:match("FILTER_CONFIG.*level_min=3.*level_max=4.*distance_min=nil.*distance_max=500") ~= nil
+end
+assert(filtered_result_found, "panel range filters did not update the matched output")
+assert(filtered_config_found, "panel range filter configuration was not logged")
+print("Panel range filters passed")
+
+bridge_actor.ESP_LevelMin = 0
+bridge_actor.ESP_LevelMax = 0
+bridge_actor.ESP_DistanceMin = 0
+bridge_actor.ESP_DistanceMax = 0
+bridge_actor.ESP_ControlRevision = 42
+reconcile_loop()
+local reset_filter_found = false
+for _, message in ipairs(runtime_logs) do
+    reset_filter_found = reset_filter_found or message:match("FILTER_RESULT.*admitted=5.*matched=5") ~= nil
+end
+assert(reset_filter_found, "panel range filters did not reset to unrestricted")
+print("Panel range filter reset passed")
+
+bridge_actor.ESP_ShowTopGuideLine = false
+bridge_actor.ESP_ControlRevision = 43
+reconcile_loop()
+bridge_actor.ESP_ShowTopGuideLine = true
+bridge_actor.ESP_ControlRevision = 44
+reconcile_loop()
+local top_guide_hidden_found = false
+local top_guide_shown_found = false
+for _, message in ipairs(runtime_logs) do
+    top_guide_hidden_found = top_guide_hidden_found or message:match("DISPLAY_STYLE.*top_guide_line=false") ~= nil
+    top_guide_shown_found = top_guide_shown_found or message:match("DISPLAY_STYLE.*top_guide_line=true") ~= nil
+end
+assert(top_guide_hidden_found and top_guide_shown_found, "panel top-guide style did not round-trip")
+print("Panel top-guide style passed")
 
 assert(type(load_map_pre_hook) == "function", "load-map pre-hook was not captured")
 bridge_actor.ESP_ProfileId = 2

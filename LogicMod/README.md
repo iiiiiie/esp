@@ -49,7 +49,7 @@ The key callback defers the Blueprint call by 50 ms. This keeps panel removal an
 
 Opening the panel switches the controller to `UIOnlyEx`, focuses the panel, shows the cursor, and flushes pending input. Closing removes the panel, hides the cursor, and restores `GameOnly` with another input flush.
 
-The panel writes only `ESP_RuntimeEnabled`, `ESP_ProfileId`, `ESP_PresetId`, `ESP_CaptureRequested`, and the monotonically increasing `ESP_ControlRevision`. Lua polls these scalar properties every 250 ms. It never accepts a Blueprint-to-Lua callback from the panel, because that event direction caused a reproducible startup crash in the earlier bridge spike.
+The panel writes only scalar properties: `ESP_RuntimeEnabled`, `ESP_ProfileId`, `ESP_PresetId`, `ESP_LevelMin`, `ESP_LevelMax`, `ESP_DistanceMin`, `ESP_DistanceMax`, `ESP_ShowTopGuideLine`, `ESP_CaptureRequested`, and the monotonically increasing `ESP_ControlRevision`. A zero bound means no limit; the current panel exposes fixed level and distance bands while arbitrary numeric entry remains a later UI task. The top-guide style switch updates the existing Blueprint overlay through the same filtered target resynchronization path. Lua polls these scalar properties every 250 ms. It never accepts a Blueprint-to-Lua callback from the panel, because that event direction caused a reproducible startup crash in the earlier bridge spike.
 
 The runtime-off mode clears all accepted targets and stops discovery while leaving the panel, key bind, and lifecycle cleanup available. The registry player gate remains before every adapter and cannot be changed through panel state.
 

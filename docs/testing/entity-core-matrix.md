@@ -2,7 +2,7 @@
 
 ## Status
 
-- Implementation: panel profiles and capture tooling complete; runtime regression pending
+- Implementation: panel profiles, level/distance filters, top-guide style control, and capture tooling complete; runtime regression pending
 - Maintainer-required environment: Steam PC single-player
 - Server environments: community pending and not a Phase 2 gate
 - Human player invariant: every runtime run must report `candidate_player_count=0`
@@ -17,9 +17,9 @@
 | Active UE4SS root | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss` |
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
-| LogicMod pak SHA-256 | `EEB2B9427A133E5E7BFB3D063DE534EB9B60B017E2FE392615064C7C39321D39`; `UIOnlyEx` panel-input and display-limit-label checkpoint |
-| `main.lua` SHA-256 | `30E3437B9CBEFBD54DE6BA8529D95C8B60817633F1338D9BF57D236408FCED4D` |
-| `config.lua` SHA-256 | `3B078826588F742373B1689F1ADB3DC772D3728B363A1BB2F0C5DE01E6EAE548` |
+| LogicMod pak SHA-256 | `4A287B01B806B2CEFFFCEEC553814AA0BC7C018149D14339564EC4C5F8D2B904`; level/distance filter and top-guide style checkpoint |
+| `main.lua` SHA-256 | `A4798FBCDE0046BE72F466D4DEA753A89ECA847121D173AFBCFD70421AAB6CC0` |
+| `config.lua` SHA-256 | `F2C58640A30DA2BDE56BFE7071800BFC52B98C51A1C642327BBA0E4BDC66E210` |
 | Newest recorded crash | `2026-07-17 10:29:04`, `UECC-Windows-80EE4EB444ECE760ECF7CD93A90F3836_0000`; panel-close regression |
 | Runtime baseline backup | `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp_backups/20260716_entity_core_baseline` |
 
@@ -47,6 +47,9 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-16 | Runtime profiles | Off, snapshot, current chunking, and event-first resolve deterministic experiment intervals and display budgets | Pass | Profile unit suite covers defaults, invalid IDs, fixed intervals, and 32/64/128 display budgets |
 | AT-17 | Panel control plane | Shift+Y deferred bridge call, scalar revision polling, runtime-off clearing, capture markers, and stale-job invalidation | Pass | Stubbed runtime verifies two toggles run after, never inside, UE4SS key callbacks |
 | AT-18 | Capture segmentation | Concatenated UE4SS markers and PresentMon absolute timestamps split by mode with a 2-second transition exclusion | Pass | Synthetic parser plus 31-frame end-to-end segmented analysis pass |
+| AT-19 | Panel range filters | Level and distance bounds compose, zero resets to unrestricted, and unavailable fields remain fail-closed | Pass | Stubbed runtime filters five admitted Pals to two and restores all five |
+| AT-20 | Top-guide style control | The panel boolean round-trips through scalar polling and resynchronizes only filtered targets | Pass | Stubbed runtime records both hidden and shown style transitions |
+| AT-21 | LogicMod package | Generated package contains exactly five `.uasset` and five `.uexp` files with no runtime DLL | Pass | UnrealPak lists 10 files and 0 DLL at the current fingerprint |
 
 ## Performance Investigation
 
