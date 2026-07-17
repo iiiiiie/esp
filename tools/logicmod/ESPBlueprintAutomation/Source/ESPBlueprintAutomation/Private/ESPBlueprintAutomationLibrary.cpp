@@ -1146,12 +1146,12 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     UButton* RuntimeOn = AddPanelButton(Blueprint, RuntimeRow, TEXT("ESP_RuntimeOnButton"), TEXT("ESP_RuntimeOnText"), TEXT("开启 Mod"));
     UButton* RuntimeOff = AddPanelButton(Blueprint, RuntimeRow, TEXT("ESP_RuntimeOffButton"), TEXT("ESP_RuntimeOffText"), TEXT("关闭 Mod"));
 
-    UTextBlock* PresetHeading = AddPanelText(Blueprint, Content, TEXT("ESP_PresetHeadingText"), TEXT("性能预设"), 18);
+    UTextBlock* PresetHeading = AddPanelText(Blueprint, Content, TEXT("ESP_PresetHeadingText"), TEXT("目标显示上限"), 18);
     UHorizontalBox* PresetRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_PresetRow"));
     Content->AddChild(PresetRow);
-    UButton* PresetLow = AddPanelButton(Blueprint, PresetRow, TEXT("ESP_PresetLowButton"), TEXT("ESP_PresetLowText"), TEXT("低开销"));
-    UButton* PresetBalanced = AddPanelButton(Blueprint, PresetRow, TEXT("ESP_PresetBalancedButton"), TEXT("ESP_PresetBalancedText"), TEXT("均衡"));
-    UButton* PresetQuality = AddPanelButton(Blueprint, PresetRow, TEXT("ESP_PresetQualityButton"), TEXT("ESP_PresetQualityText"), TEXT("高质量"));
+    UButton* PresetLow = AddPanelButton(Blueprint, PresetRow, TEXT("ESP_PresetLowButton"), TEXT("ESP_PresetLowText"), TEXT("32 个目标"));
+    UButton* PresetBalanced = AddPanelButton(Blueprint, PresetRow, TEXT("ESP_PresetBalancedButton"), TEXT("ESP_PresetBalancedText"), TEXT("64 个目标"));
+    UButton* PresetQuality = AddPanelButton(Blueprint, PresetRow, TEXT("ESP_PresetQualityButton"), TEXT("ESP_PresetQualityText"), TEXT("128 个目标"));
 
     UTextBlock* LanguageHeading = AddPanelText(Blueprint, Content, TEXT("ESP_LanguageHeadingText"), TEXT("Language"), 18);
     UHorizontalBox* LanguageRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_LanguageRow"));
@@ -1227,10 +1227,10 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         {TEXT("ESP_TitleText"), TEXT("帕鲁资源 ESP"), TEXT("Pal & Resource ESP")},
         {TEXT("ESP_RuntimeOnText"), TEXT("开启 Mod"), TEXT("Enable Mod")},
         {TEXT("ESP_RuntimeOffText"), TEXT("关闭 Mod"), TEXT("Disable Mod")},
-        {TEXT("ESP_PresetHeadingText"), TEXT("性能预设"), TEXT("Performance preset")},
-        {TEXT("ESP_PresetLowText"), TEXT("低开销"), TEXT("Low overhead")},
-        {TEXT("ESP_PresetBalancedText"), TEXT("均衡"), TEXT("Balanced")},
-        {TEXT("ESP_PresetQualityText"), TEXT("高质量"), TEXT("High quality")},
+        {TEXT("ESP_PresetHeadingText"), TEXT("目标显示上限"), TEXT("Display target limit")},
+        {TEXT("ESP_PresetLowText"), TEXT("32 个目标"), TEXT("32 targets")},
+        {TEXT("ESP_PresetBalancedText"), TEXT("64 个目标"), TEXT("64 targets")},
+        {TEXT("ESP_PresetQualityText"), TEXT("128 个目标"), TEXT("128 targets")},
         {TEXT("ESP_AdvancedExpandText"), TEXT("高级诊断"), TEXT("Advanced diagnostics")},
         {TEXT("ESP_ModeHeadingText"), TEXT("实验模式"), TEXT("Experiment mode")},
         {TEXT("ESP_ModeOffText"), TEXT("关闭"), TEXT("Off")},

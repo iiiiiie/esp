@@ -17,7 +17,7 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | MSVC | `14.38` installed; UBT selected `14.39.33523` for the current editor-plugin build |
 | Wwise | Not required by the accepted no-Wwise PMK path |
 | Last fully verified LogicMod pak | `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14`; 8 files |
-| Current deployed panel pak | `482EDD6320005596429EDEB703943AA53D13047E80C880331ADA96F522FE2FBB`; `UIOnlyEx` panel-input checkpoint, runtime regression pending |
+| Current deployed panel pak | `EEB2B9427A133E5E7BFB3D063DE534EB9B60B017E2FE392615064C7C39321D39`; `UIOnlyEx` panel-input and display-limit-label checkpoint, runtime regression pending |
 | Current Pak contents | 10 files under `../../../Pal/Content/Mods/PalworldResourceESP/`; no DLL |
 | Current Lua script hash | `30E3437B9CBEFBD54DE6BA8529D95C8B60817633F1338D9BF57D236408FCED4D` |
 | Current Lua config hash | `3B078826588F742373B1689F1ADB3DC772D3728B363A1BB2F0C5DE01E6EAE548` |
