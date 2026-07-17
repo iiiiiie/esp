@@ -78,6 +78,18 @@ if (!generatorSource.includes('TEXT("GetCharacterID")')
     || !generatorSource.includes("BossRestrictedMatch")) {
   throw new Error("Blueprint Boss provider or fail-closed filter contract is incomplete");
 }
+if (!generatorSource.includes('TEXT("HasElementType")')
+    || !generatorSource.includes('TEXT("ESP_TargetElementMasks")')
+    || !generatorSource.includes('TEXT("ESP_ElementFilterMask")')
+    || !generatorSource.includes('SetPinDefault(AddElementMaskItem, TEXT("NewItem"), TEXT("-1"))')
+    || !generatorSource.includes('TEXT("And_IntInt")')
+    || !generatorSource.includes("ElementFilterAll")
+    || !generatorSource.includes("TargetElementKnown")
+    || !generatorSource.includes("ElementMaskMatches")
+    || !generatorSource.includes('TEXT("ESP_ElementFireToggle")')
+    || !generatorSource.includes('TEXT("ESP_ElementWaterToggle")')) {
+  throw new Error("Blueprint element provider, match-any, or fail-closed filter contract is incomplete");
+}
 
 const normalize = (value) => value.replaceAll("\\", "/");
 const packagePaths = [
@@ -278,6 +290,16 @@ local bridge_actor = {
     ESP_GenderFilterId = 0,
     ESP_LuckyFilterId = 0,
     ESP_BossFilterId = 0,
+    ESP_ElementNormal = false,
+    ESP_ElementFire = false,
+    ESP_ElementWater = false,
+    ESP_ElementLeaf = false,
+    ESP_ElementElectricity = false,
+    ESP_ElementIce = false,
+    ESP_ElementEarth = false,
+    ESP_ElementDark = false,
+    ESP_ElementDragon = false,
+    ESP_ElementFilterMask = 0,
     ESP_DisplayTargetLimit = 64,
     ESP_BridgeGenderDiagnosticCode = 0,
 }
@@ -296,7 +318,7 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
     }
 end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
-function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, gender_filter_id, lucky_filter_id, boss_filter_id)
+function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, gender_filter_id, lucky_filter_id, boss_filter_id, element_filter_mask)
     bridge_style_payloads[#bridge_style_payloads + 1] = {
         show_top = show_top,
         show_name = show_name,
@@ -305,6 +327,7 @@ function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, s
         gender_filter_id = gender_filter_id,
         lucky_filter_id = lucky_filter_id,
         boss_filter_id = boss_filter_id,
+        element_filter_mask = element_filter_mask,
     }
 end
 function bridge_actor:PalworldResourceESP_TogglePanel()
@@ -536,6 +559,10 @@ reconcile_loop()
 bridge_actor.ESP_BossFilterId = 99
 bridge_actor.ESP_ControlRevision = 61
 reconcile_loop()
+bridge_actor.ESP_ElementFire = true
+bridge_actor.ESP_ElementWater = true
+bridge_actor.ESP_ControlRevision = 62
+reconcile_loop()
 local top_guide_hidden_found = false
 local top_guide_shown_found = false
 local metadata_hidden_found = false
@@ -551,6 +578,7 @@ local lucky_clamped_found = false
 local boss_only_found = false
 local boss_excluded_found = false
 local boss_clamped_found = false
+local element_mask_found = false
 for _, message in ipairs(runtime_logs) do
     top_guide_hidden_found = top_guide_hidden_found or message:match("DISPLAY_STYLE.*top_guide_line=false") ~= nil
     top_guide_shown_found = top_guide_shown_found or message:match("DISPLAY_STYLE.*top_guide_line=true") ~= nil
@@ -572,6 +600,7 @@ for _, message in ipairs(runtime_logs) do
     boss_excluded_found = boss_excluded_found or message:match("DISPLAY_STYLE.*boss_filter=exclude_boss") ~= nil
     boss_clamped_found = boss_clamped_found
         or message:match("DISPLAY_STYLE.*boss_filter=exclude_boss") ~= nil
+    element_mask_found = element_mask_found or message:match("DISPLAY_STYLE.*element_filter_mask=6") ~= nil
 end
 assert(top_guide_hidden_found and top_guide_shown_found, "panel top-guide style did not round-trip")
 assert(metadata_hidden_found and metadata_shown_found, "panel metadata styles did not round-trip")
@@ -582,10 +611,13 @@ assert(lucky_only_found and lucky_excluded_found, "panel Lucky filters did not r
 assert(lucky_clamped_found, "invalid Lucky filter was not clamped")
 assert(boss_only_found and boss_excluded_found, "panel Boss filters did not round-trip")
 assert(boss_clamped_found, "invalid Boss filter was not clamped")
+assert(element_mask_found, "panel element toggles did not produce the Fire-or-Water mask")
 assert(#bridge_style_payloads >= 4, "display styles were not sent through the actor-free bridge event")
 assert(bridge_style_payloads[#bridge_style_payloads].gender_filter_id == 2, "gender filter clamp did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].lucky_filter_id == 2, "Lucky filter clamp did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].boss_filter_id == 2, "Boss filter clamp did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].element_filter_mask == 6, "element mask did not reach the bridge")
+assert(bridge_actor.ESP_ElementFilterMask == 6, "element mask was not synchronized to the passive bridge actor")
 assert(bridge_style_payloads[#bridge_style_payloads].show_name == true, "name style did not reach the bridge")
 print("Panel display styles passed")
 
@@ -603,10 +635,13 @@ for _, message in ipairs(runtime_logs) do
 end
 reconcile_loop()
 assert(#runtime_settings_writes == 1, "stable settings changes were not coalesced into one append")
-assert(runtime_settings_writes[1]:match("^v3 "), "saved settings did not use the current versioned format")
+assert(runtime_settings_writes[1]:match("^v4 "), "saved settings did not use the current versioned format")
 assert(runtime_settings_writes[1]:match("show_name=true"), "saved settings omitted the name toggle")
 assert(runtime_settings_writes[1]:match("lucky=2"), "saved settings omitted the Lucky filter")
 assert(runtime_settings_writes[1]:match("boss=2"), "saved settings omitted the Boss filter")
+assert(runtime_settings_writes[1]:match("element_fire=true"), "saved settings omitted the Fire element")
+assert(runtime_settings_writes[1]:match("element_water=true"), "saved settings omitted the Water element")
+assert(runtime_settings_writes[1]:match("element_dragon=false"), "saved settings omitted an unselected element")
 assert(#delayed_callbacks == 0, "periodic reconcile retained actors in delayed callbacks")
 local scan_done_count_after = 0
 for _, message in ipairs(runtime_logs) do
@@ -633,7 +668,7 @@ if (status !== lua.LUA_OK) {
 
 console.log(`Parsed Lua files: ${files.length}`);
 console.log("Pure core runtime-global check passed");
-console.log("Blueprint slider/name/outline/Lucky/Boss source contract passed");
+console.log("Blueprint slider/name/outline/Lucky/Boss/element source contract passed");
 
 if (process.platform === "win32") {
   const performanceTests = path.join(root, "tests", "performance", "run-performance-tests.ps1");

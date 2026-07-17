@@ -1,6 +1,6 @@
 local user_settings = {}
 
-local VERSION = "v3"
+local VERSION = "v4"
 
 local v1_fields = {
     { name = "runtime_enabled", kind = "boolean", default = true },
@@ -24,16 +24,28 @@ for _, field in ipairs(v1_fields) do
 end
 v2_fields[#v2_fields + 1] = { name = "lucky", kind = "integer", min = 0, max = 2, default = 0 }
 
-local fields = {}
+local v3_fields = {}
 for _, field in ipairs(v2_fields) do
+    v3_fields[#v3_fields + 1] = field
+end
+v3_fields[#v3_fields + 1] = { name = "boss", kind = "integer", min = 0, max = 2, default = 0 }
+
+local fields = {}
+for _, field in ipairs(v3_fields) do
     fields[#fields + 1] = field
 end
-fields[#fields + 1] = { name = "boss", kind = "integer", min = 0, max = 2, default = 0 }
+for _, name in ipairs({
+    "element_normal", "element_fire", "element_water", "element_leaf", "element_electricity",
+    "element_ice", "element_earth", "element_dark", "element_dragon",
+}) do
+    fields[#fields + 1] = { name = name, kind = "boolean", default = false }
+end
 
 local schemas = {
     v1 = v1_fields,
     v2 = v2_fields,
-    v3 = fields,
+    v3 = v3_fields,
+    v4 = fields,
 }
 
 local fields_by_version = {}
@@ -116,8 +128,19 @@ function user_settings.parse_line(line)
     if version == "v1" then
         normalized.lucky = 0
     end
-    if version ~= "v3" then
+    if version ~= "v3" and version ~= "v4" then
         normalized.boss = 0
+    end
+    if version ~= "v4" then
+        normalized.element_normal = false
+        normalized.element_fire = false
+        normalized.element_water = false
+        normalized.element_leaf = false
+        normalized.element_electricity = false
+        normalized.element_ice = false
+        normalized.element_earth = false
+        normalized.element_dark = false
+        normalized.element_dragon = false
     end
     return normalized, nil, version
 end

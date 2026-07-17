@@ -27,5 +27,7 @@ return {
         helper.equal(fields.species.state, "bridge")
         helper.equal(fields.species.value, nil)
         helper.equal(fields.passive_skills.state, "unavailable")
+        helper.equal(fields.elements.state, "bridge")
+        helper.equal(fields.elements.reason, "blueprint_element_mask_adapter")
     end),
 }

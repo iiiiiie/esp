@@ -81,7 +81,7 @@ local FIELD_PROBES = {
     {
         name = "elements",
         sources = {},
-        note = "requires a confirmed species database or runtime-safe accessor",
+        note = "provided by the typed Blueprint element-mask adapter after Lua admission",
     },
     {
         name = "capture_count",
@@ -160,6 +160,7 @@ local state = {
     gender_filter_id = 0,
     lucky_filter_id = 0,
     boss_filter_id = 0,
+    element_filter_mask = 0,
     language_id = 0,
     settings_path = nil,
     settings_io = nil,
@@ -334,6 +335,15 @@ local SETTINGS_PROPERTIES = {
     { name = "gender", property = "ESP_GenderFilterId" },
     { name = "lucky", property = "ESP_LuckyFilterId" },
     { name = "boss", property = "ESP_BossFilterId" },
+    { name = "element_normal", property = "ESP_ElementNormal" },
+    { name = "element_fire", property = "ESP_ElementFire" },
+    { name = "element_water", property = "ESP_ElementWater" },
+    { name = "element_leaf", property = "ESP_ElementLeaf" },
+    { name = "element_electricity", property = "ESP_ElementElectricity" },
+    { name = "element_ice", property = "ESP_ElementIce" },
+    { name = "element_earth", property = "ESP_ElementEarth" },
+    { name = "element_dark", property = "ESP_ElementDark" },
+    { name = "element_dragon", property = "ESP_ElementDragon" },
 }
 
 local function initialize_user_settings()
@@ -477,7 +487,7 @@ local function flush_user_settings_if_due()
     state.settings_pending = nil
     state.settings_save_due_at = nil
     state.settings_save_error_logged = false
-    debug_event("USER_SETTINGS_SAVED", "version=v3")
+    debug_event("USER_SETTINGS_SAVED", "version=v4")
 end
 
 local function safe_call_no_args(object, method_name)
@@ -2489,6 +2499,20 @@ local function normalize_boss_filter_id(raw_id)
     return math.max(0, math.min(2, math.floor(raw_id)))
 end
 
+local function build_element_filter_mask(
+    normal, fire, water, leaf, electricity, ice, earth, dark, dragon
+)
+    return (normal and 1 or 0)
+        + (fire and 2 or 0)
+        + (water and 4 or 0)
+        + (leaf and 8 or 0)
+        + (electricity and 16 or 0)
+        + (ice and 32 or 0)
+        + (earth and 64 or 0)
+        + (dark and 128 or 0)
+        + (dragon and 256 or 0)
+end
+
 local function apply_display_styles(
     show_top_guide_line,
     show_name,
@@ -2496,18 +2520,21 @@ local function apply_display_styles(
     show_distance,
     raw_gender_filter_id,
     raw_lucky_filter_id,
-    raw_boss_filter_id
+    raw_boss_filter_id,
+    raw_element_filter_mask
 )
     local gender_filter_id = normalize_gender_filter_id(raw_gender_filter_id)
     local lucky_filter_id = normalize_lucky_filter_id(raw_lucky_filter_id)
     local boss_filter_id = normalize_boss_filter_id(raw_boss_filter_id)
+    local element_filter_mask = math.max(0, math.min(511, math.floor(tonumber(raw_element_filter_mask) or 0)))
     if show_top_guide_line == state.show_top_guide_line
         and show_name == state.show_name
         and show_level == state.show_level
         and show_distance == state.show_distance
         and gender_filter_id == state.gender_filter_id
         and lucky_filter_id == state.lucky_filter_id
-        and boss_filter_id == state.boss_filter_id then
+        and boss_filter_id == state.boss_filter_id
+        and element_filter_mask == state.element_filter_mask then
         return false
     end
     state.show_top_guide_line = show_top_guide_line
@@ -2517,6 +2544,10 @@ local function apply_display_styles(
     state.gender_filter_id = gender_filter_id
     state.lucky_filter_id = lucky_filter_id
     state.boss_filter_id = boss_filter_id
+    state.element_filter_mask = element_filter_mask
+    if not safe_set_property(state.bridge_actor, "ESP_ElementFilterMask", element_filter_mask) then
+        log_event("ELEMENT_FILTER_BRIDGE_FAILED", string.format("mask=%d", element_filter_mask))
+    end
     call_bridge(
         BRIDGE_METHOD_SET_DISPLAY_STYLE,
         show_top_guide_line,
@@ -2525,20 +2556,22 @@ local function apply_display_styles(
         show_distance,
         gender_filter_id,
         lucky_filter_id,
-        boss_filter_id
+        boss_filter_id,
+        element_filter_mask
     )
     local gender_filter_names = { [0] = "all", [1] = "male", [2] = "female" }
     local lucky_filter_names = { [0] = "all", [1] = "only_lucky", [2] = "exclude_lucky" }
     local boss_filter_names = { [0] = "all", [1] = "only_boss", [2] = "exclude_boss" }
     log_event("DISPLAY_STYLE", string.format(
-        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s gender_filter=%s lucky_filter=%s boss_filter=%s",
+        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s gender_filter=%s lucky_filter=%s boss_filter=%s element_filter_mask=%d",
         tostring(show_top_guide_line),
         tostring(show_name),
         tostring(show_level),
         tostring(show_distance),
         gender_filter_names[gender_filter_id],
         lucky_filter_names[lucky_filter_id],
-        boss_filter_names[boss_filter_id]
+        boss_filter_names[boss_filter_id],
+        element_filter_mask
     ))
     return true
 end
@@ -2594,6 +2627,15 @@ local function poll_panel_controls()
     local gender_filter_id = read_panel_number("ESP_GenderFilterId")
     local lucky_filter_id = read_panel_number("ESP_LuckyFilterId")
     local boss_filter_id = read_panel_number("ESP_BossFilterId")
+    local element_normal = read_panel_boolean("ESP_ElementNormal")
+    local element_fire = read_panel_boolean("ESP_ElementFire")
+    local element_water = read_panel_boolean("ESP_ElementWater")
+    local element_leaf = read_panel_boolean("ESP_ElementLeaf")
+    local element_electricity = read_panel_boolean("ESP_ElementElectricity")
+    local element_ice = read_panel_boolean("ESP_ElementIce")
+    local element_earth = read_panel_boolean("ESP_ElementEarth")
+    local element_dark = read_panel_boolean("ESP_ElementDark")
+    local element_dragon = read_panel_boolean("ESP_ElementDragon")
     local language_id = read_panel_number("ESP_LanguageId")
     local display_target_limit = read_panel_number("ESP_DisplayTargetLimit")
     if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil
@@ -2602,6 +2644,9 @@ local function poll_panel_controls()
         or level_min == nil or level_max == nil or distance_max == nil
         or show_top_guide_line == nil or show_name == nil or show_level == nil or show_distance == nil
         or gender_filter_id == nil or lucky_filter_id == nil or boss_filter_id == nil
+        or element_normal == nil or element_fire == nil or element_water == nil or element_leaf == nil
+        or element_electricity == nil or element_ice == nil or element_earth == nil
+        or element_dark == nil or element_dragon == nil
         or language_id == nil or display_target_limit == nil then
         if not state.control_pending_logged then
             state.control_pending_logged = true
@@ -2615,6 +2660,10 @@ local function poll_panel_controls()
     -- __DEPRECATED_20260717__ [reason: minimum distance is no longer applied]
     -- local filters_changed = apply_panel_filters(level_min, level_max, distance_min, distance_max)
     local filters_changed = apply_panel_filters(level_min, level_max, distance_max)
+    local element_filter_mask = build_element_filter_mask(
+        element_normal, element_fire, element_water, element_leaf, element_electricity,
+        element_ice, element_earth, element_dark, element_dragon
+    )
     apply_display_styles(
         show_top_guide_line,
         show_name,
@@ -2622,7 +2671,8 @@ local function poll_panel_controls()
         show_distance,
         gender_filter_id,
         lucky_filter_id,
-        boss_filter_id
+        boss_filter_id,
+        element_filter_mask
     )
     local limit_changed = apply_display_target_limit(display_target_limit)
     if runtime_enabled() and state.gameplay_active and (filters_changed or limit_changed) then
@@ -2647,6 +2697,15 @@ local function poll_panel_controls()
         gender = gender_filter_id,
         lucky = lucky_filter_id,
         boss = boss_filter_id,
+        element_normal = element_normal,
+        element_fire = element_fire,
+        element_water = element_water,
+        element_leaf = element_leaf,
+        element_electricity = element_electricity,
+        element_ice = element_ice,
+        element_earth = element_earth,
+        element_dark = element_dark,
+        element_dragon = element_dragon,
     })
     state.control_revision = revision
     debug_event("PANEL_CONTROL_APPLIED", string.format("revision=%d", revision))

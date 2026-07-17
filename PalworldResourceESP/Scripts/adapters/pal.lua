@@ -76,7 +76,7 @@ function pal_adapter.new()
                 iv_defense = entity_snapshot.unavailable("adapter_not_proven"),
                 lucky = entity_snapshot.unavailable("adapter_not_proven"),
                 alpha_boss = entity_snapshot.unavailable("adapter_not_proven"),
-                elements = entity_snapshot.unavailable("adapter_not_proven"),
+                elements = entity_snapshot.bridge("blueprint_element_mask_adapter"),
                 capture_count = entity_snapshot.unavailable("local_collection_adapter_not_proven"),
             }
         end,
