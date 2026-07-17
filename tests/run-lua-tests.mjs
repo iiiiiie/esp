@@ -71,9 +71,13 @@ NotifyOnNewObject = function(_, callback)
 end
 RegisterHook = function() return 1, 2 end
 local panel_keybind = nil
-Key = { E = 69 }
+local panel_key = nil
+local panel_modifiers = nil
+Key = { T = 84 }
 ModifierKey = { SHIFT = 1 }
-RegisterKeyBind = function(_, _, callback)
+RegisterKeyBind = function(key, modifiers, callback)
+    panel_key = key
+    panel_modifiers = modifiers
     panel_keybind = callback
 end
 local load_map_pre_hook = nil
@@ -227,10 +231,28 @@ assert(found_chunked_result, "chunked reconcile result was not logged")
 print("Chunked reconcile stub passed")
 
 assert(type(bridge_begin_play_hook) == "function", "bridge discovery hook was not captured")
-assert(type(panel_keybind) == "function", "Shift+E keybind was not captured")
+assert(type(panel_keybind) == "function", "Shift+T keybind was not captured")
+assert(panel_key == Key.T, "panel keybind did not use T")
+assert(panel_modifiers[1] == ModifierKey.SHIFT, "panel keybind did not require Shift")
 bridge_begin_play_hook(bridge_actor)
 panel_keybind()
-assert(panel_toggle_count == 1, "Shift+E did not call the panel toggle bridge")
+assert(panel_toggle_count == 0, "panel toggle ran inside the key callback")
+assert(#delayed_callbacks == 1, "panel toggle was not delayed out of key dispatch")
+table.remove(delayed_callbacks, 1)()
+assert(panel_toggle_count == 1, "Shift+T did not call the panel toggle bridge")
+panel_keybind()
+assert(panel_toggle_count == 1, "second panel toggle ran inside the key callback")
+assert(#delayed_callbacks == 1, "second panel toggle was not delayed out of key dispatch")
+table.remove(delayed_callbacks, 1)()
+assert(panel_toggle_count == 2, "second Shift+T did not call the panel toggle bridge")
+
+local toggle_requested_found = false
+local toggle_completed_found = false
+for _, message in ipairs(runtime_logs) do
+    toggle_requested_found = toggle_requested_found or message:match("PANEL_TOGGLE_REQUESTED.*key=Shift%+T") ~= nil
+    toggle_completed_found = toggle_completed_found or message:match("PANEL_TOGGLE_COMPLETED.*status=ok") ~= nil
+end
+assert(toggle_requested_found and toggle_completed_found, "panel toggle diagnostics were incomplete")
 
 bridge_actor.ESP_CaptureRequested = true
 bridge_actor.ESP_ControlRevision = 1

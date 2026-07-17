@@ -18,9 +18,9 @@
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
 | LogicMod pak SHA-256 | `B5690A72AEC77D5E3B7E9E0027E76A61476FB4FCCC6A2664AB11F93B20DA9D6B`; panel checkpoint |
-| `main.lua` SHA-256 | `A08DFFA0808594440497A0EF5651DB9FAA133B2393CEB3EF0CB37DF5E3BF118B` |
-| `config.lua` SHA-256 | `EFDDC99B1E233D527CB36BF55F215A1C1444BCB31BF2B7F1F348E2C24EF6EF39` |
-| Newest pre-test crash | `2026-07-16 09:56:11`, `UECC-Windows-FCB962FF452A9E89E36EB182C7EE5C0C_0000` |
+| `main.lua` SHA-256 | `C16947AB139A563281A5A454F489D407B489ECF4980F24252E6F0470794694F4` |
+| `config.lua` SHA-256 | `3B078826588F742373B1689F1ADB3DC772D3728B363A1BB2F0C5DE01E6EAE548` |
+| Newest recorded crash | `2026-07-17 10:29:04`, `UECC-Windows-80EE4EB444ECE760ECF7CD93A90F3836_0000`; panel-close regression |
 | Runtime baseline backup | `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp_backups/20260716_entity_core_baseline` |
 
 Record final source hashes and the implementation commit immediately before the runtime run.
@@ -45,7 +45,7 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-14 | Chunk cancellation | Map pre-load cancels a pending job without committing its stale generation | Pass | Queued stale callback completed without a second `SCAN_DONE` |
 | AT-15 | Frame-time analyzer | PresentMon v2 CSV statistics and same-file A/B comparison are deterministic | Pass | Existing 4,100-frame capture remains analyzable after the extension |
 | AT-16 | Runtime profiles | Off, snapshot, current chunking, and event-first resolve deterministic experiment intervals and preset budgets | Pass | Profile unit suite covers defaults, invalid IDs, fixed intervals, and 32/64/128 display budgets |
-| AT-17 | Panel control plane | Shift+E bridge call, scalar revision polling, runtime-off clearing, capture markers, and stale-job invalidation | Pass | Stubbed runtime entrypoint exercises each transition without Blueprint-to-Lua calls |
+| AT-17 | Panel control plane | Shift+T deferred bridge call, scalar revision polling, runtime-off clearing, capture markers, and stale-job invalidation | Pass | Stubbed runtime verifies two toggles run after, never inside, UE4SS key callbacks |
 | AT-18 | Capture segmentation | Concatenated UE4SS markers and PresentMon absolute timestamps split by mode with a 2-second transition exclusion | Pass | Synthetic parser plus 31-frame end-to-end segmented analysis pass |
 
 ## Performance Investigation

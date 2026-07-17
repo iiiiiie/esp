@@ -28,7 +28,7 @@ Phase 2 proves the minimum LogicMod/Blueprint path required by ADR-0001 and ADR-
 
 ## Non-Goals
 
-- Final `Shift+E` settings panel.
+- Final `Shift+T` settings panel.
 - Boxes, outlines, names, health, weak points, or dedicated off-screen indicators. Multi-target guides were added by the scope amendment.
 - Passive-skill arrays, IVs, Lucky/Alpha, elements, capture count, or resource adapters.
 - Multiplayer verification.

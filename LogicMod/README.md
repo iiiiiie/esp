@@ -43,7 +43,9 @@ Dead targets are filtered at both lifecycle speeds: Lua rejects `PalCharacterPar
 
 ## Panel Contract
 
-`Shift+E` is registered by Lua and calls `PalworldResourceESP_TogglePanel` on the passive `ModActor`. The panel is Chinese by default and can switch its labels to English. It owns no discovery or player-classification logic.
+`Shift+T` is registered by Lua and calls `PalworldResourceESP_TogglePanel` on the passive `ModActor`. The panel is Chinese by default and can switch its labels to English. It owns no discovery or player-classification logic.
+
+The key callback defers the Blueprint call by 50 ms. This keeps panel removal and input-mode restoration outside UE4SS's active key-dispatch stack; an immediate second toggle produced a native access violation on the first Steam panel run.
 
 The panel writes only `ESP_RuntimeEnabled`, `ESP_ProfileId`, `ESP_PresetId`, `ESP_CaptureRequested`, and the monotonically increasing `ESP_ControlRevision`. Lua polls these scalar properties every 250 ms. It never accepts a Blueprint-to-Lua callback from the panel, because that event direction caused a reproducible startup crash in the earlier bridge spike.
 

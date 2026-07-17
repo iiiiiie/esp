@@ -33,7 +33,7 @@ v1 采用 UE4SS Lua + LogicMod/Blueprint Widget 的混合纯客户端架构。
 
 - UE4SS 是必需运行时依赖。
 - Lua 层负责对象发现、Hook、对象生命周期、属性读取、标准化快照和筛选输入。
-- LogicMod/Blueprint Widget 层负责 `Shift+E` 面板、中文/英文 UI、顶部引导线、屏幕外方向、标签和样式绘制。
+- LogicMod/Blueprint Widget 层负责 `Shift+T` 面板、中文/英文 UI、顶部引导线、屏幕外方向、标签和样式绘制。
 - 通过自定义事件或明确的数据桥接接口在 Lua 与 Blueprint 之间通信。
 - 所有实体必须在进入注册表前进行类型识别。
 - `APalPlayerCharacter` 及等价真人玩家表示必须立即丢弃，不能进入后续适配、筛选或渲染。

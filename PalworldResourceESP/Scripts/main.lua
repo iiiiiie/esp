@@ -151,6 +151,8 @@ local state = {
     control_revision = -1,
     control_pending_logged = false,
     panel_keybind_registered = false,
+    panel_toggle_pending = false,
+    panel_toggle_sequence = 0,
     capture_requested = false,
     capture_active = false,
     capture_session_id = 0,
@@ -2202,15 +2204,57 @@ local function register_panel_keybind()
         return
     end
     if type(RegisterKeyBind) ~= "function" or type(Key) ~= "table" or type(ModifierKey) ~= "table" then
-        log_event("PANEL_KEYBIND_UNAVAILABLE", "key=Shift+E")
+        log_event("PANEL_KEYBIND_UNAVAILABLE", "key=Shift+T")
         return
     end
 
     local ok, err = pcall(function()
-        RegisterKeyBind(Key.E, { ModifierKey.SHIFT }, function()
-            run_on_game_thread(function()
-                call_bridge(BRIDGE_METHOD_TOGGLE_PANEL)
-            end)
+        RegisterKeyBind(Key.T, { ModifierKey.SHIFT }, function()
+            if state.panel_toggle_pending then
+                log_event("PANEL_TOGGLE_IGNORED", "reason=dispatch_pending")
+                return
+            end
+
+            state.panel_toggle_pending = true
+            state.panel_toggle_sequence = state.panel_toggle_sequence + 1
+            local sequence = state.panel_toggle_sequence
+            local lifecycle_generation = state.lifecycle_generation
+            log_event("PANEL_TOGGLE_REQUESTED", string.format(
+                "sequence=%d key=Shift+T delay_ms=%d",
+                sequence,
+                config.PANEL_TOGGLE_DELAY_MS
+            ))
+
+            local dispatch = function()
+                state.panel_toggle_pending = false
+                if lifecycle_generation ~= state.lifecycle_generation then
+                    log_event("PANEL_TOGGLE_SKIPPED", string.format(
+                        "sequence=%d reason=stale_lifecycle",
+                        sequence
+                    ))
+                    return
+                end
+
+                log_event("PANEL_TOGGLE_DISPATCHED", string.format("sequence=%d", sequence))
+                local called = call_bridge(BRIDGE_METHOD_TOGGLE_PANEL)
+                log_event("PANEL_TOGGLE_COMPLETED", string.format(
+                    "sequence=%d status=%s",
+                    sequence,
+                    called and "ok" or "bridge_unavailable"
+                ))
+            end
+
+            if type(ExecuteInGameThreadWithDelay) == "function" then
+                local scheduled, schedule_error = pcall(function()
+                    ExecuteInGameThreadWithDelay(config.PANEL_TOGGLE_DELAY_MS, dispatch)
+                end)
+                if scheduled then
+                    return
+                end
+                log_event("PANEL_TOGGLE_DELAY_FAILED", tostring(schedule_error))
+            end
+
+            run_on_game_thread(dispatch)
         end)
     end)
     if not ok then
@@ -2218,7 +2262,7 @@ local function register_panel_keybind()
         return
     end
     state.panel_keybind_registered = true
-    log_event("PANEL_KEYBIND_READY", "key=Shift+E")
+    log_event("PANEL_KEYBIND_READY", "key=Shift+T")
 end
 
 local function register_blueprint_bridge()

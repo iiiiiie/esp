@@ -16,9 +16,10 @@ The maintainer needs to switch Mod behavior and mark benchmark intervals without
 
 ## Decision
 
-Add a dedicated `WBP_ESPPanel` controlled by `Shift+E` and keep it separate from the per-frame overlay.
+Add a dedicated `WBP_ESPPanel` controlled by `Shift+T` and keep it separate from the per-frame overlay.
 
 - Lua owns the key bind and invokes Blueprint panel methods.
+- The key callback waits 50 ms before invoking Blueprint so Widget removal does not occur inside UE4SS key dispatch.
 - The panel writes only scalar control properties and a monotonically increasing revision on the passive `ModActor`.
 - Lua polls those properties every 250 ms and applies changes on the GameThread.
 - No panel option can bypass the registry-owned human-player rejection gate.
@@ -82,7 +83,7 @@ Negative effects:
 
 - [x] Generate, cook, and package `WBP_ESPPanel` through ADR-0004 automation.
 - [x] Implement the PresentMon watcher, marker parser, segmented analyzer, and synthetic contract tests.
-- [ ] Validate Shift+E input ownership and restoration in Steam single-player.
+- [ ] Revalidate Shift+T open/close and input restoration after the deferred-dispatch fix.
 - [ ] Run forward and reverse fixed-view profile sequences with PresentMon.
 - [ ] Run one movement capture after a steady-state strategy passes.
 - [ ] Accept this ADR only after panel lifecycle, capture segmentation, and normal exit pass.

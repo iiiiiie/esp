@@ -55,7 +55,7 @@ Distance filtering remains inactive in this phase so the current visible behavio
 
 ## Non-Goals
 
-- `Shift+E` panel, localization resources, or configuration persistence.
+- `Shift+T` panel, localization resources, or configuration persistence.
 - Species/name, element, gender, Lucky/Alpha, passive-skill, IV, or capture-count filters.
 - Names, levels, distances, boxes, colors, or dedicated off-screen indicator UI.
 - Chest, egg, statue, ore, or special-tree runtime adapters.
@@ -298,4 +298,4 @@ Runtime validation remains mandatory because unit tests cannot prove UObject lif
 
 ## Phase Gate
 
-Entity Core passes only when pure-data tests, EC-01 through EC-12, the player-exclusion invariant, map teardown, visible guides, and normal exit pass on Steam single-player. Multiplayer remains community-pending. Rich Pal filters and the `Shift+E` UI cannot begin until the snapshot/adapter/filter contract is accepted.
+Entity Core passes only when pure-data tests, EC-01 through EC-12, the player-exclusion invariant, map teardown, visible guides, and normal exit pass on Steam single-player. Multiplayer remains community-pending. Rich Pal filters and the `Shift+T` UI cannot begin until the snapshot/adapter/filter contract is accepted.

@@ -27,7 +27,7 @@ The executable is a portable development tool and is not shipped with the Mod.
 1. Keep the same Steam build, save, graphics settings, resolution, frame cap, and other Mods for the complete run.
 2. Start the external watcher before launching or entering Palworld. It waits for one game PID and starts one named PresentMon session.
 3. Enter the save, wait 20 seconds near several wild Pals, then remain still without moving or rotating the camera.
-4. Open the panel with `Shift+E`, expand advanced diagnostics, and start capture.
+4. Open the panel with `Shift+T`, expand advanced diagnostics, and start capture.
 5. Run `off -> snapshot_once -> chunked_current -> event_first`, holding each mode for at least 15 seconds.
 6. Run the same modes in reverse order, again holding each for at least 15 seconds, then stop capture.
 7. Retain dropped and long frames. The analyzer excludes only the first two seconds after every mode marker.
