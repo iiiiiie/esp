@@ -31,7 +31,7 @@ The repository is the source of record for the editor-only generator. Sync it in
 - Lua to Blueprint: `PalworldResourceESP_ClearTarget`
 - Lua to Blueprint: `PalworldResourceESP_TogglePanel`
 
-`SetTarget` appends one already accepted wild Pal to the overlay target array and ignores duplicates. `ClearTarget` empties that array without recreating the overlay, and `ResetSession` removes the overlay before a new world session. The overlay uses one `OnPaint` pass to project and draw every accepted target up to `MAX_DISPLAY_TARGETS`.
+`SetTarget` appends one already accepted wild Pal plus its normalized snapshot level and rounded distance in meters to three same-order overlay arrays. Every synchronization clears the arrays first, so metadata cannot drift between targets. `ClearTarget` empties all three arrays without recreating the overlay, and `ResetSession` removes the overlay before a new world session. The overlay uses one `OnPaint` pass to project every accepted target up to `MAX_DISPLAY_TARGETS`, draw `Lv.<level>  <distance>m` below it, and optionally draw its top guide.
 
 `PostBeginPlay` must remain passive. Runtime testing showed that a packaged Blueprint call to a UE4SS custom event with `self` crashes during startup, while Lua discovery followed by Lua-to-Blueprint calls survives gameplay, return to title, and normal exit.
 
@@ -49,7 +49,7 @@ The key callback defers the Blueprint call by 50 ms. This keeps panel removal an
 
 Opening the panel switches the controller to `UIOnlyEx`, focuses the panel, shows the cursor, and flushes pending input. Closing removes the panel, hides the cursor, and restores `GameOnly` with another input flush.
 
-The panel writes only scalar properties: `ESP_RuntimeEnabled`, `ESP_ProfileId`, `ESP_PresetId`, `ESP_LevelMin`, `ESP_LevelMax`, `ESP_DistanceMin`, `ESP_DistanceMax`, `ESP_ShowTopGuideLine`, `ESP_CaptureRequested`, and the monotonically increasing `ESP_ControlRevision`. A zero bound means no limit; the current panel exposes fixed level and distance bands while arbitrary numeric entry remains a later UI task. The top-guide style switch updates the existing Blueprint overlay through the same filtered target resynchronization path. Lua polls these scalar properties every 250 ms. It never accepts a Blueprint-to-Lua callback from the panel, because that event direction caused a reproducible startup crash in the earlier bridge spike.
+The panel writes only scalar properties: `ESP_RuntimeEnabled`, `ESP_ProfileId`, `ESP_PresetId`, `ESP_LevelMin`, `ESP_LevelMax`, `ESP_DistanceMin`, `ESP_DistanceMax`, `ESP_DisplayTargetLimit`, `ESP_ShowTopGuideLine`, `ESP_CaptureRequested`, and the monotonically increasing `ESP_ControlRevision`. Level and distance use integer SpinBox range inputs; zero means no bound. The display target limit uses an integer SpinBox from 1 through 512. Reopening the panel initializes all inputs from the passive `ModActor`, while Lua continues to poll the scalar revision every 250 ms. The top-guide style switch updates the existing Blueprint overlay through the same filtered target resynchronization path. Blueprint never initiates a Lua callback, because that event direction caused a reproducible startup crash in the earlier bridge spike.
 
 The runtime-off mode clears all accepted targets and stops discovery while leaving the panel, key bind, and lifecycle cleanup available. The registry player gate remains before every adapter and cannot be changed through panel state.
 

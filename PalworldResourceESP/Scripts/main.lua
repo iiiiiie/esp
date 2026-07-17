@@ -1917,6 +1917,18 @@ local function log_bridge_gender_diagnostic()
     log_event("BLUEPRINT_GENDER", string.format("value=%s", gender))
 end
 
+local function display_snapshot_integer(record, field_name)
+    local cell = record and record.fields and record.fields[field_name] or nil
+    local value = cell and cell.state == "known" and cell.value or nil
+    if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
+        return -1
+    end
+    if value < 0 then
+        return -1
+    end
+    return math.floor(value + 0.5)
+end
+
 --[[ __DEPRECATED_20260716__ [reason: replaced by the all-candidate batch sync below]
 sync_bridge_target = function()
     if not config.BLUEPRINT_BRIDGE_ENABLED or not is_valid(state.bridge_actor) then
@@ -2009,7 +2021,9 @@ sync_bridge_target = function()
             break
         end
         if record ~= nil and is_valid(record.actor) then
-            if not call_bridge(BRIDGE_METHOD_SET_TARGET, record.actor, session_index) then
+            local level = display_snapshot_integer(record, "level")
+            local distance = display_snapshot_integer(record, "distance_m")
+            if not call_bridge(BRIDGE_METHOD_SET_TARGET, record.actor, session_index, level, distance) then
                 state.metrics.bridge_sync_seconds = state.metrics.bridge_sync_seconds + (os.clock() - started_at)
                 return
             end
@@ -2206,6 +2220,25 @@ local function apply_display_styles(show_top_guide_line)
     return true
 end
 
+local function apply_display_target_limit(raw_limit)
+    if type(raw_limit) ~= "number" or raw_limit ~= raw_limit
+        or raw_limit == math.huge or raw_limit == -math.huge then
+        return false
+    end
+    local limit = math.max(1, math.min(
+        config.MAX_CONFIGURABLE_DISPLAY_TARGETS,
+        math.floor(raw_limit)
+    ))
+    if config.MAX_DISPLAY_TARGETS == limit then
+        return false
+    end
+    config.MAX_DISPLAY_TARGETS = limit
+    refresh_pipeline_output("panel_display_limit")
+    sync_bridge_target()
+    log_event("DISPLAY_TARGET_LIMIT", string.format("value=%d", limit))
+    return true
+end
+
 local function poll_panel_controls()
     if not is_valid(state.bridge_actor) then
         return
@@ -2233,9 +2266,10 @@ local function poll_panel_controls()
     local distance_min = read_panel_number("ESP_DistanceMin")
     local distance_max = read_panel_number("ESP_DistanceMax")
     local show_top_guide_line = read_panel_boolean("ESP_ShowTopGuideLine")
+    local display_target_limit = read_panel_number("ESP_DisplayTargetLimit")
     if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil
         or level_min == nil or level_max == nil or distance_min == nil or distance_max == nil
-        or show_top_guide_line == nil then
+        or show_top_guide_line == nil or display_target_limit == nil then
         if not state.control_pending_logged then
             state.control_pending_logged = true
             debug_event("PANEL_CONTROL_PENDING", "reason=property_unavailable")
@@ -2247,6 +2281,7 @@ local function poll_panel_controls()
     apply_runtime_profile(master_enabled, profile_id, preset_id, "panel_revision")
     apply_panel_filters(level_min, level_max, distance_min, distance_max)
     apply_display_styles(show_top_guide_line)
+    apply_display_target_limit(display_target_limit)
     set_capture_active(capture_requested, "panel_revision")
     state.control_revision = revision
     debug_event("PANEL_CONTROL_APPLIED", string.format("revision=%d", revision))

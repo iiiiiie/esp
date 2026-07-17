@@ -22,6 +22,8 @@ Add a dedicated `WBP_ESPPanel` controlled by `Shift+Y` and keep it separate from
 - The key callback waits 50 ms before invoking Blueprint so Widget removal does not occur inside UE4SS key dispatch.
 - While open, the panel owns input through `UIOnlyEx`; closing restores `GameOnly`. Both transitions flush pending input.
 - The panel writes only scalar control properties and a monotonically increasing revision on the passive `ModActor`.
+- User-facing level, distance, and display-limit controls use integer SpinBox inputs. Level and distance use zero for an inactive bound; the display limit is clamped to 1-512.
+- Recreated panel widgets initialize their numeric controls from the passive `ModActor`; programmatic initialization still crosses only the Blueprint-to-Blueprint boundary.
 - Lua polls those properties every 250 ms and applies changes on the GameThread.
 - No panel option can bypass the registry-owned human-player rejection gate.
 - Runtime profiles are `off`, `snapshot_once`, `chunked_current`, and `event_first`.

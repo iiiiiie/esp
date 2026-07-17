@@ -2,7 +2,7 @@
 
 ## Status
 
-- Implementation: panel profiles, level/distance filters, top-guide style control, and capture tooling complete; runtime regression pending
+- Implementation: numeric panel ranges, target level/distance labels, top-guide style control, and capture tooling complete; runtime regression pending
 - Maintainer-required environment: Steam PC single-player
 - Server environments: community pending and not a Phase 2 gate
 - Human player invariant: every runtime run must report `candidate_player_count=0`
@@ -17,8 +17,8 @@
 | Active UE4SS root | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss` |
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
-| LogicMod pak SHA-256 | `4A287B01B806B2CEFFFCEEC553814AA0BC7C018149D14339564EC4C5F8D2B904`; level/distance filter and top-guide style checkpoint |
-| `main.lua` SHA-256 | `A4798FBCDE0046BE72F466D4DEA753A89ECA847121D173AFBCFD70421AAB6CC0` |
+| LogicMod pak SHA-256 | `F75D25A459A5D3E0A76344E4500E932A9E6CDF5B867495DB902ED55AF7450203`; numeric range and target metadata checkpoint |
+| `main.lua` SHA-256 | `76D32F1EA98827312C9404522D997AC9590755E8E0D3487D7152C6B3637BFF08` |
 | `config.lua` SHA-256 | `F2C58640A30DA2BDE56BFE7071800BFC52B98C51A1C642327BBA0E4BDC66E210` |
 | Newest recorded crash | `2026-07-17 10:29:04`, `UECC-Windows-80EE4EB444ECE760ECF7CD93A90F3836_0000`; panel-close regression |
 | Runtime baseline backup | `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp_backups/20260716_entity_core_baseline` |
@@ -50,6 +50,8 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-19 | Panel range filters | Level and distance bounds compose, zero resets to unrestricted, and unavailable fields remain fail-closed | Pass | Stubbed runtime filters five admitted Pals to two and restores all five |
 | AT-20 | Top-guide style control | The panel boolean round-trips through scalar polling and resynchronizes only filtered targets | Pass | Stubbed runtime records both hidden and shown style transitions |
 | AT-21 | LogicMod package | Generated package contains exactly five `.uasset` and five `.uexp` files with no runtime DLL | Pass | UnrealPak lists 10 files and 0 DLL at the current fingerprint |
+| AT-22 | Target display metadata | The exact Entity Core level and rounded snapshot distance accompany each submitted target | Pass | Stubbed bridge receives level 1 and distance 1m for the first synthetic target |
+| AT-23 | Numeric panel controls | Level/distance ranges and the 1-512 display limit use numeric inputs and preserve scalar polling | Pass | Stubbed runtime reduces five displayed targets to three and restores the configured limit |
 
 ## Performance Investigation
 

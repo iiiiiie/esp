@@ -186,13 +186,22 @@ local bridge_actor = {
     ESP_DistanceMin = 0,
     ESP_DistanceMax = 0,
     ESP_ShowTopGuideLine = true,
+    ESP_DisplayTargetLimit = 64,
     ESP_BridgeGenderDiagnosticCode = 0,
 }
+local bridge_target_payloads = {}
 function bridge_actor:GetClass()
     return bridge_class
 end
 function bridge_actor:PalworldResourceESP_ResetSession() end
-function bridge_actor:PalworldResourceESP_SetTarget() end
+function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level, distance_meters)
+    bridge_target_payloads[#bridge_target_payloads + 1] = {
+        actor = actor,
+        session_index = session_index,
+        level = level,
+        distance_meters = distance_meters,
+    }
+end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
 function bridge_actor:PalworldResourceESP_TogglePanel()
     panel_toggle_count = panel_toggle_count + 1
@@ -240,6 +249,9 @@ assert(type(panel_keybind) == "function", "Shift+Y keybind was not captured")
 assert(panel_key == Key.Y, "panel keybind did not use Y")
 assert(panel_modifiers[1] == ModifierKey.SHIFT, "panel keybind did not require Shift")
 bridge_begin_play_hook(bridge_actor)
+assert(#bridge_target_payloads == 4, "bridge did not receive all initial display payloads")
+assert(bridge_target_payloads[1].level == 1, "bridge level metadata did not match the snapshot")
+assert(bridge_target_payloads[1].distance_meters == 1, "bridge distance metadata did not match the snapshot")
 panel_keybind()
 assert(panel_toggle_count == 0, "panel toggle ran inside the key callback")
 assert(#delayed_callbacks == 1, "panel toggle was not delayed out of key dispatch")
@@ -330,11 +342,27 @@ end
 assert(reset_filter_found, "panel range filters did not reset to unrestricted")
 print("Panel range filter reset passed")
 
-bridge_actor.ESP_ShowTopGuideLine = false
+bridge_actor.ESP_DisplayTargetLimit = 3
 bridge_actor.ESP_ControlRevision = 43
 reconcile_loop()
-bridge_actor.ESP_ShowTopGuideLine = true
+local display_limit_found = false
+local display_limit_result_found = false
+for _, message in ipairs(runtime_logs) do
+    display_limit_found = display_limit_found or message:match("DISPLAY_TARGET_LIMIT.*value=3") ~= nil
+    display_limit_result_found = display_limit_result_found
+        or message:match("FILTER_RESULT.*admitted=5.*matched=5.*displayed=3") ~= nil
+end
+assert(display_limit_found and display_limit_result_found, "numeric display target limit was not applied")
+bridge_actor.ESP_DisplayTargetLimit = 64
 bridge_actor.ESP_ControlRevision = 44
+reconcile_loop()
+print("Panel numeric display target limit passed")
+
+bridge_actor.ESP_ShowTopGuideLine = false
+bridge_actor.ESP_ControlRevision = 45
+reconcile_loop()
+bridge_actor.ESP_ShowTopGuideLine = true
+bridge_actor.ESP_ControlRevision = 46
 reconcile_loop()
 local top_guide_hidden_found = false
 local top_guide_shown_found = false

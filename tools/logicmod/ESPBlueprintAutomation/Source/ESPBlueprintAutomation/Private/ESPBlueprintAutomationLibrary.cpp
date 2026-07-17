@@ -23,6 +23,7 @@
 #include "Components/HorizontalBox.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
+#include "Components/SpinBox.h"
 #include "Components/Spacer.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -36,6 +37,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetArrayLibrary.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Kismet/KismetStringLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "UObject/ConstructorHelpers.h"
@@ -52,6 +54,8 @@ const FName BridgeGenderDiagnosticCodeVariableName(TEXT("ESP_BridgeGenderDiagnos
 // const FName OverlayTargetVariableName(TEXT("ESP_Target"));
 // const FName OverlaySetTargetEventName(TEXT("PalworldResourceESP_WidgetSetTarget"));
 const FName OverlayTargetsVariableName(TEXT("ESP_Targets"));
+const FName OverlayTargetLevelsVariableName(TEXT("ESP_TargetLevels"));
+const FName OverlayTargetDistancesVariableName(TEXT("ESP_TargetDistances"));
 const FName OverlayGenderLoggedVariableName(TEXT("ESP_GenderLogged"));
 const FName OverlayGenderDiagnosticVariableName(TEXT("ESP_GenderDiagnostic"));
 const FName OverlayGenderDiagnosticCodeVariableName(TEXT("ESP_GenderDiagnosticCode"));
@@ -71,6 +75,8 @@ const FName LevelMaxVariableName(TEXT("ESP_LevelMax"));
 const FName DistanceMinVariableName(TEXT("ESP_DistanceMin"));
 const FName DistanceMaxVariableName(TEXT("ESP_DistanceMax"));
 const FName ShowTopGuideLineVariableName(TEXT("ESP_ShowTopGuideLine"));
+const FName DisplayTargetLimitVariableName(TEXT("ESP_DisplayTargetLimit"));
+const FName PanelInitializeControlsEventName(TEXT("PalworldResourceESP_InitializeControls"));
 
 UBlueprint* LoadBlueprint(const TCHAR* Path) {
     return LoadObject<UBlueprint>(nullptr, Path);
@@ -108,6 +114,12 @@ FEdGraphPinType ObjectArrayPin(UClass* Class) {
 FEdGraphPinType IntPin() {
     FEdGraphPinType PinType;
     PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+    return PinType;
+}
+
+FEdGraphPinType IntArrayPin() {
+    FEdGraphPinType PinType = IntPin();
+    PinType.ContainerType = EPinContainerType::Array;
     return PinType;
 }
 
@@ -550,6 +562,41 @@ UK2Node_ComponentBoundEvent* AddButtonEvent(
     return Node;
 }
 
+UK2Node_ComponentBoundEvent* AddSpinBoxValueChangedEvent(
+    UWidgetBlueprint* Blueprint,
+    USpinBox* SpinBox,
+    int32 X,
+    int32 Y) {
+    if (!Blueprint || !SpinBox || !Blueprint->SkeletonGeneratedClass) {
+        return nullptr;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    FObjectProperty* ComponentProperty = FindFProperty<FObjectProperty>(
+        Blueprint->SkeletonGeneratedClass,
+        SpinBox->GetFName()
+    );
+    FMulticastDelegateProperty* DelegateProperty = FindFProperty<FMulticastDelegateProperty>(
+        USpinBox::StaticClass(),
+        GET_MEMBER_NAME_CHECKED(USpinBox, OnValueChanged)
+    );
+    if (!Graph || !ComponentProperty || !DelegateProperty) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] AddSpinBoxEvent missing graph/property spinbox=%s"), *GetNameSafe(SpinBox));
+        return nullptr;
+    }
+
+    UK2Node_ComponentBoundEvent* Node = NewObject<UK2Node_ComponentBoundEvent>(Graph);
+    if (!Node) {
+        return nullptr;
+    }
+    Node->InitializeComponentBoundEventParams(ComponentProperty, DelegateProperty);
+    Node->NodePosX = X;
+    Node->NodePosY = Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->AllocateDefaultPins();
+    return Node;
+}
+
 // __DEPRECATED_20260716__ [reason: replaced by target-projected OnPaint guide]
 bool BuildStaticOverlay(UWidgetBlueprint* Blueprint) {
     UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildOverlay begin blueprint=%s"), *GetNameSafe(Blueprint));
@@ -688,6 +735,24 @@ bool BuildOverlay(
         Blueprint->NewVariables[ExistingTargetsIndex].VarType = ObjectArrayPin(PalMonsterClass);
     }
 
+    const int32 ExistingTargetLevelsIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayTargetLevelsVariableName);
+    if (ExistingTargetLevelsIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayTargetLevelsVariableName, IntArrayPin())) {
+            return false;
+        }
+    } else {
+        Blueprint->NewVariables[ExistingTargetLevelsIndex].VarType = IntArrayPin();
+    }
+
+    const int32 ExistingTargetDistancesIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayTargetDistancesVariableName);
+    if (ExistingTargetDistancesIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayTargetDistancesVariableName, IntArrayPin())) {
+            return false;
+        }
+    } else {
+        Blueprint->NewVariables[ExistingTargetDistancesIndex].VarType = IntArrayPin();
+    }
+
     const int32 ExistingGenderLoggedIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayGenderLoggedVariableName);
     if (ExistingGenderLoggedIndex == INDEX_NONE) {
         if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayGenderLoggedVariableName, BoolPin())) {
@@ -735,19 +800,41 @@ bool BuildOverlay(
     ClearGraph(Graph);
 
     UK2Node_CustomEvent* AddTarget = AddCustomEvent(Blueprint, Graph, *OverlayAddTargetEventName.ToString(), -1500, -600, {
-        TPair<FName, FEdGraphPinType>(FName("Target"), ObjectPin(PalMonsterClass))
+        TPair<FName, FEdGraphPinType>(FName("Target"), ObjectPin(PalMonsterClass)),
+        TPair<FName, FEdGraphPinType>(FName("Level"), IntPin()),
+        TPair<FName, FEdGraphPinType>(FName("DistanceMeters"), IntPin())
     });
     UK2Node_VariableGet* AddTargetsGet = AddVariableGet(Graph, OverlayTargetsVariableName, -1240, -440);
-    UK2Node_CallArrayFunction* AddUnique = AddArrayCall(Graph, TEXT("Array_AddUnique"), -960, -600);
+    UK2Node_CallArrayFunction* AddTargetItem = AddArrayCall(Graph, TEXT("Array_Add"), -960, -600);
+    UK2Node_VariableGet* AddLevelsGet = AddVariableGet(Graph, OverlayTargetLevelsVariableName, -700, -440);
+    UK2Node_CallArrayFunction* AddLevelItem = AddArrayCall(Graph, TEXT("Array_Add"), -420, -600);
+    UK2Node_VariableGet* AddDistancesGet = AddVariableGet(Graph, OverlayTargetDistancesVariableName, -160, -440);
+    UK2Node_CallArrayFunction* AddDistanceItem = AddArrayCall(Graph, TEXT("Array_Add"), 120, -600);
     UK2Node_CustomEvent* ClearTargets = AddCustomEvent(Blueprint, Graph, *OverlayClearTargetsEventName.ToString(), -1500, -300, {});
     UK2Node_VariableGet* ClearTargetsGet = AddVariableGet(Graph, OverlayTargetsVariableName, -1240, -140);
-    UK2Node_CallArrayFunction* ClearArray = AddArrayCall(Graph, TEXT("Array_Clear"), -960, -300);
-    if (!AddTarget || !AddTargetsGet || !AddUnique || !ClearTargets || !ClearTargetsGet || !ClearArray
-        || !Link(AddTarget, UEdGraphSchema_K2::PN_Then, AddUnique, UEdGraphSchema_K2::PN_Execute)
-        || !Link(AddTargetsGet, OverlayTargetsVariableName, AddUnique, TEXT("TargetArray"))
-        || !Link(AddTarget, TEXT("Target"), AddUnique, TEXT("NewItem"))
-        || !Link(ClearTargets, UEdGraphSchema_K2::PN_Then, ClearArray, UEdGraphSchema_K2::PN_Execute)
-        || !Link(ClearTargetsGet, OverlayTargetsVariableName, ClearArray, TEXT("TargetArray"))) {
+    UK2Node_CallArrayFunction* ClearTargetArray = AddArrayCall(Graph, TEXT("Array_Clear"), -960, -300);
+    UK2Node_VariableGet* ClearLevelsGet = AddVariableGet(Graph, OverlayTargetLevelsVariableName, -700, -140);
+    UK2Node_CallArrayFunction* ClearLevelArray = AddArrayCall(Graph, TEXT("Array_Clear"), -420, -300);
+    UK2Node_VariableGet* ClearDistancesGet = AddVariableGet(Graph, OverlayTargetDistancesVariableName, -160, -140);
+    UK2Node_CallArrayFunction* ClearDistanceArray = AddArrayCall(Graph, TEXT("Array_Clear"), 120, -300);
+    if (!AddTarget || !AddTargetsGet || !AddTargetItem || !AddLevelsGet || !AddLevelItem
+        || !AddDistancesGet || !AddDistanceItem || !ClearTargets || !ClearTargetsGet || !ClearTargetArray
+        || !ClearLevelsGet || !ClearLevelArray || !ClearDistancesGet || !ClearDistanceArray
+        || !Link(AddTarget, UEdGraphSchema_K2::PN_Then, AddTargetItem, UEdGraphSchema_K2::PN_Execute)
+        || !Link(AddTargetsGet, OverlayTargetsVariableName, AddTargetItem, TEXT("TargetArray"))
+        || !Link(AddTarget, TEXT("Target"), AddTargetItem, TEXT("NewItem"))
+        || !Link(AddTargetItem, UEdGraphSchema_K2::PN_Then, AddLevelItem, UEdGraphSchema_K2::PN_Execute)
+        || !Link(AddLevelsGet, OverlayTargetLevelsVariableName, AddLevelItem, TEXT("TargetArray"))
+        || !Link(AddTarget, TEXT("Level"), AddLevelItem, TEXT("NewItem"))
+        || !Link(AddLevelItem, UEdGraphSchema_K2::PN_Then, AddDistanceItem, UEdGraphSchema_K2::PN_Execute)
+        || !Link(AddDistancesGet, OverlayTargetDistancesVariableName, AddDistanceItem, TEXT("TargetArray"))
+        || !Link(AddTarget, TEXT("DistanceMeters"), AddDistanceItem, TEXT("NewItem"))
+        || !Link(ClearTargets, UEdGraphSchema_K2::PN_Then, ClearTargetArray, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ClearTargetsGet, OverlayTargetsVariableName, ClearTargetArray, TEXT("TargetArray"))
+        || !Link(ClearTargetArray, UEdGraphSchema_K2::PN_Then, ClearLevelArray, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ClearLevelsGet, OverlayTargetLevelsVariableName, ClearLevelArray, TEXT("TargetArray"))
+        || !Link(ClearLevelArray, UEdGraphSchema_K2::PN_Then, ClearDistanceArray, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ClearDistancesGet, OverlayTargetDistancesVariableName, ClearDistanceArray, TEXT("TargetArray"))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay target array graph failed"));
         return false;
     }
@@ -770,7 +857,7 @@ bool BuildOverlay(
         || !CharacterParameter || !CharacterParameterValid || !CharacterParameterBranch
         || !IndividualParameter || !IndividualParameterValid || !IndividualParameterBranch
         || !GenderType || !GenderSwitch || !GenderSelf
-        || !Link(AddUnique, UEdGraphSchema_K2::PN_Then, GenderGate, UEdGraphSchema_K2::PN_Execute)
+        || !Link(AddDistanceItem, UEdGraphSchema_K2::PN_Then, GenderGate, UEdGraphSchema_K2::PN_Execute)
         || !Link(GenderLoggedGet, OverlayGenderLoggedVariableName, GenderNot, TEXT("A"))
         || !Link(GenderNot, UEdGraphSchema_K2::PN_ReturnValue, GenderGate, UEdGraphSchema_K2::PN_Condition)
         || !Link(GenderGate, UEdGraphSchema_K2::PN_Then, GenderTargetBranch, UEdGraphSchema_K2::PN_Execute)
@@ -822,9 +909,15 @@ bool BuildOverlay(
 
     UK2Node_Event* OnPaint = AddOverrideEvent(Blueprint, Graph, UUserWidget::StaticClass(), TEXT("OnPaint"), -1500, 80);
     UK2Node_VariableGet* TopGuideEnabledGet = AddVariableGet(Graph, OverlayTopGuideEnabledVariableName, -1500, 200);
-    UK2Node_IfThenElse* TopGuideEnabledBranch = AddBranch(Graph, -1260, 80);
+    UK2Node_IfThenElse* TopGuideEnabledBranch = AddBranch(Graph, 520, 80);
     UK2Node_VariableGet* TargetsGet = AddVariableGet(Graph, OverlayTargetsVariableName, -1500, 300);
     UK2Node_MacroInstance* ForEachTarget = AddForEachLoop(Graph, -1000, 80);
+    UK2Node_VariableGet* TargetLevelsGet = AddVariableGet(Graph, OverlayTargetLevelsVariableName, -1000, 1040);
+    UK2Node_CallArrayFunction* TargetLevelGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1040);
+    UK2Node_VariableGet* TargetDistancesGet = AddVariableGet(Graph, OverlayTargetDistancesVariableName, -1000, 1200);
+    UK2Node_CallArrayFunction* TargetDistanceGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1200);
+    UK2Node_CallFunction* BuildLevelText = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), -400, 1040);
+    UK2Node_CallFunction* BuildDistanceText = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), -80, 1040);
     UK2Node_CallFunction* TargetValid = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("IsValid"), -940, 300);
     UK2Node_IfThenElse* TargetBranch = AddBranch(Graph, -700, 80);
     UK2Node_CallFunction* TargetDead = AddStaticCall(Graph, PalUtilityClass, TEXT("IsDead"), -700, 440);
@@ -842,15 +935,26 @@ bool BuildOverlay(
     UK2Node_CallFunction* HalfWidth = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Multiply_DoubleDouble"), 240, 800);
     UK2Node_CallFunction* MakeStart = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("MakeVector2D"), 500, 800);
     UK2Node_CallFunction* DrawLine = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("DrawLine"), 240, 80);
+    UK2Node_CallFunction* MakeLabelOffset = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("MakeVector2D"), 240, 1040);
+    UK2Node_CallFunction* LabelPosition = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Add_Vector2DVector2D"), 520, 1040);
+    UK2Node_CallFunction* DrawText = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("DrawText"), 240, 260);
     if (!OnPaint || !TopGuideEnabledGet || !TopGuideEnabledBranch || !TargetsGet || !ForEachTarget
+        || !TargetLevelsGet || !TargetLevelGet || !TargetDistancesGet || !TargetDistanceGet
+        || !BuildLevelText || !BuildDistanceText
         || !TargetValid || !TargetBranch || !TargetDead || !TargetNotDead
         || !TargetAliveBranch || !ActorLocation || !Self || !PlayerController
         || !Project || !ProjectBranch || !ViewportSize || !ViewportScale || !BreakViewport || !RemoveScale
-        || !HalfWidth || !MakeStart || !DrawLine
-        || !Link(OnPaint, UEdGraphSchema_K2::PN_Then, TopGuideEnabledBranch, UEdGraphSchema_K2::PN_Execute)
+        || !HalfWidth || !MakeStart || !DrawLine || !MakeLabelOffset || !LabelPosition || !DrawText
+        || !Link(OnPaint, UEdGraphSchema_K2::PN_Then, ForEachTarget, TEXT("Exec"))
         || !Link(TopGuideEnabledGet, OverlayTopGuideEnabledVariableName, TopGuideEnabledBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(TopGuideEnabledBranch, UEdGraphSchema_K2::PN_Then, ForEachTarget, TEXT("Exec"))
         || !Link(TargetsGet, OverlayTargetsVariableName, ForEachTarget, TEXT("Array"))
+        || !Link(TargetLevelsGet, OverlayTargetLevelsVariableName, TargetLevelGet, TEXT("TargetArray"))
+        || !Link(ForEachTarget, TEXT("Array Index"), TargetLevelGet, TEXT("Index"))
+        || !Link(TargetDistancesGet, OverlayTargetDistancesVariableName, TargetDistanceGet, TEXT("TargetArray"))
+        || !Link(ForEachTarget, TEXT("Array Index"), TargetDistanceGet, TEXT("Index"))
+        || !Link(TargetLevelGet, TEXT("Item"), BuildLevelText, TEXT("InInt"))
+        || !Link(BuildLevelText, UEdGraphSchema_K2::PN_ReturnValue, BuildDistanceText, TEXT("AppendTo"))
+        || !Link(TargetDistanceGet, TEXT("Item"), BuildDistanceText, TEXT("InInt"))
         // __DEPRECATED_20260716__ [reason: UE 5.1 StandardMacros exposes this pin as LoopBody]
         // || !Link(ForEachTarget, TEXT("Loop Body"), TargetBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(ForEachTarget, TEXT("LoopBody"), TargetBranch, UEdGraphSchema_K2::PN_Execute)
@@ -866,7 +970,14 @@ bool BuildOverlay(
         || !Link(PlayerController, UEdGraphSchema_K2::PN_ReturnValue, Project, TEXT("PlayerController"))
         || !Link(ActorLocation, UEdGraphSchema_K2::PN_ReturnValue, Project, TEXT("WorldLocation"))
         || !Link(Project, UEdGraphSchema_K2::PN_ReturnValue, ProjectBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(ProjectBranch, UEdGraphSchema_K2::PN_Then, DrawLine, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ProjectBranch, UEdGraphSchema_K2::PN_Then, DrawText, UEdGraphSchema_K2::PN_Execute)
+        || !Link(DrawText, UEdGraphSchema_K2::PN_Then, TopGuideEnabledBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(TopGuideEnabledBranch, UEdGraphSchema_K2::PN_Then, DrawLine, UEdGraphSchema_K2::PN_Execute)
+        || !Link(OnPaint, TEXT("Context"), DrawText, TEXT("Context"))
+        || !Link(BuildDistanceText, UEdGraphSchema_K2::PN_ReturnValue, DrawText, TEXT("InString"))
+        || !Link(Project, TEXT("ScreenPosition"), LabelPosition, TEXT("A"))
+        || !Link(MakeLabelOffset, UEdGraphSchema_K2::PN_ReturnValue, LabelPosition, TEXT("B"))
+        || !Link(LabelPosition, UEdGraphSchema_K2::PN_ReturnValue, DrawText, TEXT("Position"))
         || !Link(OnPaint, TEXT("Context"), DrawLine, TEXT("Context"))
         || !Link(Project, TEXT("ScreenPosition"), DrawLine, TEXT("PositionB"))
         || !Link(Self, UEdGraphSchema_K2::PN_Self, ViewportSize, TEXT("WorldContextObject"))
@@ -879,6 +990,14 @@ bool BuildOverlay(
         || !Link(MakeStart, UEdGraphSchema_K2::PN_ReturnValue, DrawLine, TEXT("PositionA"))
         || !SetPinDefault(HalfWidth, TEXT("B"), TEXT("0.5"))
         || !SetPinDefault(MakeStart, TEXT("Y"), TEXT("24.0"))
+        || !SetPinDefault(BuildLevelText, TEXT("AppendTo"), TEXT(""))
+        || !SetPinDefault(BuildLevelText, TEXT("Prefix"), TEXT("Lv."))
+        || !SetPinDefault(BuildLevelText, TEXT("Suffix"), TEXT("  "))
+        || !SetPinDefault(BuildDistanceText, TEXT("Prefix"), TEXT(""))
+        || !SetPinDefault(BuildDistanceText, TEXT("Suffix"), TEXT("m"))
+        || !SetPinDefault(MakeLabelOffset, TEXT("X"), TEXT("8.0"))
+        || !SetPinDefault(MakeLabelOffset, TEXT("Y"), TEXT("12.0"))
+        || !SetPinDefault(DrawText, TEXT("Tint"), TEXT("(R=1.0,G=1.0,B=1.0,A=0.95)"))
         || !SetPinDefault(DrawLine, TEXT("Tint"), TEXT("(R=0.15,G=1.0,B=0.25,A=0.95)"))
         || !SetPinDefault(DrawLine, TEXT("Thickness"), TEXT("1.5"))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay multi-target OnPaint graph failed"));
@@ -926,6 +1045,7 @@ bool PrepareModActorControls(UBlueprint* Blueprint) {
         || !EnsureMemberVariable(Blueprint, LevelMaxVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, DistanceMinVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, DistanceMaxVariableName, IntPin(), TEXT("0"))
+        || !EnsureMemberVariable(Blueprint, DisplayTargetLimitVariableName, IntPin(), TEXT("64"))
         || !EnsureMemberVariable(Blueprint, ShowTopGuideLineVariableName, BoolPin(), TEXT("true"))) {
         return false;
     }
@@ -979,6 +1099,34 @@ UButton* AddPanelButton(
     Button->AddChild(Label);
     Parent->AddChild(Button);
     return Button;
+}
+
+USpinBox* AddPanelSpinBox(
+    UWidgetBlueprint* Blueprint,
+    UPanelWidget* Parent,
+    const FName& Name,
+    float InitialValue,
+    float Minimum,
+    float Maximum,
+    float Delta) {
+    USpinBox* SpinBox = Blueprint->WidgetTree->ConstructWidget<USpinBox>(USpinBox::StaticClass(), Name);
+    if (!SpinBox) {
+        return nullptr;
+    }
+    SpinBox->bIsVariable = true;
+    SpinBox->SetValue(InitialValue);
+    SpinBox->SetMinValue(Minimum);
+    SpinBox->SetMaxValue(Maximum);
+    SpinBox->SetMinSliderValue(Minimum);
+    SpinBox->SetMaxSliderValue(Maximum);
+    SpinBox->SetDelta(Delta);
+    SpinBox->SetMinFractionalDigits(0);
+    SpinBox->SetMaxFractionalDigits(0);
+    SpinBox->SetAlwaysUsesDeltaSnap(false);
+    SpinBox->MinDesiredWidth = 180.0f;
+    SpinBox->ForegroundColor = FSlateColor(FLinearColor(0.96f, 0.97f, 0.98f, 1.0f));
+    Parent->AddChild(SpinBox);
+    return SpinBox;
 }
 
 bool AppendExternalAssignment(
@@ -1077,6 +1225,78 @@ bool BuildPanelControlEvent(
     }
     X += StatusTextName == NAME_None ? 0 : 560;
     return AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, ExecTail, X, Y);
+}
+
+bool BuildPanelNumericEvent(
+    UWidgetBlueprint* Blueprint,
+    USpinBox* SpinBox,
+    UClass* ModActorClass,
+    const FName& VariableName,
+    int32 Y) {
+    UEdGraph* Graph = EventGraph(Blueprint);
+    UK2Node_ComponentBoundEvent* Event = AddSpinBoxValueChangedEvent(Blueprint, SpinBox, -1300, Y);
+    UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1040, Y + 120);
+    UK2Node_CallFunction* Round = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Round"), -1040, Y);
+    UK2Node_VariableSet* Store = AddExternalVariableSet(Graph, VariableName, ModActorClass, -760, Y);
+    UEdGraphNode* ExecTail = Store;
+    if (!Graph || !Event || !BridgeGet || !Round || !Store
+        || !Link(Event, TEXT("InValue"), Round, TEXT("A"))
+        || !Link(Round, UEdGraphSchema_K2::PN_ReturnValue, Store, VariableName)
+        || !Link(Event, UEdGraphSchema_K2::PN_Then, Store, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BridgeGet, PanelBridgeVariableName, Store, UEdGraphSchema_K2::PN_Self)) {
+        return false;
+    }
+    return AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, ExecTail, -460, Y);
+}
+
+bool BuildPanelInitializeControls(
+    UWidgetBlueprint* Blueprint,
+    USpinBox* DisplayLimit,
+    USpinBox* LevelMin,
+    USpinBox* LevelMax,
+    USpinBox* DistanceMin,
+    USpinBox* DistanceMax,
+    int32 Y) {
+    UEdGraph* Graph = EventGraph(Blueprint);
+    UK2Node_CustomEvent* Event = AddCustomEvent(Blueprint, Graph, *PanelInitializeControlsEventName.ToString(), -1400, Y, {
+        TPair<FName, FEdGraphPinType>(FName("DisplayTargetLimit"), IntPin()),
+        TPair<FName, FEdGraphPinType>(FName("LevelMin"), IntPin()),
+        TPair<FName, FEdGraphPinType>(FName("LevelMax"), IntPin()),
+        TPair<FName, FEdGraphPinType>(FName("DistanceMin"), IntPin()),
+        TPair<FName, FEdGraphPinType>(FName("DistanceMax"), IntPin())
+    });
+    if (!Graph || !Event) {
+        return false;
+    }
+
+    struct FInitializer {
+        USpinBox* SpinBox;
+        FName InputName;
+    };
+    const TArray<FInitializer> Initializers = {
+        {DisplayLimit, TEXT("DisplayTargetLimit")},
+        {LevelMin, TEXT("LevelMin")},
+        {LevelMax, TEXT("LevelMax")},
+        {DistanceMin, TEXT("DistanceMin")},
+        {DistanceMax, TEXT("DistanceMax")},
+    };
+    UEdGraphNode* ExecTail = Event;
+    int32 X = -1120;
+    for (const FInitializer& Initializer : Initializers) {
+        UK2Node_VariableGet* SpinGet = AddVariableGet(Graph, Initializer.SpinBox->GetFName(), X, Y + 140);
+        UK2Node_CallFunction* ToFloat = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Conv_IntToFloat"), X, Y + 280);
+        UK2Node_CallFunction* SetValue = AddStaticCall(Graph, USpinBox::StaticClass(), TEXT("SetValue"), X + 260, Y);
+        if (!SpinGet || !ToFloat || !SetValue
+            || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetValue, UEdGraphSchema_K2::PN_Execute)
+            || !Link(SpinGet, Initializer.SpinBox->GetFName(), SetValue, UEdGraphSchema_K2::PN_Self)
+            || !Link(Event, Initializer.InputName, ToFloat, TEXT("InInt"))
+            || !Link(ToFloat, UEdGraphSchema_K2::PN_ReturnValue, SetValue, TEXT("NewValue"))) {
+            return false;
+        }
+        ExecTail = SetValue;
+        X += 560;
+    }
+    return true;
 }
 
 bool BuildPanelVisibilityEvent(
@@ -1181,44 +1401,30 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     UButton* TopGuideOn = AddPanelButton(Blueprint, TopGuideRow, TEXT("ESP_TopGuideOnButton"), TEXT("ESP_TopGuideOnText"), TEXT("显示顶部引导线"));
     UButton* TopGuideOff = AddPanelButton(Blueprint, TopGuideRow, TEXT("ESP_TopGuideOffButton"), TEXT("ESP_TopGuideOffText"), TEXT("隐藏顶部引导线"));
 
-    UTextBlock* PresetHeading = AddPanelText(Blueprint, Content, TEXT("ESP_PresetHeadingText"), TEXT("目标显示上限"), 18);
+    UTextBlock* PresetHeading = AddPanelText(Blueprint, Content, TEXT("ESP_PresetHeadingText"), TEXT("目标显示上限 (1-512)"), 18);
     UHorizontalBox* PresetRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_PresetRow"));
     Content->AddChild(PresetRow);
-    UButton* PresetLow = AddPanelButton(Blueprint, PresetRow, TEXT("ESP_PresetLowButton"), TEXT("ESP_PresetLowText"), TEXT("32 个目标"));
-    UButton* PresetBalanced = AddPanelButton(Blueprint, PresetRow, TEXT("ESP_PresetBalancedButton"), TEXT("ESP_PresetBalancedText"), TEXT("64 个目标"));
-    UButton* PresetQuality = AddPanelButton(Blueprint, PresetRow, TEXT("ESP_PresetQualityButton"), TEXT("ESP_PresetQualityText"), TEXT("128 个目标"));
+    USpinBox* DisplayTargetLimit = AddPanelSpinBox(Blueprint, PresetRow, TEXT("ESP_DisplayTargetLimitInput"), 64.0f, 1.0f, 512.0f, 1.0f);
 
     UTextBlock* LevelHeading = AddPanelText(Blueprint, Content, TEXT("ESP_LevelHeadingText"), TEXT("等级筛选"), 18);
-    UTextBlock* LevelMinHeading = AddPanelText(Blueprint, Content, TEXT("ESP_LevelMinHeadingText"), TEXT("等级下限"), 14);
+    UTextBlock* LevelMinHeading = AddPanelText(Blueprint, Content, TEXT("ESP_LevelMinHeadingText"), TEXT("等级下限 (0=不限)"), 14);
     UHorizontalBox* LevelMinRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_LevelMinRow"));
     Content->AddChild(LevelMinRow);
-    UButton* LevelMinAny = AddPanelButton(Blueprint, LevelMinRow, TEXT("ESP_LevelMinAnyButton"), TEXT("ESP_LevelMinAnyText"), TEXT("不限"));
-    UButton* LevelMin20 = AddPanelButton(Blueprint, LevelMinRow, TEXT("ESP_LevelMin20Button"), TEXT("ESP_LevelMin20Text"), TEXT("20+"));
-    UButton* LevelMin40 = AddPanelButton(Blueprint, LevelMinRow, TEXT("ESP_LevelMin40Button"), TEXT("ESP_LevelMin40Text"), TEXT("40+"));
-    UButton* LevelMin60 = AddPanelButton(Blueprint, LevelMinRow, TEXT("ESP_LevelMin60Button"), TEXT("ESP_LevelMin60Text"), TEXT("60+"));
-    UTextBlock* LevelMaxHeading = AddPanelText(Blueprint, Content, TEXT("ESP_LevelMaxHeadingText"), TEXT("等级上限"), 14);
+    USpinBox* LevelMin = AddPanelSpinBox(Blueprint, LevelMinRow, TEXT("ESP_LevelMinInput"), 0.0f, 0.0f, 100.0f, 1.0f);
+    UTextBlock* LevelMaxHeading = AddPanelText(Blueprint, Content, TEXT("ESP_LevelMaxHeadingText"), TEXT("等级上限 (0=不限)"), 14);
     UHorizontalBox* LevelMaxRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_LevelMaxRow"));
     Content->AddChild(LevelMaxRow);
-    UButton* LevelMaxAny = AddPanelButton(Blueprint, LevelMaxRow, TEXT("ESP_LevelMaxAnyButton"), TEXT("ESP_LevelMaxAnyText"), TEXT("不限"));
-    UButton* LevelMax20 = AddPanelButton(Blueprint, LevelMaxRow, TEXT("ESP_LevelMax20Button"), TEXT("ESP_LevelMax20Text"), TEXT("≤20"));
-    UButton* LevelMax40 = AddPanelButton(Blueprint, LevelMaxRow, TEXT("ESP_LevelMax40Button"), TEXT("ESP_LevelMax40Text"), TEXT("≤40"));
-    UButton* LevelMax60 = AddPanelButton(Blueprint, LevelMaxRow, TEXT("ESP_LevelMax60Button"), TEXT("ESP_LevelMax60Text"), TEXT("≤60"));
+    USpinBox* LevelMax = AddPanelSpinBox(Blueprint, LevelMaxRow, TEXT("ESP_LevelMaxInput"), 0.0f, 0.0f, 100.0f, 1.0f);
 
     UTextBlock* DistanceHeading = AddPanelText(Blueprint, Content, TEXT("ESP_DistanceHeadingText"), TEXT("距离筛选"), 18);
-    UTextBlock* DistanceMinHeading = AddPanelText(Blueprint, Content, TEXT("ESP_DistanceMinHeadingText"), TEXT("距离下限"), 14);
+    UTextBlock* DistanceMinHeading = AddPanelText(Blueprint, Content, TEXT("ESP_DistanceMinHeadingText"), TEXT("距离下限 (0=不限，米)"), 14);
     UHorizontalBox* DistanceMinRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_DistanceMinRow"));
     Content->AddChild(DistanceMinRow);
-    UButton* DistanceMinAny = AddPanelButton(Blueprint, DistanceMinRow, TEXT("ESP_DistanceMinAnyButton"), TEXT("ESP_DistanceMinAnyText"), TEXT("不限"));
-    UButton* DistanceMin10 = AddPanelButton(Blueprint, DistanceMinRow, TEXT("ESP_DistanceMin10Button"), TEXT("ESP_DistanceMin10Text"), TEXT("10m+"));
-    UButton* DistanceMin500 = AddPanelButton(Blueprint, DistanceMinRow, TEXT("ESP_DistanceMin500Button"), TEXT("ESP_DistanceMin500Text"), TEXT("500m+"));
-    UButton* DistanceMin2000 = AddPanelButton(Blueprint, DistanceMinRow, TEXT("ESP_DistanceMin2000Button"), TEXT("ESP_DistanceMin2000Text"), TEXT("2000m+"));
-    UTextBlock* DistanceMaxHeading = AddPanelText(Blueprint, Content, TEXT("ESP_DistanceMaxHeadingText"), TEXT("距离上限"), 14);
+    USpinBox* DistanceMin = AddPanelSpinBox(Blueprint, DistanceMinRow, TEXT("ESP_DistanceMinInput"), 0.0f, 0.0f, 50000.0f, 10.0f);
+    UTextBlock* DistanceMaxHeading = AddPanelText(Blueprint, Content, TEXT("ESP_DistanceMaxHeadingText"), TEXT("距离上限 (0=不限，米)"), 14);
     UHorizontalBox* DistanceMaxRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_DistanceMaxRow"));
     Content->AddChild(DistanceMaxRow);
-    UButton* DistanceMaxAny = AddPanelButton(Blueprint, DistanceMaxRow, TEXT("ESP_DistanceMaxAnyButton"), TEXT("ESP_DistanceMaxAnyText"), TEXT("不限"));
-    UButton* DistanceMax500 = AddPanelButton(Blueprint, DistanceMaxRow, TEXT("ESP_DistanceMax500Button"), TEXT("ESP_DistanceMax500Text"), TEXT("≤500m"));
-    UButton* DistanceMax2000 = AddPanelButton(Blueprint, DistanceMaxRow, TEXT("ESP_DistanceMax2000Button"), TEXT("ESP_DistanceMax2000Text"), TEXT("≤2000m"));
-    UButton* DistanceMax50000 = AddPanelButton(Blueprint, DistanceMaxRow, TEXT("ESP_DistanceMax50000Button"), TEXT("ESP_DistanceMax50000Text"), TEXT("≤50000m"));
+    USpinBox* DistanceMax = AddPanelSpinBox(Blueprint, DistanceMaxRow, TEXT("ESP_DistanceMaxInput"), 0.0f, 0.0f, 50000.0f, 10.0f);
 
     UTextBlock* LanguageHeading = AddPanelText(Blueprint, Content, TEXT("ESP_LanguageHeadingText"), TEXT("Language"), 18);
     UHorizontalBox* LanguageRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_LanguageRow"));
@@ -1249,11 +1455,9 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     UButton* AdvancedCollapse = AddPanelButton(Blueprint, Advanced, TEXT("ESP_AdvancedCollapseButton"), TEXT("ESP_AdvancedCollapseText"), TEXT("收起高级诊断"));
 
     if (!Title || !RuntimeStatus || !RuntimeOn || !RuntimeOff || !StyleHeading || !TopGuideOn || !TopGuideOff
-        || !PresetHeading || !PresetLow || !PresetBalanced
-        || !PresetQuality || !LevelHeading || !LevelMinHeading || !LevelMinAny || !LevelMin20 || !LevelMin40 || !LevelMin60
-        || !LevelMaxHeading || !LevelMaxAny || !LevelMax20 || !LevelMax40 || !LevelMax60
-        || !DistanceHeading || !DistanceMinHeading || !DistanceMinAny || !DistanceMin10 || !DistanceMin500 || !DistanceMin2000
-        || !DistanceMaxHeading || !DistanceMaxAny || !DistanceMax500 || !DistanceMax2000 || !DistanceMax50000
+        || !PresetHeading || !DisplayTargetLimit || !LevelHeading || !LevelMinHeading || !LevelMin
+        || !LevelMaxHeading || !LevelMax || !DistanceHeading || !DistanceMinHeading || !DistanceMin
+        || !DistanceMaxHeading || !DistanceMax
         || !LanguageHeading || !Chinese || !English || !AdvancedExpand || !ModeHeading
         || !ModeStatus || !ModeOff || !ModeSnapshot || !ModeChunked || !ModeEvent || !CaptureStatus
         || !CaptureStart || !CaptureStop || !AdvancedCollapse) {
@@ -1276,25 +1480,6 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         || !Control(RuntimeOff, {{RuntimeEnabledVariableName, TEXT("false")}}, TEXT("ESP_RuntimeStatusText"), TEXT("Mod 状态 / Mod: 关闭 / Off"))
         || !Control(TopGuideOn, {{ShowTopGuideLineVariableName, TEXT("true")}}, NAME_None, TEXT(""))
         || !Control(TopGuideOff, {{ShowTopGuideLineVariableName, TEXT("false")}}, NAME_None, TEXT(""))
-        || !Control(PresetLow, {{PresetIdVariableName, TEXT("0")}}, NAME_None, TEXT(""))
-        || !Control(PresetBalanced, {{PresetIdVariableName, TEXT("1")}}, NAME_None, TEXT(""))
-        || !Control(PresetQuality, {{PresetIdVariableName, TEXT("2")}}, NAME_None, TEXT(""))
-        || !Control(LevelMinAny, {{LevelMinVariableName, TEXT("0")}}, NAME_None, TEXT(""))
-        || !Control(LevelMin20, {{LevelMinVariableName, TEXT("20")}}, NAME_None, TEXT(""))
-        || !Control(LevelMin40, {{LevelMinVariableName, TEXT("40")}}, NAME_None, TEXT(""))
-        || !Control(LevelMin60, {{LevelMinVariableName, TEXT("60")}}, NAME_None, TEXT(""))
-        || !Control(LevelMaxAny, {{LevelMaxVariableName, TEXT("0")}}, NAME_None, TEXT(""))
-        || !Control(LevelMax20, {{LevelMaxVariableName, TEXT("20")}}, NAME_None, TEXT(""))
-        || !Control(LevelMax40, {{LevelMaxVariableName, TEXT("40")}}, NAME_None, TEXT(""))
-        || !Control(LevelMax60, {{LevelMaxVariableName, TEXT("60")}}, NAME_None, TEXT(""))
-        || !Control(DistanceMinAny, {{DistanceMinVariableName, TEXT("0")}}, NAME_None, TEXT(""))
-        || !Control(DistanceMin10, {{DistanceMinVariableName, TEXT("10")}}, NAME_None, TEXT(""))
-        || !Control(DistanceMin500, {{DistanceMinVariableName, TEXT("500")}}, NAME_None, TEXT(""))
-        || !Control(DistanceMin2000, {{DistanceMinVariableName, TEXT("2000")}}, NAME_None, TEXT(""))
-        || !Control(DistanceMaxAny, {{DistanceMaxVariableName, TEXT("0")}}, NAME_None, TEXT(""))
-        || !Control(DistanceMax500, {{DistanceMaxVariableName, TEXT("500")}}, NAME_None, TEXT(""))
-        || !Control(DistanceMax2000, {{DistanceMaxVariableName, TEXT("2000")}}, NAME_None, TEXT(""))
-        || !Control(DistanceMax50000, {{DistanceMaxVariableName, TEXT("50000")}}, NAME_None, TEXT(""))
         || !Control(ModeOff, {{RuntimeEnabledVariableName, TEXT("true")}, {ProfileIdVariableName, TEXT("0")}}, TEXT("ESP_ModeStatusText"), TEXT("当前模式 / Mode: 关闭 / Off"))
         || !Control(ModeSnapshot, {{RuntimeEnabledVariableName, TEXT("true")}, {ProfileIdVariableName, TEXT("1")}}, TEXT("ESP_ModeStatusText"), TEXT("当前模式 / Mode: 单次快照 / Snapshot once"))
         || !Control(ModeChunked, {{RuntimeEnabledVariableName, TEXT("true")}, {ProfileIdVariableName, TEXT("2")}}, TEXT("ESP_ModeStatusText"), TEXT("当前模式 / Mode: 当前分批 / Current chunked"))
@@ -1303,6 +1488,26 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         || !Control(CaptureStop, {{CaptureRequestedVariableName, TEXT("false")}}, TEXT("ESP_CaptureStatusText"), TEXT("采集状态 / Capture: 已停止 / Stopped"))) {
         return false;
     }
+
+    if (!BuildPanelNumericEvent(Blueprint, DisplayTargetLimit, ModActorClass, DisplayTargetLimitVariableName, Y)
+        || !BuildPanelNumericEvent(Blueprint, LevelMin, ModActorClass, LevelMinVariableName, Y + 360)
+        || !BuildPanelNumericEvent(Blueprint, LevelMax, ModActorClass, LevelMaxVariableName, Y + 720)
+        || !BuildPanelNumericEvent(Blueprint, DistanceMin, ModActorClass, DistanceMinVariableName, Y + 1080)
+        || !BuildPanelNumericEvent(Blueprint, DistanceMax, ModActorClass, DistanceMaxVariableName, Y + 1440)) {
+        return false;
+    }
+    Y += 1800;
+    if (!BuildPanelInitializeControls(
+        Blueprint,
+        DisplayTargetLimit,
+        LevelMin,
+        LevelMax,
+        DistanceMin,
+        DistanceMax,
+        Y)) {
+        return false;
+    }
+    Y += 720;
 
     if (!BuildPanelVisibilityEvent(Blueprint, AdvancedExpand, TEXT("ESP_AdvancedBox"), TEXT("Visible"), Y)) {
         return false;
@@ -1320,32 +1525,13 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         {TEXT("ESP_StyleHeadingText"), TEXT("显示样式"), TEXT("Display style")},
         {TEXT("ESP_TopGuideOnText"), TEXT("显示顶部引导线"), TEXT("Show top guides")},
         {TEXT("ESP_TopGuideOffText"), TEXT("隐藏顶部引导线"), TEXT("Hide top guides")},
-        {TEXT("ESP_PresetHeadingText"), TEXT("目标显示上限"), TEXT("Display target limit")},
-        {TEXT("ESP_PresetLowText"), TEXT("32 个目标"), TEXT("32 targets")},
-        {TEXT("ESP_PresetBalancedText"), TEXT("64 个目标"), TEXT("64 targets")},
-        {TEXT("ESP_PresetQualityText"), TEXT("128 个目标"), TEXT("128 targets")},
+        {TEXT("ESP_PresetHeadingText"), TEXT("目标显示上限 (1-512)"), TEXT("Display target limit (1-512)")},
         {TEXT("ESP_LevelHeadingText"), TEXT("等级筛选"), TEXT("Level filter")},
-        {TEXT("ESP_LevelMinHeadingText"), TEXT("等级下限"), TEXT("Minimum level")},
-        {TEXT("ESP_LevelMinAnyText"), TEXT("不限"), TEXT("Any")},
-        {TEXT("ESP_LevelMin20Text"), TEXT("20+"), TEXT("20+")},
-        {TEXT("ESP_LevelMin40Text"), TEXT("40+"), TEXT("40+")},
-        {TEXT("ESP_LevelMin60Text"), TEXT("60+"), TEXT("60+")},
-        {TEXT("ESP_LevelMaxHeadingText"), TEXT("等级上限"), TEXT("Maximum level")},
-        {TEXT("ESP_LevelMaxAnyText"), TEXT("不限"), TEXT("Any")},
-        {TEXT("ESP_LevelMax20Text"), TEXT("≤20"), TEXT("<=20")},
-        {TEXT("ESP_LevelMax40Text"), TEXT("≤40"), TEXT("<=40")},
-        {TEXT("ESP_LevelMax60Text"), TEXT("≤60"), TEXT("<=60")},
+        {TEXT("ESP_LevelMinHeadingText"), TEXT("等级下限 (0=不限)"), TEXT("Minimum level (0=any)")},
+        {TEXT("ESP_LevelMaxHeadingText"), TEXT("等级上限 (0=不限)"), TEXT("Maximum level (0=any)")},
         {TEXT("ESP_DistanceHeadingText"), TEXT("距离筛选"), TEXT("Distance filter")},
-        {TEXT("ESP_DistanceMinHeadingText"), TEXT("距离下限"), TEXT("Minimum distance")},
-        {TEXT("ESP_DistanceMinAnyText"), TEXT("不限"), TEXT("Any")},
-        {TEXT("ESP_DistanceMin10Text"), TEXT("10m+"), TEXT("10m+")},
-        {TEXT("ESP_DistanceMin500Text"), TEXT("500m+"), TEXT("500m+")},
-        {TEXT("ESP_DistanceMin2000Text"), TEXT("2000m+"), TEXT("2000m+")},
-        {TEXT("ESP_DistanceMaxHeadingText"), TEXT("距离上限"), TEXT("Maximum distance")},
-        {TEXT("ESP_DistanceMaxAnyText"), TEXT("不限"), TEXT("Any")},
-        {TEXT("ESP_DistanceMax500Text"), TEXT("≤500m"), TEXT("<=500m")},
-        {TEXT("ESP_DistanceMax2000Text"), TEXT("≤2000m"), TEXT("<=2000m")},
-        {TEXT("ESP_DistanceMax50000Text"), TEXT("≤50000m"), TEXT("<=50000m")},
+        {TEXT("ESP_DistanceMinHeadingText"), TEXT("距离下限 (0=不限，米)"), TEXT("Minimum distance (0=any, meters)")},
+        {TEXT("ESP_DistanceMaxHeadingText"), TEXT("距离上限 (0=不限，米)"), TEXT("Maximum distance (0=any, meters)")},
         {TEXT("ESP_AdvancedExpandText"), TEXT("高级诊断"), TEXT("Advanced diagnostics")},
         {TEXT("ESP_ModeHeadingText"), TEXT("实验模式"), TEXT("Experiment mode")},
         {TEXT("ESP_ModeOffText"), TEXT("关闭"), TEXT("Off")},
@@ -1422,7 +1608,9 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     });
     UK2Node_CustomEvent* SetTarget = AddCustomEvent(Blueprint, Graph, TEXT("PalworldResourceESP_SetTarget"), -900, 640, {
         TPair<FName, FEdGraphPinType>(FName("Target"), ObjectPin(PalMonsterClass)),
-        TPair<FName, FEdGraphPinType>(FName("SessionIndex"), IntPin())
+        TPair<FName, FEdGraphPinType>(FName("SessionIndex"), IntPin()),
+        TPair<FName, FEdGraphPinType>(FName("Level"), IntPin()),
+        TPair<FName, FEdGraphPinType>(FName("DistanceMeters"), IntPin())
     });
     UK2Node_CustomEvent* ClearTarget = AddCustomEvent(Blueprint, Graph, TEXT("PalworldResourceESP_ClearTarget"), -900, 920, {
         TPair<FName, FEdGraphPinType>(FName("SessionIndex"), IntPin())
@@ -1459,13 +1647,20 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StorePanel = AddVariableSet(Graph, PanelVariableName, 980, 1760);
     UK2Node_VariableSet* SetPanelBridge = AddExternalVariableSet(Graph, PanelBridgeVariableName, PanelClass, 1260, 1760);
     UK2Node_Self* ActorSelf = AddSelfNode(Graph, 980, 1960);
-    UK2Node_CallFunction* AddPanelToViewport = AddStaticCall(Graph, UUserWidget::StaticClass(), TEXT("AddToViewport"), 1540, 1760);
-    UK2Node_VariableSet* ShowCursor = AddExternalVariableSet(Graph, TEXT("bShowMouseCursor"), APlayerController::StaticClass(), 1820, 1760);
-    UK2Node_CallFunction* UiOnly = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("SetInputMode_UIOnlyEx"), 2100, 1760);
+    UK2Node_CallFunction* InitializePanel = AddStaticCall(Graph, PanelClass, *PanelInitializeControlsEventName.ToString(), 1540, 1760);
+    UK2Node_VariableGet* PanelDisplayLimit = AddVariableGet(Graph, DisplayTargetLimitVariableName, 1260, 2080);
+    UK2Node_VariableGet* PanelLevelMin = AddVariableGet(Graph, LevelMinVariableName, 1540, 2080);
+    UK2Node_VariableGet* PanelLevelMax = AddVariableGet(Graph, LevelMaxVariableName, 1820, 2080);
+    UK2Node_VariableGet* PanelDistanceMin = AddVariableGet(Graph, DistanceMinVariableName, 2100, 2080);
+    UK2Node_VariableGet* PanelDistanceMax = AddVariableGet(Graph, DistanceMaxVariableName, 2380, 2080);
+    UK2Node_CallFunction* AddPanelToViewport = AddStaticCall(Graph, UUserWidget::StaticClass(), TEXT("AddToViewport"), 2100, 1760);
+    UK2Node_VariableSet* ShowCursor = AddExternalVariableSet(Graph, TEXT("bShowMouseCursor"), APlayerController::StaticClass(), 2380, 1760);
+    UK2Node_CallFunction* UiOnly = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("SetInputMode_UIOnlyEx"), 2660, 1760);
 
     if (!PanelGet || !PanelValid || !PanelBranch || !RemovePanel || !ClearPanel || !CloseController || !CloseWorldContext
         || !HideCursor || !GameOnly || !OpenController || !OpenWorldContext || !CreatePanel || !CastPanel || !StorePanel
-        || !SetPanelBridge || !ActorSelf || !AddPanelToViewport || !ShowCursor || !UiOnly
+        || !SetPanelBridge || !ActorSelf || !InitializePanel || !PanelDisplayLimit || !PanelLevelMin
+        || !PanelLevelMax || !PanelDistanceMin || !PanelDistanceMax || !AddPanelToViewport || !ShowCursor || !UiOnly
         || !SetClassPin(CreatePanel, TEXT("WidgetType"), PanelClass)
         || !SetPinDefault(CloseController, TEXT("PlayerIndex"), TEXT("0"))
         || !SetPinDefault(OpenController, TEXT("PlayerIndex"), TEXT("0"))
@@ -1495,7 +1690,14 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StorePanel, UEdGraphSchema_K2::PN_Then, SetPanelBridge, UEdGraphSchema_K2::PN_Execute)
         || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, SetPanelBridge, UEdGraphSchema_K2::PN_Self)
         || !Link(ActorSelf, UEdGraphSchema_K2::PN_Self, SetPanelBridge, PanelBridgeVariableName)
-        || !Link(SetPanelBridge, UEdGraphSchema_K2::PN_Then, AddPanelToViewport, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SetPanelBridge, UEdGraphSchema_K2::PN_Then, InitializePanel, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, InitializePanel, UEdGraphSchema_K2::PN_Self)
+        || !Link(PanelDisplayLimit, DisplayTargetLimitVariableName, InitializePanel, TEXT("DisplayTargetLimit"))
+        || !Link(PanelLevelMin, LevelMinVariableName, InitializePanel, TEXT("LevelMin"))
+        || !Link(PanelLevelMax, LevelMaxVariableName, InitializePanel, TEXT("LevelMax"))
+        || !Link(PanelDistanceMin, DistanceMinVariableName, InitializePanel, TEXT("DistanceMin"))
+        || !Link(PanelDistanceMax, DistanceMaxVariableName, InitializePanel, TEXT("DistanceMax"))
+        || !Link(InitializePanel, UEdGraphSchema_K2::PN_Then, AddPanelToViewport, UEdGraphSchema_K2::PN_Execute)
         || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, AddPanelToViewport, UEdGraphSchema_K2::PN_Self)
         || !Link(AddPanelToViewport, UEdGraphSchema_K2::PN_Then, ShowCursor, UEdGraphSchema_K2::PN_Execute)
         || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, ShowCursor, UEdGraphSchema_K2::PN_Self)
@@ -1541,6 +1743,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(OverlayBranch, UEdGraphSchema_K2::PN_Then, AddExistingTarget, UEdGraphSchema_K2::PN_Execute)
         || !Link(OverlayGet, OverlayVariableName, AddExistingTarget, UEdGraphSchema_K2::PN_Self)
         || !Link(SetTarget, TEXT("Target"), AddExistingTarget, TEXT("Target"))
+        || !Link(SetTarget, TEXT("Level"), AddExistingTarget, TEXT("Level"))
+        || !Link(SetTarget, TEXT("DistanceMeters"), AddExistingTarget, TEXT("DistanceMeters"))
         || !Link(OverlayBranch, UEdGraphSchema_K2::PN_Else, CreateWidget, UEdGraphSchema_K2::PN_Execute)
         || !Link(CreateWidget, UEdGraphSchema_K2::PN_Then, CastOverlay, UEdGraphSchema_K2::PN_Execute)
         || !Link(CreateWidget, UEdGraphSchema_K2::PN_ReturnValue, CastOverlay, UEdGraphSchema_K2::PN_ObjectToCast)
@@ -1551,6 +1755,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(AddToViewport, UEdGraphSchema_K2::PN_Then, AddNewTarget, UEdGraphSchema_K2::PN_Execute)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, AddNewTarget, UEdGraphSchema_K2::PN_Self)
         || !Link(SetTarget, TEXT("Target"), AddNewTarget, TEXT("Target"))
+        || !Link(SetTarget, TEXT("Level"), AddNewTarget, TEXT("Level"))
+        || !Link(SetTarget, TEXT("DistanceMeters"), AddNewTarget, TEXT("DistanceMeters"))
         || !Link(AddExistingTarget, UEdGraphSchema_K2::PN_Then, StoreExistingTopGuideEnabled, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingTopGuideEnabled, ShowTopGuideLineVariableName, StoreExistingTopGuideEnabled, OverlayTopGuideEnabledVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingTopGuideEnabled, UEdGraphSchema_K2::PN_Self)
