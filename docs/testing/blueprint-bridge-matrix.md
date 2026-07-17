@@ -17,10 +17,10 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | MSVC | `14.38` installed; UBT selected `14.39.33523` for the current editor-plugin build |
 | Wwise | Not required by the accepted no-Wwise PMK path |
 | Last fully verified LogicMod pak | `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14`; 8 files |
-| Current deployed panel pak | `EEB2B9427A133E5E7BFB3D063DE534EB9B60B017E2FE392615064C7C39321D39`; `UIOnlyEx` panel-input and display-limit-label checkpoint, runtime regression pending |
+| Current deployed panel pak | `1F253B790A39EA79FF602C955F3EC4999883DD9A4B8BAD24BA40CB0986952442`; gender-filter checkpoint, runtime regression pending |
 | Current Pak contents | 10 files under `../../../Pal/Content/Mods/PalworldResourceESP/`; no DLL |
-| Current Lua script hash | `30E3437B9CBEFBD54DE6BA8529D95C8B60817633F1338D9BF57D236408FCED4D` |
-| Current Lua config hash | `3B078826588F742373B1689F1ADB3DC772D3728B363A1BB2F0C5DE01E6EAE548` |
+| Current Lua script hash | `0F80D0C261B4A3E58926F7F4A37C75AB5027A0AEA26D32D6725D3A29881EE40F` |
+| Current Lua config hash | `8DFE28F204DF66F1F2E212665F2D23B0A6D1789DA118FCF56717B0F7A19699C9` |
 
 ## Required Cases
 
@@ -37,11 +37,12 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | BP-09 | Return to title | `BRIDGE_CLEARED reason=load_map_pre`; no stale bridge call or crash | Pass | Final gate run cleared the bridge and 23 candidates before travel; Title received a fresh passive actor. |
 | BP-10 | Normal exit | No new crash report after title wait and normal game exit | Regression pending | Historical final gate passed; newer 15:04/15:07 movement crashes rejected delayed-wrapper chunking and require a fresh run. |
 | BP-11 | Multi-target guide | More than one accepted loaded Pal produces simultaneous guide lines; each endpoint follows its own Pal | Pass | Maintainer confirmed simultaneous lines, each following a different Pal, including guides toward targets outside the current screen. Far targets appear only after the client exposes an initialized target actor. |
-| BP-12 | Panel toggle and input | `Shift+Y` opens/closes the panel; mouse cursor, UI input, and gameplay input restore correctly | Pending | `UIOnlyEx` + focused-widget fix is deployed in the `482EDD...` Pak; require two open/close cycles and two successful control-button revisions in Steam single-player. |
-| BP-13 | Localization | Panel starts in Chinese and `Language` switches all panel labels to/from English | Pending | Same deployed checkpoint; verify button delivery and Chinese/English label changes in the next Steam single-player run. |
-| BP-14 | Runtime master switch | Disabling the Mod immediately clears every guide and stops discovery; enabling it resumes the selected mode | Pending | Automated scalar-poll and runtime-off behavior pass; visual regression remains. |
+| BP-12 | Panel toggle and input | `Shift+Y` opens/closes the panel; mouse cursor, UI input, and gameplay input restore correctly | Pass | Maintainer confirmed repeated Shift+Y open/close, clickable controls, and restored mouse/camera input without a crash. |
+| BP-13 | Localization | Panel starts in Chinese and `Language` switches all panel labels to/from English | Pass | Maintainer confirmed the Language control switches both directions. |
+| BP-14 | Runtime master switch | Disabling the Mod immediately clears every guide and stops discovery; enabling it resumes the selected mode | Pass | Maintainer confirmed guides disappear when disabled and return when enabled. |
 | BP-15 | Diagnostic modes | Off, snapshot-once, safe snapshot, and event-first remain functional; each change emits one marker | Pending | Internal `chunked_current` ID is retained only for marker compatibility; automated wrapper-safe transitions pass. |
 | BP-16 | Panel lifecycle | Capture/death cleanup, return to Title, and normal exit remain crash-free with the panel package | Pending | Required before ADR-0006 can be accepted. |
+| BP-17 | Gender filter | All/male/female modes filter already-admitted wild Pals and panel recreation restores the current mode | Pending | Automated graph generation and scalar bridge pass; current gender-filter package requires Steam single-player verification. |
 
 ## Panel Regression Evidence
 
@@ -51,7 +52,8 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | 2026-07-17 15:04 / 15:07 | Two-Actor/16-ms delayed reconcile while moving | Two matching GameThread access violations at `0x000000010000201b`, stack hash `2FA5718AD4F57F6F86CD5562225EC795F904F1AE`; retaining `FindAllOf` wrappers across callbacks is rejected. |
 | 2026-07-17 10:41 | Deferred Lua key callback, `Shift+T`, 50 ms | Six toggle requests reached `PANEL_TOGGLE_COMPLETED`; no crash; mouse and camera input restored. All buttons were inert and `ESP_ControlRevision` stayed 0. |
 | 2026-07-17 11:01 | Deferred `Shift+Y`, `UIOnlyEx` panel focus | Built and deployed; no game run yet. Pak contains 10 files and no DLL; offline Lua/control-plane tests pass. |
-| Next run | Steam single-player `Shift+Y` and focused panel | Pending. Require two successful control-button revisions before localization or performance capture. |
+| 2026-07-17 functional panel run | Shift+Y, localization, master switch, range and visibility controls | Maintainer confirmed panel interaction, all numeric filters, target limit, and live level/distance display; no reported crash. |
+| Next run | Steam single-player gender selector | Pending. Verify all/male/female, panel-state restoration, lifecycle cleanup, and normal exit. |
 
 ## Privacy Check
 
@@ -63,4 +65,4 @@ Expected result: no matches.
 
 ## Completion Rule
 
-The original Blueprint bridge spike passed BP-01 through BP-11 on Steam single-player. The panel checkpoint is complete only when BP-12 through BP-16 also pass without regressing BP-01 through BP-11 or `candidate_player_count=0`.
+The original Blueprint bridge spike passed BP-01 through BP-11 on Steam single-player. The panel checkpoint is complete only when BP-12 through BP-17 also pass without regressing BP-01 through BP-11 or `candidate_player_count=0`.

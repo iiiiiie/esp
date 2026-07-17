@@ -2,7 +2,7 @@
 
 ## Status
 
-- Implementation: wrapper-safe snapshots, live target distance, independent metadata visibility, numeric panel ranges, and capture tooling complete; runtime regression pending
+- Implementation: wrapper-safe snapshots, live target distance, independent metadata visibility, numeric panel ranges, gender filtering, and capture tooling complete; gender/runtime regression pending
 - Maintainer-required environment: Steam PC single-player
 - Server environments: community pending and not a Phase 2 gate
 - Human player invariant: every runtime run must report `candidate_player_count=0`
@@ -17,9 +17,9 @@
 | Active UE4SS root | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss` |
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
-| LogicMod pak SHA-256 | `2CE0FD1E266C5B87D46A9B1CB5C7D998269314F5DE7296C1E8BFB97DB0F8F815`; wrapper-safe live metadata checkpoint |
-| `main.lua` SHA-256 | `FA7744F9E7BFF49A1333AD01F334AB2CC70BF7D3FF3CBCF404D1AB71BB06B196` |
-| `config.lua` SHA-256 | `88DDD0E81221329DEA306232DC9CF6AEE197E158AC4195DE9A562CB1A43E9A34` |
+| LogicMod pak SHA-256 | `1F253B790A39EA79FF602C955F3EC4999883DD9A4B8BAD24BA40CB0986952442`; gender-filter checkpoint |
+| `main.lua` SHA-256 | `0F80D0C261B4A3E58926F7F4A37C75AB5027A0AEA26D32D6725D3A29881EE40F` |
+| `config.lua` SHA-256 | `8DFE28F204DF66F1F2E212665F2D23B0A6D1789DA118FCF56717B0F7A19699C9` |
 | Newest recorded crash | `2026-07-17 15:07:26`, `UECC-Windows-226A46F0425C013D3C68EAA1329F05E1_0000`; delayed-wrapper reconcile during movement |
 | Runtime baseline backup | `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp_backups/20260716_entity_core_baseline` |
 
@@ -49,11 +49,12 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-18 | Capture segmentation | Concatenated UE4SS markers and PresentMon absolute timestamps split by mode with a 2-second transition exclusion | Pass | Synthetic parser plus 31-frame end-to-end segmented analysis pass |
 | AT-19 | Panel range filters | Level endpoints compose with a fixed 0m distance lower bound; unavailable fields remain fail-closed | Pass | Stubbed runtime ignores legacy `ESP_DistanceMin=999`, clamps the maximum to 330m, and validates both 0-0m and 0-330m ranges |
 | AT-20 | Top-guide style control | The panel boolean round-trips through scalar polling without resubmitting snapshot Actors | Pass | Stubbed runtime records both hidden and shown actor-free style transitions |
-| AT-21 | LogicMod package | Generated package contains exactly five `.uasset` and five `.uexp` files with no runtime DLL | Pass | UnrealPak lists 10 files, 0 DLL, SHA-256 `1E7DF5E3C85F303ECAFA6E4131B8151C8AEA780BCB478943A23643711643A347` |
+| AT-21 | LogicMod package | Generated package contains exactly five `.uasset` and five `.uexp` files with no runtime DLL | Pass | Clean Cook completed 408/408 with 0 errors; UnrealPak lists 10 files, 0 DLL, SHA-256 `1F253B790A39EA79FF602C955F3EC4999883DD9A4B8BAD24BA40CB0986952442` |
 | AT-22 | Target display metadata | The exact Entity Core level and rounded snapshot distance accompany each submitted target | Pass | Stubbed bridge receives level 1 and distance 1m for the first synthetic target |
 | AT-23 | Numeric panel controls | Slider plus exact numeric input preserves scalar polling for level endpoints, 0-330m maximum distance, and the 1-100 display limit | Pass | Stubbed runtime reduces five displayed targets to three, clamps an attempted 999-target limit to 100, and restores the configured limit |
 | AT-24 | Metadata visibility | Level and distance booleans round-trip independently through the actor-free style bridge | Pass | Stub records hidden and shown combinations without resubmitting snapshot Actors |
 | AT-25 | Live distance graph | Overlay computes meters from current player and target locations during each paint pass | Pass | Generator links `GetPlayerPawn`, both live Actor locations, `Vector_Distance`, meter conversion, and integer text; final Blueprint statuses are warning-only/up-to-date |
+| AT-26 | Gender filter bridge | Scalar all/male/female control reaches Blueprint without resubmitting Actors; invalid selectors clamp to female | Pass | Stub records `0/1/2`, generator stores one normalized gender code per admitted target, and OnPaint filters before projection |
 
 ## Performance Investigation
 
@@ -83,17 +84,19 @@ All three real runs passed capture cleanup, death cleanup, return to Title, norm
 | EC-10 | Performance | PresentMon A/B frame-time gates pass and Mod stage timings identify no over-budget callback | Pending | Chunked run reached `max_batch_ms=24`; standardized Mod-on/off captures are required |
 | EC-11 | Adapter extension | Synthetic second adapter changes no gate/filter/renderer module | Pass | Covered by AT-08 |
 | EC-12 | Normal exit | No new crash report; source and active deployment hashes match | Regression pending | Both pre-chunk runs exited normally; no crash newer than `09:56:11` |
+| EC-13 | Gender filtering | All shows both known genders; male/female modes show only matching targets; reopening the panel preserves the selection | Pending | Automated scalar bridge and generated Blueprint graph pass; Steam single-player verification required |
 
 ## Runtime Procedure
 
 1. Confirm the game process is stopped and record source/deployment hashes plus the newest crash timestamp.
 2. Launch Palworld, enter the Steam single-player save, and remain near multiple wild Pals for at least 20 seconds.
 3. Confirm multiple independent top-anchored guides remain visible. No guide may target a human player.
-4. Capture one guided Pal and kill another. Confirm both guides disappear and stay absent after at least six seconds.
-5. Return to Title, wait at least 10 seconds, and exit normally.
-6. Extract `ADAPTER_REGISTERED`, `PLAYER_AUDIT`, `ENTITY_SNAPSHOT`, `FILTER_RESULT`, `DISPLAY_BUDGET`, `SCAN_DONE`, `METRIC`, bridge, lifecycle, and error rows.
-7. Re-run the privacy/capability scans and compare the crash directory timestamp.
+4. Switch gender through all, male, and female. Confirm each restricted mode hides the opposite known gender, then close/reopen the panel and confirm the current selection is preserved.
+5. Capture one guided Pal and kill another. Confirm both guides disappear and stay absent after at least six seconds.
+6. Return to Title, wait at least 10 seconds, and exit normally.
+7. Extract `ADAPTER_REGISTERED`, `PLAYER_AUDIT`, `ENTITY_SNAPSHOT`, `FILTER_RESULT`, `DISPLAY_BUDGET`, `SCAN_DONE`, `DISPLAY_STYLE`, bridge, lifecycle, and error rows.
+8. Re-run the privacy/capability scans and compare the crash directory timestamp.
 
 ## Completion Rule
 
-ADR-0005 remains `Proposed` until EC-01 through EC-12 pass. After that evidence is recorded, change the ADR to `Accepted`, mark Phase 2 complete in the PRD, update source/deployment hashes, and make the Draft PR ready for review. Multiplayer remains community-pending.
+ADR-0005 remains `Proposed` until EC-01 through EC-13 pass. After that evidence is recorded, change the ADR to `Accepted`, mark Phase 2 complete in the PRD, update source/deployment hashes, and make the Draft PR ready for review. Multiplayer remains community-pending.

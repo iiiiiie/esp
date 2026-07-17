@@ -25,6 +25,7 @@ Add a dedicated `WBP_ESPPanel` controlled by `Shift+Y` and keep it separate from
 - User-facing numeric controls pair a Slider for rapid adjustment with a compact integer SpinBox for exact entry. Level remains one grouped two-endpoint range; visible targets are clamped to 1-100.
 - Distance exposes only a 0-330m maximum control. Its lower bound is fixed at 0m, and the deprecated `ESP_DistanceMin` property is neither displayed nor read by Lua.
 - Runtime, top-guide, level, and distance visibility each use one compact toggle. Recreated panel widgets initialize numeric and toggle controls from the passive `ModActor`; programmatic initialization still crosses only the Blueprint-to-Blueprint boundary.
+- Gender uses an all/male/female segmented selector backed by the scalar `ESP_GenderFilterId`. Blueprint reads each already-admitted wild Pal's typed gender, normalizes it to `0/1/2`, and rejects non-matching targets before projection and drawing. The human-player gate remains earlier and cannot be changed by this selector.
 - The panel uses a restrained neutral surface, green state accent, compact rounded controls, and a scrollable 500x680 frame so expanded diagnostics remain usable at 720p-class heights.
 - Visible distance is computed from live player and target locations in the Blueprint paint pass. The snapshot distance remains the filter and ordering value.
 - Lua polls those properties every 250 ms and applies changes on the GameThread.
@@ -102,8 +103,9 @@ The delayed chunking option is therefore rejected for the functional baseline. T
 - [x] Generate, cook, and package `WBP_ESPPanel` through ADR-0004 automation.
 - [x] Implement the PresentMon watcher, marker parser, segmented analyzer, and synthetic contract tests.
 - [x] Revalidate deferred open/close and gameplay input restoration in Steam single-player.
-- [ ] Validate Shift+Y button clicks and UI/game input restoration after the `UIOnlyEx` fix.
-- [ ] Validate the V2 Slider/SpinBox synchronization, 1-100 target ceiling, fixed 0m distance lower bound, and 330m distance ceiling in Steam single-player.
+- [x] Validate Shift+Y button clicks and UI/game input restoration after the `UIOnlyEx` fix.
+- [x] Validate the V2 Slider/SpinBox synchronization, 1-100 target ceiling, fixed 0m distance lower bound, and 330m distance ceiling in Steam single-player.
+- [ ] Validate all/male/female filtering and selector restoration after reopening the panel.
 - [ ] Run forward and reverse fixed-view profile sequences with PresentMon.
 - [ ] Run one movement capture after a steady-state strategy passes.
 - [ ] Accept this ADR only after panel lifecycle, capture segmentation, and normal exit pass.

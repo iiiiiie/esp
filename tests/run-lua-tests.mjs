@@ -189,6 +189,7 @@ local bridge_actor = {
     ESP_ShowTopGuideLine = true,
     ESP_ShowLevel = true,
     ESP_ShowDistance = true,
+    ESP_GenderFilterId = 0,
     ESP_DisplayTargetLimit = 64,
     ESP_BridgeGenderDiagnosticCode = 0,
 }
@@ -207,11 +208,12 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
     }
 end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
-function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_level, show_distance)
+function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_level, show_distance, gender_filter_id)
     bridge_style_payloads[#bridge_style_payloads + 1] = {
         show_top = show_top,
         show_level = show_level,
         show_distance = show_distance,
+        gender_filter_id = gender_filter_id,
     }
 end
 function bridge_actor:PalworldResourceESP_TogglePanel()
@@ -401,10 +403,22 @@ bridge_actor.ESP_ShowLevel = true
 bridge_actor.ESP_ShowDistance = true
 bridge_actor.ESP_ControlRevision = 52
 reconcile_loop()
+bridge_actor.ESP_GenderFilterId = 1
+bridge_actor.ESP_ControlRevision = 53
+reconcile_loop()
+bridge_actor.ESP_GenderFilterId = 2
+bridge_actor.ESP_ControlRevision = 54
+reconcile_loop()
+bridge_actor.ESP_GenderFilterId = 99
+bridge_actor.ESP_ControlRevision = 55
+reconcile_loop()
 local top_guide_hidden_found = false
 local top_guide_shown_found = false
 local metadata_hidden_found = false
 local metadata_shown_found = false
+local gender_male_found = false
+local gender_female_found = false
+local gender_clamped_found = false
 for _, message in ipairs(runtime_logs) do
     top_guide_hidden_found = top_guide_hidden_found or message:match("DISPLAY_STYLE.*top_guide_line=false") ~= nil
     top_guide_shown_found = top_guide_shown_found or message:match("DISPLAY_STYLE.*top_guide_line=true") ~= nil
@@ -412,10 +426,17 @@ for _, message in ipairs(runtime_logs) do
         or message:match("DISPLAY_STYLE.*show_level=false.*show_distance=false") ~= nil
     metadata_shown_found = metadata_shown_found
         or message:match("DISPLAY_STYLE.*show_level=true.*show_distance=true") ~= nil
+    gender_male_found = gender_male_found or message:match("DISPLAY_STYLE.*gender_filter=male") ~= nil
+    gender_female_found = gender_female_found or message:match("DISPLAY_STYLE.*gender_filter=female") ~= nil
+    gender_clamped_found = gender_clamped_found
+        or message:match("DISPLAY_STYLE.*gender_filter=female") ~= nil
 end
 assert(top_guide_hidden_found and top_guide_shown_found, "panel top-guide style did not round-trip")
 assert(metadata_hidden_found and metadata_shown_found, "panel metadata styles did not round-trip")
+assert(gender_male_found and gender_female_found, "panel gender filters did not round-trip")
+assert(gender_clamped_found, "invalid gender filter was not clamped")
 assert(#bridge_style_payloads >= 4, "display styles were not sent through the actor-free bridge event")
+assert(bridge_style_payloads[#bridge_style_payloads].gender_filter_id == 2, "gender filter clamp did not reach the bridge")
 print("Panel display styles passed")
 
 assert(type(load_map_pre_hook) == "function", "load-map pre-hook was not captured")

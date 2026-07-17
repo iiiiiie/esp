@@ -40,7 +40,7 @@ Use a Lua-owned, generation-scoped entity snapshot pipeline.
 - The Blueprint bridge receives only actors from the filtered, budgeted output. Blueprint may enrich or filter already admitted wild entities in later phases, but it must never discover actors or widen admission.
 - No snapshot, filter, or diagnostic may contain player identity, player coordinates, or player parameters.
 
-The first Entity Core implementation proves the contract with Lua-safe fields such as level and reconciliation-time distance. Species, gender, passive skills, IVs, Lucky/Alpha, elements, and capture count remain explicit `bridge` or `unavailable` values until their dedicated adapters are validated.
+The first Entity Core implementation proves the contract with Lua-safe fields such as level and reconciliation-time distance. Gender is the first validated Blueprint field provider: Blueprint maps `EPalGenderType` to `0 = unknown`, `1 = male`, or `2 = female` for each already-admitted target and applies the selected filter before projection. Lua reads only the scalar filter selector and never receives the enum or a gender-derived Actor reference. Species, passive skills, IVs, Lucky/Alpha, elements, and capture count remain explicit `bridge` or `unavailable` values until their dedicated adapters are validated.
 
 ## Options Considered
 
@@ -129,7 +129,9 @@ Follow-up concerns:
 ## Follow-ups
 
 - [x] Implement the Entity Core PRP and unit-test the adapter/filter contracts.
+- [x] Implement the gender Blueprint field provider without marshalling `EPalGenderType` through Lua.
+- [ ] Validate all/male/female filtering, panel-state restoration, and lifecycle cleanup in Steam single-player.
 - [ ] Validate snapshot replacement, capture/death cleanup, map teardown, and normal exit in Steam single-player.
 - [ ] Measure reconciliation, filtering, ordering, and bridge synchronization separately.
 - [ ] Accept this ADR only after the Entity Core smoke matrix passes.
-- [ ] Add explicit Blueprint field-provider contracts during the Pal Filter MVP.
+- [ ] Add explicit Blueprint field-provider contracts for the remaining Pal Filter MVP fields.

@@ -155,6 +155,7 @@ local state = {
     show_top_guide_line = config.SHOW_TOP_GUIDE_LINE,
     show_level = config.SHOW_LEVEL,
     show_distance = config.SHOW_DISTANCE,
+    gender_filter_id = 0,
     panel_keybind_registered = false,
     panel_toggle_pending = false,
     panel_toggle_sequence = 0,
@@ -2277,21 +2278,33 @@ local function apply_panel_filters(level_min_raw, level_max_raw, distance_max_ra
     return true
 end
 
-local function apply_display_styles(show_top_guide_line, show_level, show_distance)
+local function normalize_gender_filter_id(raw_id)
+    if type(raw_id) ~= "number" or raw_id ~= raw_id or raw_id == math.huge or raw_id == -math.huge then
+        return 0
+    end
+    return math.max(0, math.min(2, math.floor(raw_id)))
+end
+
+local function apply_display_styles(show_top_guide_line, show_level, show_distance, raw_gender_filter_id)
+    local gender_filter_id = normalize_gender_filter_id(raw_gender_filter_id)
     if show_top_guide_line == state.show_top_guide_line
         and show_level == state.show_level
-        and show_distance == state.show_distance then
+        and show_distance == state.show_distance
+        and gender_filter_id == state.gender_filter_id then
         return false
     end
     state.show_top_guide_line = show_top_guide_line
     state.show_level = show_level
     state.show_distance = show_distance
-    call_bridge(BRIDGE_METHOD_SET_DISPLAY_STYLE, show_top_guide_line, show_level, show_distance)
+    state.gender_filter_id = gender_filter_id
+    call_bridge(BRIDGE_METHOD_SET_DISPLAY_STYLE, show_top_guide_line, show_level, show_distance, gender_filter_id)
+    local gender_filter_names = { [0] = "all", [1] = "male", [2] = "female" }
     log_event("DISPLAY_STYLE", string.format(
-        "top_guide_line=%s show_level=%s show_distance=%s",
+        "top_guide_line=%s show_level=%s show_distance=%s gender_filter=%s",
         tostring(show_top_guide_line),
         tostring(show_level),
-        tostring(show_distance)
+        tostring(show_distance),
+        gender_filter_names[gender_filter_id]
     ))
     return true
 end
@@ -2343,12 +2356,13 @@ local function poll_panel_controls()
     local show_top_guide_line = read_panel_boolean("ESP_ShowTopGuideLine")
     local show_level = read_panel_boolean("ESP_ShowLevel")
     local show_distance = read_panel_boolean("ESP_ShowDistance")
+    local gender_filter_id = read_panel_number("ESP_GenderFilterId")
     local display_target_limit = read_panel_number("ESP_DisplayTargetLimit")
     if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil
         -- __DEPRECATED_20260717__ [reason: minimum distance is no longer required]
         -- or level_min == nil or level_max == nil or distance_min == nil or distance_max == nil
         or level_min == nil or level_max == nil or distance_max == nil
-        or show_top_guide_line == nil or show_level == nil or show_distance == nil
+        or show_top_guide_line == nil or show_level == nil or show_distance == nil or gender_filter_id == nil
         or display_target_limit == nil then
         if not state.control_pending_logged then
             state.control_pending_logged = true
@@ -2362,7 +2376,7 @@ local function poll_panel_controls()
     -- __DEPRECATED_20260717__ [reason: minimum distance is no longer applied]
     -- local filters_changed = apply_panel_filters(level_min, level_max, distance_min, distance_max)
     local filters_changed = apply_panel_filters(level_min, level_max, distance_max)
-    apply_display_styles(show_top_guide_line, show_level, show_distance)
+    apply_display_styles(show_top_guide_line, show_level, show_distance, gender_filter_id)
     local limit_changed = apply_display_target_limit(display_target_limit)
     if runtime_enabled() and state.gameplay_active and (filters_changed or limit_changed) then
         clear_candidate_cache("panel_query_change")
