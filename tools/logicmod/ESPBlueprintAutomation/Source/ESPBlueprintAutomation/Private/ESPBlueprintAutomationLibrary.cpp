@@ -65,6 +65,7 @@ const FName OverlayTargetsVariableName(TEXT("ESP_Targets"));
 const FName OverlayTargetLevelsVariableName(TEXT("ESP_TargetLevels"));
 const FName OverlayTargetDistancesVariableName(TEXT("ESP_TargetDistances"));
 const FName OverlayTargetGendersVariableName(TEXT("ESP_TargetGenders"));
+const FName OverlayTargetLuckyStatesVariableName(TEXT("ESP_TargetLuckyStates"));
 const FName OverlayTargetNamesVariableName(TEXT("ESP_TargetNames"));
 const FName OverlayGenderLoggedVariableName(TEXT("ESP_GenderLogged"));
 const FName OverlayGenderDiagnosticVariableName(TEXT("ESP_GenderDiagnostic"));
@@ -74,6 +75,7 @@ const FName OverlayShowNameVariableName(TEXT("ESP_ShowName"));
 const FName OverlayShowLevelVariableName(TEXT("ESP_ShowLevel"));
 const FName OverlayShowDistanceVariableName(TEXT("ESP_ShowDistance"));
 const FName OverlayGenderFilterIdVariableName(TEXT("ESP_GenderFilterId"));
+const FName OverlayLuckyFilterIdVariableName(TEXT("ESP_LuckyFilterId"));
 const FName OverlayAddTargetEventName(TEXT("PalworldResourceESP_WidgetAddTarget"));
 const FName OverlayClearTargetsEventName(TEXT("PalworldResourceESP_WidgetClearTargets"));
 const FName PanelBridgeVariableName(TEXT("ESP_Bridge"));
@@ -94,6 +96,7 @@ const FName ShowNameVariableName(TEXT("ESP_ShowName"));
 const FName ShowLevelVariableName(TEXT("ESP_ShowLevel"));
 const FName ShowDistanceVariableName(TEXT("ESP_ShowDistance"));
 const FName GenderFilterIdVariableName(TEXT("ESP_GenderFilterId"));
+const FName LuckyFilterIdVariableName(TEXT("ESP_LuckyFilterId"));
 const FName DisplayTargetLimitVariableName(TEXT("ESP_DisplayTargetLimit"));
 const FName PanelInitializeControlsEventName(TEXT("PalworldResourceESP_InitializeControls"));
 const FName PanelInitializeControlsV2EventName(TEXT("PalworldResourceESP_InitializeControlsV2"));
@@ -942,6 +945,15 @@ bool BuildOverlay(
         Blueprint->NewVariables[ExistingTargetGendersIndex].VarType = IntArrayPin();
     }
 
+    const int32 ExistingTargetLuckyStatesIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayTargetLuckyStatesVariableName);
+    if (ExistingTargetLuckyStatesIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayTargetLuckyStatesVariableName, IntArrayPin())) {
+            return false;
+        }
+    } else {
+        Blueprint->NewVariables[ExistingTargetLuckyStatesIndex].VarType = IntArrayPin();
+    }
+
     const int32 ExistingTargetNamesIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayTargetNamesVariableName);
     if (ExistingTargetNamesIndex == INDEX_NONE) {
         if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayTargetNamesVariableName, StringArrayPin())) {
@@ -1039,6 +1051,19 @@ bool BuildOverlay(
     Blueprint->NewVariables[ExistingGenderFilterIndex].VarType = IntPin();
     Blueprint->NewVariables[ExistingGenderFilterIndex].DefaultValue = TEXT("0");
 
+    int32 ExistingLuckyFilterIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayLuckyFilterIdVariableName);
+    if (ExistingLuckyFilterIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayLuckyFilterIdVariableName, IntPin())) {
+            return false;
+        }
+        ExistingLuckyFilterIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayLuckyFilterIdVariableName);
+    }
+    if (ExistingLuckyFilterIndex == INDEX_NONE) {
+        return false;
+    }
+    Blueprint->NewVariables[ExistingLuckyFilterIndex].VarType = IntPin();
+    Blueprint->NewVariables[ExistingLuckyFilterIndex].DefaultValue = TEXT("0");
+
     UEdGraph* Graph = EventGraph(Blueprint);
     if (!Graph) {
         return false;
@@ -1065,12 +1090,15 @@ bool BuildOverlay(
     UK2Node_CallArrayFunction* ClearDistanceArray = AddArrayCall(Graph, TEXT("Array_Clear"), 120, -300);
     UK2Node_VariableGet* ClearGendersGet = AddVariableGet(Graph, OverlayTargetGendersVariableName, 380, -140);
     UK2Node_CallArrayFunction* ClearGenderArray = AddArrayCall(Graph, TEXT("Array_Clear"), 660, -300);
-    UK2Node_VariableGet* ClearNamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, 920, -140);
-    UK2Node_CallArrayFunction* ClearNameArray = AddArrayCall(Graph, TEXT("Array_Clear"), 1200, -300);
+    UK2Node_VariableGet* ClearLuckyStatesGet = AddVariableGet(Graph, OverlayTargetLuckyStatesVariableName, 920, -140);
+    UK2Node_CallArrayFunction* ClearLuckyStateArray = AddArrayCall(Graph, TEXT("Array_Clear"), 1200, -300);
+    UK2Node_VariableGet* ClearNamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, 1460, -140);
+    UK2Node_CallArrayFunction* ClearNameArray = AddArrayCall(Graph, TEXT("Array_Clear"), 1740, -300);
     if (!AddTarget || !AddTargetsGet || !AddTargetItem || !AddLevelsGet || !AddLevelItem
         || !AddDistancesGet || !AddDistanceItem || !ClearTargets || !ClearTargetsGet || !ClearTargetArray
         || !ClearLevelsGet || !ClearLevelArray || !ClearDistancesGet || !ClearDistanceArray
-        || !ClearGendersGet || !ClearGenderArray || !ClearNamesGet || !ClearNameArray
+        || !ClearGendersGet || !ClearGenderArray || !ClearLuckyStatesGet || !ClearLuckyStateArray
+        || !ClearNamesGet || !ClearNameArray
         || !Link(AddTarget, UEdGraphSchema_K2::PN_Then, AddTargetItem, UEdGraphSchema_K2::PN_Execute)
         || !Link(AddTargetsGet, OverlayTargetsVariableName, AddTargetItem, TEXT("TargetArray"))
         || !Link(AddTarget, TEXT("Target"), AddTargetItem, TEXT("NewItem"))
@@ -1088,7 +1116,9 @@ bool BuildOverlay(
         || !Link(ClearDistancesGet, OverlayTargetDistancesVariableName, ClearDistanceArray, TEXT("TargetArray"))
         || !Link(ClearDistanceArray, UEdGraphSchema_K2::PN_Then, ClearGenderArray, UEdGraphSchema_K2::PN_Execute)
         || !Link(ClearGendersGet, OverlayTargetGendersVariableName, ClearGenderArray, TEXT("TargetArray"))
-        || !Link(ClearGenderArray, UEdGraphSchema_K2::PN_Then, ClearNameArray, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ClearGenderArray, UEdGraphSchema_K2::PN_Then, ClearLuckyStateArray, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ClearLuckyStatesGet, OverlayTargetLuckyStatesVariableName, ClearLuckyStateArray, TEXT("TargetArray"))
+        || !Link(ClearLuckyStateArray, UEdGraphSchema_K2::PN_Then, ClearNameArray, UEdGraphSchema_K2::PN_Execute)
         || !Link(ClearNamesGet, OverlayTargetNamesVariableName, ClearNameArray, TEXT("TargetArray"))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay target array graph failed"));
         return false;
@@ -1107,12 +1137,13 @@ bool BuildOverlay(
     UK2Node_CallFunction* IndividualParameterValid = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("IsValid"), 1020, -120);
     UK2Node_IfThenElse* IndividualParameterBranch = AddBranch(Graph, 1260, -600);
     UK2Node_CallFunction* GenderType = AddStaticCall(Graph, IndividualParameterClass, TEXT("GetGenderType"), 1020, 40);
+    UK2Node_CallFunction* IsRarePal = AddStaticCall(Graph, IndividualParameterClass, TEXT("IsRarePal"), 1260, 120);
     UK2Node_SwitchEnum* GenderSwitch = AddSwitchEnum(Graph, GenderEnum, 1500, -600);
     UK2Node_Self* GenderSelf = AddSelfNode(Graph, 1500, 160);
     if (!GenderTargetValid || !GenderTargetBranch
         || !CharacterParameter || !CharacterParameterValid || !CharacterParameterBranch
         || !IndividualParameter || !IndividualParameterValid || !IndividualParameterBranch
-        || !GenderType || !GenderSwitch || !GenderSelf
+        || !GenderType || !IsRarePal || !GenderSwitch || !GenderSelf
         // __DEPRECATED_20260717__ [reason: the one-shot gate skipped gender normalization for later targets]
         // || !Link(AddDistanceItem, UEdGraphSchema_K2::PN_Then, GenderGate, UEdGraphSchema_K2::PN_Execute)
         || !Link(AddDistanceItem, UEdGraphSchema_K2::PN_Then, GenderTargetBranch, UEdGraphSchema_K2::PN_Execute)
@@ -1128,6 +1159,7 @@ bool BuildOverlay(
         || !Link(IndividualParameterValid, UEdGraphSchema_K2::PN_ReturnValue, IndividualParameterBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(IndividualParameterBranch, UEdGraphSchema_K2::PN_Then, GenderSwitch, UEdGraphSchema_K2::PN_Execute)
         || !Link(IndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, GenderType, UEdGraphSchema_K2::PN_Self)
+        || !Link(IndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, IsRarePal, UEdGraphSchema_K2::PN_Self)
         || !Link(GenderType, UEdGraphSchema_K2::PN_ReturnValue, GenderSwitch, TEXT("Selection"))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay gender adapter graph failed"));
         return false;
@@ -1165,34 +1197,49 @@ bool BuildOverlay(
     }
 #endif
 
-    auto AddGenderResultPath = [&](UEdGraphNode* ExecNode, const FName& ExecPin, const TCHAR* Value, int32 Code, bool bUseName, int32 X, int32 Y) -> bool {
+    auto AddGenderResultPath = [&](UEdGraphNode* ExecNode, const FName& ExecPin, const TCHAR* Value, int32 Code, bool bUseName, bool bLuckyKnown, int32 X, int32 Y) -> bool {
         UK2Node_VariableGet* GendersGet = AddVariableGet(Graph, OverlayTargetGendersVariableName, X, Y + 120);
         UK2Node_CallArrayFunction* AddGenderItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 260, Y);
-        UK2Node_VariableGet* NamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, X + 520, Y + 120);
-        UK2Node_CallArrayFunction* AddNameItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 780, Y);
-        UK2Node_CallFunction* Nickname = bUseName
-            ? AddStaticCall(Graph, CharacterParameterComponentClass, TEXT("GetNickname"), X + 520, Y + 260)
+        UK2Node_VariableGet* LuckyStatesGet = AddVariableGet(Graph, OverlayTargetLuckyStatesVariableName, X + 520, Y + 120);
+        UK2Node_CallArrayFunction* AddLuckyStateItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 780, Y);
+        UK2Node_CallFunction* SelectLuckyState = bLuckyKnown
+            ? AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectInt"), X + 520, Y + 300)
             : nullptr;
-        UK2Node_VariableGet* LoggedGet = AddVariableGet(Graph, OverlayGenderLoggedVariableName, X + 1040, Y + 160);
-        UK2Node_CallFunction* NotLogged = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 1300, Y + 160);
-        UK2Node_IfThenElse* LogBranch = AddBranch(Graph, X + 1560, Y);
-        UK2Node_VariableSet* StoreDiagnostic = AddVariableSet(Graph, OverlayGenderDiagnosticVariableName, X + 1820, Y);
-        UK2Node_VariableSet* StoreDiagnosticCode = AddVariableSet(Graph, OverlayGenderDiagnosticCodeVariableName, X + 2080, Y);
-        UK2Node_CallFunction* Print = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), X + 2340, Y);
-        UK2Node_VariableSet* MarkLogged = AddVariableSet(Graph, OverlayGenderLoggedVariableName, X + 2600, Y);
+        UK2Node_VariableGet* NamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, X + 1040, Y + 120);
+        UK2Node_CallArrayFunction* AddNameItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 1300, Y);
+        UK2Node_CallFunction* Nickname = bUseName
+            ? AddStaticCall(Graph, CharacterParameterComponentClass, TEXT("GetNickname"), X + 1040, Y + 260)
+            : nullptr;
+        UK2Node_VariableGet* LoggedGet = AddVariableGet(Graph, OverlayGenderLoggedVariableName, X + 1560, Y + 160);
+        UK2Node_CallFunction* NotLogged = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 1820, Y + 160);
+        UK2Node_IfThenElse* LogBranch = AddBranch(Graph, X + 2080, Y);
+        UK2Node_VariableSet* StoreDiagnostic = AddVariableSet(Graph, OverlayGenderDiagnosticVariableName, X + 2340, Y);
+        UK2Node_VariableSet* StoreDiagnosticCode = AddVariableSet(Graph, OverlayGenderDiagnosticCodeVariableName, X + 2600, Y);
+        UK2Node_CallFunction* Print = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), X + 2860, Y);
+        UK2Node_VariableSet* MarkLogged = AddVariableSet(Graph, OverlayGenderLoggedVariableName, X + 3120, Y);
         const FString Message = FString::Printf(TEXT("[PalworldResourceESP] BLUEPRINT_GENDER value=%s"), Value);
+        const bool bLuckySourceReady = bLuckyKnown
+            ? SelectLuckyState
+                && SetPinDefault(SelectLuckyState, TEXT("A"), TEXT("1"))
+                && SetPinDefault(SelectLuckyState, TEXT("B"), TEXT("0"))
+                && Link(IsRarePal, UEdGraphSchema_K2::PN_ReturnValue, SelectLuckyState, TEXT("bPickA"))
+                && Link(SelectLuckyState, UEdGraphSchema_K2::PN_ReturnValue, AddLuckyStateItem, TEXT("NewItem"))
+            : SetPinDefault(AddLuckyStateItem, TEXT("NewItem"), TEXT("-1"));
         const bool bNameSourceReady = bUseName
             ? Nickname
                 && Link(CharacterParameter, UEdGraphSchema_K2::PN_ReturnValue, Nickname, UEdGraphSchema_K2::PN_Self)
                 && Link(Nickname, TEXT("outName"), AddNameItem, TEXT("NewItem"))
             : SetPinDefault(AddNameItem, TEXT("NewItem"), TEXT(""));
-        return GendersGet && AddGenderItem && NamesGet && AddNameItem && bNameSourceReady
+        return GendersGet && AddGenderItem && LuckyStatesGet && AddLuckyStateItem && bLuckySourceReady
+            && NamesGet && AddNameItem && bNameSourceReady
             && LoggedGet && NotLogged && LogBranch
             && StoreDiagnostic && StoreDiagnosticCode && Print && MarkLogged
             && Link(ExecNode, ExecPin, AddGenderItem, UEdGraphSchema_K2::PN_Execute)
             && Link(GendersGet, OverlayTargetGendersVariableName, AddGenderItem, TEXT("TargetArray"))
             && SetPinDefault(AddGenderItem, TEXT("NewItem"), FString::FromInt(Code))
-            && Link(AddGenderItem, UEdGraphSchema_K2::PN_Then, AddNameItem, UEdGraphSchema_K2::PN_Execute)
+            && Link(AddGenderItem, UEdGraphSchema_K2::PN_Then, AddLuckyStateItem, UEdGraphSchema_K2::PN_Execute)
+            && Link(LuckyStatesGet, OverlayTargetLuckyStatesVariableName, AddLuckyStateItem, TEXT("TargetArray"))
+            && Link(AddLuckyStateItem, UEdGraphSchema_K2::PN_Then, AddNameItem, UEdGraphSchema_K2::PN_Execute)
             && Link(NamesGet, OverlayTargetNamesVariableName, AddNameItem, TEXT("TargetArray"))
             && Link(AddNameItem, UEdGraphSchema_K2::PN_Then, LogBranch, UEdGraphSchema_K2::PN_Execute)
             && Link(LoggedGet, OverlayGenderLoggedVariableName, NotLogged, TEXT("A"))
@@ -1209,13 +1256,13 @@ bool BuildOverlay(
             && SetPinDefault(Print, TEXT("bPrintToLog"), TEXT("true"))
             && SetPinDefault(MarkLogged, OverlayGenderLoggedVariableName, TEXT("true"));
     };
-    if (!AddGenderResultPath(GenderTargetBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, false, 1740, -1040)
-        || !AddGenderResultPath(CharacterParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, false, 1740, -880)
-        || !AddGenderResultPath(IndividualParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, true, 1740, -720)
-        || !AddGenderResultPath(GenderSwitch, TEXT("None"), TEXT("unknown"), 0, true, 1740, -560)
-        || !AddGenderResultPath(GenderSwitch, TEXT("Male"), TEXT("male"), 1, true, 1740, -400)
-        || !AddGenderResultPath(GenderSwitch, TEXT("Female"), TEXT("female"), 2, true, 1740, -240)) {
-        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay gender result graph failed"));
+    if (!AddGenderResultPath(GenderTargetBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, false, false, 1740, -1040)
+        || !AddGenderResultPath(CharacterParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, false, false, 1740, -880)
+        || !AddGenderResultPath(IndividualParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, true, false, 1740, -720)
+        || !AddGenderResultPath(GenderSwitch, TEXT("None"), TEXT("unknown"), 0, true, true, 1740, -560)
+        || !AddGenderResultPath(GenderSwitch, TEXT("Male"), TEXT("male"), 1, true, true, 1740, -400)
+        || !AddGenderResultPath(GenderSwitch, TEXT("Female"), TEXT("female"), 2, true, true, 1740, -240)) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay gender/Lucky result graph failed"));
         return false;
     }
 
@@ -1225,6 +1272,7 @@ bool BuildOverlay(
     UK2Node_VariableGet* ShowLevelGet = AddVariableGet(Graph, OverlayShowLevelVariableName, -1500, 360);
     UK2Node_VariableGet* ShowDistanceGet = AddVariableGet(Graph, OverlayShowDistanceVariableName, -1500, 520);
     UK2Node_VariableGet* GenderFilterGet = AddVariableGet(Graph, OverlayGenderFilterIdVariableName, -1500, 680);
+    UK2Node_VariableGet* LuckyFilterGet = AddVariableGet(Graph, OverlayLuckyFilterIdVariableName, -1500, 760);
     UK2Node_CallFunction* MetadataEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), -20, 320);
     UK2Node_CallFunction* VisibleNameEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), -20, 480);
     UK2Node_CallFunction* LabelsEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 260, 320);
@@ -1243,6 +1291,16 @@ bool BuildOverlay(
     UK2Node_CallFunction* GenderFilterAll = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -440, 1440);
     UK2Node_CallFunction* GenderFilterMatch = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -160, 1440);
     UK2Node_CallFunction* GenderFilterAccepted = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 120, 1440);
+    UK2Node_VariableGet* TargetLuckyStatesGet = AddVariableGet(Graph, OverlayTargetLuckyStatesVariableName, -1000, 1600);
+    UK2Node_CallArrayFunction* TargetLuckyStateGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1600);
+    UK2Node_CallFunction* LuckyFilterAll = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -440, 1600);
+    UK2Node_CallFunction* LuckyFilterOnly = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -440, 1760);
+    UK2Node_CallFunction* LuckyFilterExclude = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -440, 1920);
+    UK2Node_CallFunction* LuckyFilterRestricted = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), -160, 1840);
+    UK2Node_CallFunction* LuckyExpectedState = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectInt"), -160, 1600);
+    UK2Node_CallFunction* LuckyFilterMatch = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), 120, 1600);
+    UK2Node_CallFunction* LuckyRestrictedMatch = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), 400, 1680);
+    UK2Node_CallFunction* LuckyFilterAccepted = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 680, 1600);
     // __DEPRECATED_20260717__ [reason: displayed distance now follows live player and target positions]
     // UK2Node_VariableGet* TargetDistancesGet = AddVariableGet(Graph, OverlayTargetDistancesVariableName, -1000, 1200);
     // UK2Node_CallArrayFunction* TargetDistanceGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1200);
@@ -1268,6 +1326,7 @@ bool BuildOverlay(
     UK2Node_CallFunction* TargetNotDead = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), -440, 440);
     UK2Node_IfThenElse* TargetAliveBranch = AddBranch(Graph, -420, 80);
     UK2Node_IfThenElse* GenderFilterBranch = AddBranch(Graph, -160, 80);
+    UK2Node_IfThenElse* LuckyFilterBranch = AddBranch(Graph, 120, 80);
     UK2Node_CallFunction* ActorLocation = AddStaticCall(Graph, AActor::StaticClass(), TEXT("K2_GetActorLocation"), -940, 460);
     UK2Node_Self* Self = AddSelfNode(Graph, -1220, 660);
     UK2Node_CallFunction* PlayerController = AddStaticCall(Graph, UGameplayStatics::StaticClass(), TEXT("GetPlayerController"), -940, 660);
@@ -1314,18 +1373,22 @@ bool BuildOverlay(
         OutlineExecTail = DrawOutline;
         OutlineX += 840;
     }
-    if (!OnPaint || !TopGuideEnabledGet || !ShowNameGet || !ShowLevelGet || !ShowDistanceGet || !GenderFilterGet
+    if (!OnPaint || !TopGuideEnabledGet || !ShowNameGet || !ShowLevelGet || !ShowDistanceGet
+        || !GenderFilterGet || !LuckyFilterGet
         || !MetadataEnabled || !VisibleNameEnabled || !LabelsEnabled
         || !PaintSequence || !LabelEnabledBranch || !TopGuideEnabledBranch || !TargetsGet || !ForEachTarget
         || !TargetLevelsGet || !TargetLevelGet || !TargetNamesGet || !TargetNameGet || !NameNotEmpty
         || !TargetGendersGet || !TargetGenderGet
         || !GenderFilterAll || !GenderFilterMatch || !GenderFilterAccepted
+        || !TargetLuckyStatesGet || !TargetLuckyStateGet || !LuckyFilterAll || !LuckyFilterOnly
+        || !LuckyFilterExclude || !LuckyFilterRestricted || !LuckyExpectedState || !LuckyFilterMatch
+        || !LuckyRestrictedMatch || !LuckyFilterAccepted
         || !BuildLevelText || !PlayerPawn || !PlayerLocation
         || !LiveDistance || !DistanceMeters || !RoundDistance || !BuildDistanceText || !LevelWithSpacing
         || !LevelAndDistance || !SelectWithLevel || !SelectWithoutLevel || !SelectLabel
         || !NameWithNewline || !NameAndMetadata || !SelectNameLabel || !SelectFinalLabel
         || !TargetValid || !TargetBranch || !TargetDead || !TargetNotDead
-        || !TargetAliveBranch || !GenderFilterBranch || !ActorLocation || !Self || !PlayerController
+        || !TargetAliveBranch || !GenderFilterBranch || !LuckyFilterBranch || !ActorLocation || !Self || !PlayerController
         || !Project || !ProjectBranch || !ViewportSize || !ViewportScale || !BreakViewport || !RemoveScale
         || !HalfWidth || !MakeStart || !DrawLine || !MakeLabelOffset || !LabelPosition || !DrawText
         || !Link(OnPaint, UEdGraphSchema_K2::PN_Then, ForEachTarget, TEXT("Exec"))
@@ -1354,6 +1417,26 @@ bool BuildOverlay(
         || !Link(GenderFilterAll, UEdGraphSchema_K2::PN_ReturnValue, GenderFilterAccepted, TEXT("A"))
         || !Link(GenderFilterMatch, UEdGraphSchema_K2::PN_ReturnValue, GenderFilterAccepted, TEXT("B"))
         || !Link(GenderFilterAccepted, UEdGraphSchema_K2::PN_ReturnValue, GenderFilterBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(TargetLuckyStatesGet, OverlayTargetLuckyStatesVariableName, TargetLuckyStateGet, TEXT("TargetArray"))
+        || !Link(ForEachTarget, TEXT("Array Index"), TargetLuckyStateGet, TEXT("Index"))
+        || !Link(LuckyFilterGet, OverlayLuckyFilterIdVariableName, LuckyFilterAll, TEXT("A"))
+        || !SetPinDefault(LuckyFilterAll, TEXT("B"), TEXT("0"))
+        || !Link(LuckyFilterGet, OverlayLuckyFilterIdVariableName, LuckyFilterOnly, TEXT("A"))
+        || !SetPinDefault(LuckyFilterOnly, TEXT("B"), TEXT("1"))
+        || !Link(LuckyFilterGet, OverlayLuckyFilterIdVariableName, LuckyFilterExclude, TEXT("A"))
+        || !SetPinDefault(LuckyFilterExclude, TEXT("B"), TEXT("2"))
+        || !Link(LuckyFilterOnly, UEdGraphSchema_K2::PN_ReturnValue, LuckyFilterRestricted, TEXT("A"))
+        || !Link(LuckyFilterExclude, UEdGraphSchema_K2::PN_ReturnValue, LuckyFilterRestricted, TEXT("B"))
+        || !SetPinDefault(LuckyExpectedState, TEXT("A"), TEXT("1"))
+        || !SetPinDefault(LuckyExpectedState, TEXT("B"), TEXT("0"))
+        || !Link(LuckyFilterOnly, UEdGraphSchema_K2::PN_ReturnValue, LuckyExpectedState, TEXT("bPickA"))
+        || !Link(TargetLuckyStateGet, TEXT("Item"), LuckyFilterMatch, TEXT("A"))
+        || !Link(LuckyExpectedState, UEdGraphSchema_K2::PN_ReturnValue, LuckyFilterMatch, TEXT("B"))
+        || !Link(LuckyFilterRestricted, UEdGraphSchema_K2::PN_ReturnValue, LuckyRestrictedMatch, TEXT("A"))
+        || !Link(LuckyFilterMatch, UEdGraphSchema_K2::PN_ReturnValue, LuckyRestrictedMatch, TEXT("B"))
+        || !Link(LuckyFilterAll, UEdGraphSchema_K2::PN_ReturnValue, LuckyFilterAccepted, TEXT("A"))
+        || !Link(LuckyRestrictedMatch, UEdGraphSchema_K2::PN_ReturnValue, LuckyFilterAccepted, TEXT("B"))
+        || !Link(LuckyFilterAccepted, UEdGraphSchema_K2::PN_ReturnValue, LuckyFilterBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(Self, UEdGraphSchema_K2::PN_Self, PlayerPawn, TEXT("WorldContextObject"))
         || !Link(PlayerPawn, UEdGraphSchema_K2::PN_ReturnValue, PlayerLocation, UEdGraphSchema_K2::PN_Self)
         || !Link(ActorLocation, UEdGraphSchema_K2::PN_ReturnValue, LiveDistance, TEXT("V1"))
@@ -1394,7 +1477,8 @@ bool BuildOverlay(
         // __DEPRECATED_20260717__ [reason: gender rejection must happen before projection and drawing]
         // || !Link(TargetAliveBranch, UEdGraphSchema_K2::PN_Then, ProjectBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(TargetAliveBranch, UEdGraphSchema_K2::PN_Then, GenderFilterBranch, UEdGraphSchema_K2::PN_Execute)
-        || !Link(GenderFilterBranch, UEdGraphSchema_K2::PN_Then, ProjectBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(GenderFilterBranch, UEdGraphSchema_K2::PN_Then, LuckyFilterBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(LuckyFilterBranch, UEdGraphSchema_K2::PN_Then, ProjectBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(ForEachTarget, TEXT("Array Element"), ActorLocation, UEdGraphSchema_K2::PN_Self)
         || !Link(Self, UEdGraphSchema_K2::PN_Self, PlayerController, TEXT("WorldContextObject"))
         || !Link(PlayerController, UEdGraphSchema_K2::PN_ReturnValue, Project, TEXT("PlayerController"))
@@ -1487,7 +1571,8 @@ bool PrepareModActorControls(UBlueprint* Blueprint) {
         || !EnsureMemberVariable(Blueprint, ShowNameVariableName, BoolPin(), TEXT("true"))
         || !EnsureMemberVariable(Blueprint, ShowLevelVariableName, BoolPin(), TEXT("true"))
         || !EnsureMemberVariable(Blueprint, ShowDistanceVariableName, BoolPin(), TEXT("true"))
-        || !EnsureMemberVariable(Blueprint, GenderFilterIdVariableName, IntPin(), TEXT("0"))) {
+        || !EnsureMemberVariable(Blueprint, GenderFilterIdVariableName, IntPin(), TEXT("0"))
+        || !EnsureMemberVariable(Blueprint, LuckyFilterIdVariableName, IntPin(), TEXT("0"))) {
         return false;
     }
     FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
@@ -2214,6 +2299,8 @@ bool BuildPanelInitializeControlsV2(
     UCheckBox* ShowDistance,
     UTextBlock* GenderStatus,
     const TArray<UButton*>& GenderButtons,
+    UTextBlock* LuckyStatus,
+    const TArray<UButton*>& LuckyButtons,
     int32 Y,
     UK2Node_CustomEvent* ExistingEvent = nullptr) {
     UEdGraph* Graph = EventGraph(Blueprint);
@@ -2230,6 +2317,7 @@ bool BuildPanelInitializeControlsV2(
             TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LuckyFilterId"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin())
         });
     }
@@ -2318,8 +2406,40 @@ bool BuildPanelInitializeControlsV2(
         return false;
     }
     ExecTail = SetGenderStatus;
+    if (!AppendPanelSegmentVisualsDynamic(
+            Graph, Event, TEXT("GenderFilterId"), GenderButtons, ExecTail, X + 1400, Y)) {
+        return false;
+    }
+
+    X += 5000;
+    UK2Node_CallFunction* IsOnlyLucky = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X, Y + 160);
+    UK2Node_CallFunction* IsExcludeLucky = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X, Y + 320);
+    UK2Node_CallFunction* SelectExcludeLucky = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 280, Y + 240);
+    UK2Node_CallFunction* SelectOnlyLucky = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 560, Y + 160);
+    UK2Node_CallFunction* LuckyToText = AddStaticCall(Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), X + 840, Y + 160);
+    UK2Node_VariableGet* LuckyStatusGet = AddVariableGet(Graph, LuckyStatus->GetFName(), X + 840, Y + 320);
+    UK2Node_CallFunction* SetLuckyStatus = AddStaticCall(Graph, UTextBlock::StaticClass(), TEXT("SetText"), X + 1120, Y);
+    if (!IsOnlyLucky || !IsExcludeLucky || !SelectExcludeLucky || !SelectOnlyLucky
+        || !LuckyToText || !LuckyStatusGet || !SetLuckyStatus
+        || !Link(Event, TEXT("LuckyFilterId"), IsOnlyLucky, TEXT("A"))
+        || !SetPinDefault(IsOnlyLucky, TEXT("B"), TEXT("1"))
+        || !Link(Event, TEXT("LuckyFilterId"), IsExcludeLucky, TEXT("A"))
+        || !SetPinDefault(IsExcludeLucky, TEXT("B"), TEXT("2"))
+        || !SetPinDefault(SelectExcludeLucky, TEXT("A"), TEXT("当前 / Current: 排除闪光 / Exclude Lucky"))
+        || !SetPinDefault(SelectExcludeLucky, TEXT("B"), TEXT("当前 / Current: 全部 / All"))
+        || !Link(IsExcludeLucky, UEdGraphSchema_K2::PN_ReturnValue, SelectExcludeLucky, TEXT("bPickA"))
+        || !SetPinDefault(SelectOnlyLucky, TEXT("A"), TEXT("当前 / Current: 仅闪光 / Only Lucky"))
+        || !Link(SelectExcludeLucky, UEdGraphSchema_K2::PN_ReturnValue, SelectOnlyLucky, TEXT("B"))
+        || !Link(IsOnlyLucky, UEdGraphSchema_K2::PN_ReturnValue, SelectOnlyLucky, TEXT("bPickA"))
+        || !Link(SelectOnlyLucky, UEdGraphSchema_K2::PN_ReturnValue, LuckyToText, TEXT("InString"))
+        || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetLuckyStatus, UEdGraphSchema_K2::PN_Execute)
+        || !Link(LuckyStatusGet, LuckyStatus->GetFName(), SetLuckyStatus, UEdGraphSchema_K2::PN_Self)
+        || !Link(LuckyToText, UEdGraphSchema_K2::PN_ReturnValue, SetLuckyStatus, TEXT("InText"))) {
+        return false;
+    }
+    ExecTail = SetLuckyStatus;
     return AppendPanelSegmentVisualsDynamic(
-        Graph, Event, TEXT("GenderFilterId"), GenderButtons, ExecTail, X + 1400, Y);
+        Graph, Event, TEXT("LuckyFilterId"), LuckyButtons, ExecTail, X + 1400, Y);
 }
 
 bool BuildPanelVisibilityEvent(
@@ -2785,6 +2905,26 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     ConfigurePanelSegmentButtonV2(GenderMale, false);
     ConfigurePanelSegmentButtonV2(GenderFemale, false);
 
+    UTextBlock* LuckyHeading = AddPanelTextV2(Blueprint, Content, TEXT("ESP_LuckyHeadingText"), TEXT("闪光个体"), 13, true);
+    UTextBlock* LuckyStatus = AddPanelTextV2(Blueprint, Content, TEXT("ESP_LuckyStatusText"), TEXT("当前 / Current: 全部 / All"), 12, true);
+    UHorizontalBox* LuckyRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_LuckyRow"));
+    if (LuckyRow) {
+        Content->AddChild(LuckyRow);
+        SetVerticalPadding(LuckyRow, FMargin(0.0f, 2.0f, 0.0f, 6.0f));
+    }
+    UButton* LuckyAll = LuckyRow
+        ? AddPanelButtonV2(Blueprint, LuckyRow, TEXT("ESP_LuckyAllButton"), TEXT("ESP_LuckyAllText"), TEXT("全部"))
+        : nullptr;
+    UButton* LuckyOnly = LuckyRow
+        ? AddPanelButtonV2(Blueprint, LuckyRow, TEXT("ESP_LuckyOnlyButton"), TEXT("ESP_LuckyOnlyText"), TEXT("仅闪光"))
+        : nullptr;
+    UButton* LuckyExclude = LuckyRow
+        ? AddPanelButtonV2(Blueprint, LuckyRow, TEXT("ESP_LuckyExcludeButton"), TEXT("ESP_LuckyExcludeText"), TEXT("排除闪光"))
+        : nullptr;
+    ConfigurePanelSegmentButtonV2(LuckyAll, true);
+    ConfigurePanelSegmentButtonV2(LuckyOnly, false);
+    ConfigurePanelSegmentButtonV2(LuckyExclude, false);
+
     UTextBlock* LanguageHeading = AddPanelTextV2(Blueprint, Content, TEXT("ESP_LanguageHeadingText"), TEXT("Language"), 13, true);
     UHorizontalBox* LanguageRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_LanguageRow"));
     if (LanguageRow) {
@@ -2857,7 +2997,8 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         || !FilterHeading || !DisplayLimit.Slider || !DisplayLimit.SpinBox || !LevelHeading
         || !LevelMin.Slider || !LevelMin.SpinBox || !LevelMax.Slider || !LevelMax.SpinBox
         || !DistanceMax.Slider || !DistanceMax.SpinBox || !GenderHeading || !GenderStatus || !GenderRow
-        || !GenderAll || !GenderMale || !GenderFemale || !LanguageHeading || !LanguageRow || !Chinese || !English
+        || !GenderAll || !GenderMale || !GenderFemale || !LuckyHeading || !LuckyStatus || !LuckyRow
+        || !LuckyAll || !LuckyOnly || !LuckyExclude || !LanguageHeading || !LanguageRow || !Chinese || !English
         || !AdvancedExpand || !Advanced || !ModeHeading || !ModeStatus || !ModeRowA || !ModeRowB
         || !ModeOff || !ModeSnapshot || !ModeChunked || !ModeEvent || !CaptureStatus || !CaptureRow
         || !CaptureStart || !CaptureStop || !AdvancedCollapse) {
@@ -2868,6 +3009,7 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     SetVerticalPadding(FilterHeading, FMargin(0.0f, 12.0f, 0.0f, 2.0f));
     SetVerticalPadding(LevelHeading, FMargin(0.0f, 6.0f, 0.0f, 0.0f));
     SetVerticalPadding(GenderHeading, FMargin(0.0f, 6.0f, 0.0f, 0.0f));
+    SetVerticalPadding(LuckyHeading, FMargin(0.0f, 6.0f, 0.0f, 0.0f));
     SetVerticalPadding(LanguageHeading, FMargin(0.0f, 8.0f, 0.0f, 0.0f));
 
     // __DEPRECATED_20260717__ [reason: signature-only bridge keeps a V1 ModActor compilable
@@ -2905,6 +3047,7 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
             TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LuckyFilterId"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin())
         }
     );
@@ -2982,10 +3125,24 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     }
     Y += 1080;
 
+    const TArray<UButton*> LuckyButtons = {LuckyAll, LuckyOnly, LuckyExclude};
+    if (!BuildPanelControlEvent(
+            Blueprint, LuckyAll, ModActorClass, {{LuckyFilterIdVariableName, TEXT("0")}},
+            TEXT("ESP_LuckyStatusText"), TEXT("当前 / Current: 全部 / All"), Y, &LuckyButtons, 0)
+        || !BuildPanelControlEvent(
+            Blueprint, LuckyOnly, ModActorClass, {{LuckyFilterIdVariableName, TEXT("1")}},
+            TEXT("ESP_LuckyStatusText"), TEXT("当前 / Current: 仅闪光 / Only Lucky"), Y + 360, &LuckyButtons, 1)
+        || !BuildPanelControlEvent(
+            Blueprint, LuckyExclude, ModActorClass, {{LuckyFilterIdVariableName, TEXT("2")}},
+            TEXT("ESP_LuckyStatusText"), TEXT("当前 / Current: 排除闪光 / Exclude Lucky"), Y + 720, &LuckyButtons, 2)) {
+        return false;
+    }
+    Y += 1080;
+
     if (!BuildPanelInitializeControlsV2(
             Blueprint, DisplayLimit, LevelMin, LevelMax, DistanceMax,
             RuntimeEnabled, TopGuide, ShowName, ShowLevel, ShowDistance,
-            GenderStatus, GenderButtons, Y, PanelInitializeV2)) {
+            GenderStatus, GenderButtons, LuckyStatus, LuckyButtons, Y, PanelInitializeV2)) {
         return false;
     }
     Y += 900;
@@ -3013,6 +3170,10 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         {TEXT("ESP_GenderAllText"), TEXT("全部"), TEXT("All")},
         {TEXT("ESP_GenderMaleText"), TEXT("雄性"), TEXT("Male")},
         {TEXT("ESP_GenderFemaleText"), TEXT("雌性"), TEXT("Female")},
+        {TEXT("ESP_LuckyHeadingText"), TEXT("闪光个体"), TEXT("Lucky Pal")},
+        {TEXT("ESP_LuckyAllText"), TEXT("全部"), TEXT("All")},
+        {TEXT("ESP_LuckyOnlyText"), TEXT("仅闪光"), TEXT("Only Lucky")},
+        {TEXT("ESP_LuckyExcludeText"), TEXT("排除闪光"), TEXT("Exclude Lucky")},
         {TEXT("ESP_AdvancedExpandText"), TEXT("高级诊断"), TEXT("Advanced diagnostics")},
         {TEXT("ESP_ModeHeadingText"), TEXT("实验模式"), TEXT("Experiment mode")},
         {TEXT("ESP_ModeOffText"), TEXT("关闭"), TEXT("Off")},
@@ -3103,7 +3264,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         TPair<FName, FEdGraphPinType>(FName("ShowName"), BoolPin()),
         TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
         TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin()),
-        TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin())
+        TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin()),
+        TPair<FName, FEdGraphPinType>(FName("LuckyFilterId"), IntPin())
     });
     UK2Node_CustomEvent* TogglePanel = AddCustomEvent(Blueprint, Graph, TEXT("PalworldResourceESP_TogglePanel"), -900, 1520, {});
     if (!PostBeginPlay || !BridgeReady || !Reset || !SetTarget || !ClearTarget || !SetDisplayStyle || !TogglePanel) {
@@ -3152,8 +3314,9 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableGet* PanelRuntimeEnabled = AddVariableGet(Graph, RuntimeEnabledVariableName, 3220, 2080);
     UK2Node_VariableGet* PanelTopGuide = AddVariableGet(Graph, ShowTopGuideLineVariableName, 3500, 2080);
     UK2Node_VariableGet* PanelGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 3780, 2080);
-    UK2Node_VariableGet* PanelShowName = AddVariableGet(Graph, ShowNameVariableName, 4060, 2080);
-    UK2Node_VariableGet* PanelLanguage = AddVariableGet(Graph, LanguageIdVariableName, 4340, 2080);
+    UK2Node_VariableGet* PanelLuckyFilter = AddVariableGet(Graph, LuckyFilterIdVariableName, 4060, 2080);
+    UK2Node_VariableGet* PanelShowName = AddVariableGet(Graph, ShowNameVariableName, 4340, 2080);
+    UK2Node_VariableGet* PanelLanguage = AddVariableGet(Graph, LanguageIdVariableName, 4620, 2080);
     UK2Node_CallFunction* AddPanelToViewport = AddStaticCall(Graph, UUserWidget::StaticClass(), TEXT("AddToViewport"), 2100, 1760);
     UK2Node_VariableSet* ShowCursor = AddExternalVariableSet(Graph, TEXT("bShowMouseCursor"), APlayerController::StaticClass(), 2380, 1760);
     UK2Node_CallFunction* UiOnly = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("SetInputMode_UIOnlyEx"), 2660, 1760);
@@ -3162,7 +3325,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !HideCursor || !GameOnly || !OpenController || !OpenWorldContext || !CreatePanel || !CastPanel || !StorePanel
         || !SetPanelBridge || !ActorSelf || !InitializePanel || !InitializeLanguage || !PanelDisplayLimit || !PanelLevelMin
         || !PanelLevelMax || !PanelDistanceMax || !PanelShowLevel || !PanelShowDistance
-        || !PanelRuntimeEnabled || !PanelTopGuide || !PanelGenderFilter || !PanelShowName || !PanelLanguage
+        || !PanelRuntimeEnabled || !PanelTopGuide || !PanelGenderFilter || !PanelLuckyFilter
+        || !PanelShowName || !PanelLanguage
         || !AddPanelToViewport || !ShowCursor || !UiOnly
         || !SetClassPin(CreatePanel, TEXT("WidgetType"), PanelClass)
         || !SetPinDefault(CloseController, TEXT("PlayerIndex"), TEXT("0"))
@@ -3207,6 +3371,7 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(PanelShowLevel, ShowLevelVariableName, InitializePanel, TEXT("ShowLevel"))
         || !Link(PanelShowDistance, ShowDistanceVariableName, InitializePanel, TEXT("ShowDistance"))
         || !Link(PanelGenderFilter, GenderFilterIdVariableName, InitializePanel, TEXT("GenderFilterId"))
+        || !Link(PanelLuckyFilter, LuckyFilterIdVariableName, InitializePanel, TEXT("LuckyFilterId"))
         || !Link(PanelLanguage, LanguageIdVariableName, InitializePanel, TEXT("LanguageId"))
         || !Link(InitializePanel, UEdGraphSchema_K2::PN_Then, InitializeLanguage, UEdGraphSchema_K2::PN_Execute)
         || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, InitializeLanguage, UEdGraphSchema_K2::PN_Self)
@@ -3242,6 +3407,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreExistingShowDistance = AddExternalVariableSet(Graph, OverlayShowDistanceVariableName, OverlayClass, 1260, 360);
     UK2Node_VariableGet* ExistingGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 1260, 280);
     UK2Node_VariableSet* StoreExistingGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 1540, 360);
+    UK2Node_VariableGet* ExistingLuckyFilter = AddVariableGet(Graph, LuckyFilterIdVariableName, 1540, 280);
+    UK2Node_VariableSet* StoreExistingLuckyFilter = AddExternalVariableSet(Graph, OverlayLuckyFilterIdVariableName, OverlayClass, 1820, 360);
     UK2Node_VariableGet* ExistingGenderDiagnostic = AddExternalVariableGet(Graph, OverlayGenderDiagnosticVariableName, OverlayClass, 420, 520);
     UK2Node_VariableSet* StoreExistingGenderDiagnostic = AddVariableSet(Graph, BridgeGenderDiagnosticVariableName, 700, 520);
     UK2Node_VariableGet* ExistingGenderDiagnosticCode = AddExternalVariableGet(Graph, OverlayGenderDiagnosticCodeVariableName, OverlayClass, 420, 640);
@@ -3256,6 +3423,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreNewShowDistance = AddExternalVariableSet(Graph, OverlayShowDistanceVariableName, OverlayClass, 2380, 560);
     UK2Node_VariableGet* NewGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 2380, 480);
     UK2Node_VariableSet* StoreNewGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 2660, 560);
+    UK2Node_VariableGet* NewLuckyFilter = AddVariableGet(Graph, LuckyFilterIdVariableName, 2660, 480);
+    UK2Node_VariableSet* StoreNewLuckyFilter = AddExternalVariableSet(Graph, OverlayLuckyFilterIdVariableName, OverlayClass, 2940, 560);
     UK2Node_VariableGet* NewGenderDiagnostic = AddExternalVariableGet(Graph, OverlayGenderDiagnosticVariableName, OverlayClass, 1540, 720);
     UK2Node_VariableSet* StoreNewGenderDiagnostic = AddVariableSet(Graph, BridgeGenderDiagnosticVariableName, 1820, 720);
     UK2Node_VariableGet* NewGenderDiagnosticCode = AddExternalVariableGet(Graph, OverlayGenderDiagnosticCodeVariableName, OverlayClass, 1540, 880);
@@ -3264,12 +3433,13 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !AddExistingTarget || !AddNewTarget || !ExistingTopGuideEnabled || !StoreExistingTopGuideEnabled
         || !ExistingShowName || !StoreExistingShowName
         || !ExistingShowLevel || !StoreExistingShowLevel || !ExistingShowDistance || !StoreExistingShowDistance
-        || !ExistingGenderFilter || !StoreExistingGenderFilter
+        || !ExistingGenderFilter || !StoreExistingGenderFilter || !ExistingLuckyFilter || !StoreExistingLuckyFilter
         || !ExistingGenderDiagnostic || !StoreExistingGenderDiagnostic
         || !ExistingGenderDiagnosticCode || !StoreExistingGenderDiagnosticCode
         || !NewTopGuideEnabled || !StoreNewTopGuideEnabled || !NewShowName || !StoreNewShowName
         || !NewShowLevel || !StoreNewShowLevel
         || !NewShowDistance || !StoreNewShowDistance || !NewGenderFilter || !StoreNewGenderFilter
+        || !NewLuckyFilter || !StoreNewLuckyFilter
         || !NewGenderDiagnostic || !StoreNewGenderDiagnostic
         || !NewGenderDiagnosticCode || !StoreNewGenderDiagnosticCode
         || !SetClassPin(CreateWidget, TEXT("WidgetType"), OverlayClass)
@@ -3308,7 +3478,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StoreExistingShowDistance, UEdGraphSchema_K2::PN_Then, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingGenderFilter, GenderFilterIdVariableName, StoreExistingGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Self)
-        || !Link(StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Then, StoreExistingGenderDiagnostic, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Then, StoreExistingLuckyFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ExistingLuckyFilter, LuckyFilterIdVariableName, StoreExistingLuckyFilter, OverlayLuckyFilterIdVariableName)
+        || !Link(OverlayGet, OverlayVariableName, StoreExistingLuckyFilter, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreExistingLuckyFilter, UEdGraphSchema_K2::PN_Then, StoreExistingGenderDiagnostic, UEdGraphSchema_K2::PN_Execute)
         || !Link(OverlayGet, OverlayVariableName, ExistingGenderDiagnostic, UEdGraphSchema_K2::PN_Self)
         || !Link(ExistingGenderDiagnostic, OverlayGenderDiagnosticVariableName, StoreExistingGenderDiagnostic, BridgeGenderDiagnosticVariableName)
         || !Link(StoreExistingGenderDiagnostic, UEdGraphSchema_K2::PN_Then, StoreExistingGenderDiagnosticCode, UEdGraphSchema_K2::PN_Execute)
@@ -3329,7 +3502,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StoreNewShowDistance, UEdGraphSchema_K2::PN_Then, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(NewGenderFilter, GenderFilterIdVariableName, StoreNewGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Self)
-        || !Link(StoreNewGenderFilter, UEdGraphSchema_K2::PN_Then, StoreNewGenderDiagnostic, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreNewGenderFilter, UEdGraphSchema_K2::PN_Then, StoreNewLuckyFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(NewLuckyFilter, LuckyFilterIdVariableName, StoreNewLuckyFilter, OverlayLuckyFilterIdVariableName)
+        || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewLuckyFilter, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreNewLuckyFilter, UEdGraphSchema_K2::PN_Then, StoreNewGenderDiagnostic, UEdGraphSchema_K2::PN_Execute)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, NewGenderDiagnostic, UEdGraphSchema_K2::PN_Self)
         || !Link(NewGenderDiagnostic, OverlayGenderDiagnosticVariableName, StoreNewGenderDiagnostic, BridgeGenderDiagnosticVariableName)
         || !Link(StoreNewGenderDiagnostic, UEdGraphSchema_K2::PN_Then, StoreNewGenderDiagnosticCode, UEdGraphSchema_K2::PN_Execute)
@@ -3347,8 +3523,9 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StyleLevel = AddExternalVariableSet(Graph, OverlayShowLevelVariableName, OverlayClass, 700, 2320);
     UK2Node_VariableSet* StyleDistance = AddExternalVariableSet(Graph, OverlayShowDistanceVariableName, OverlayClass, 980, 2320);
     UK2Node_VariableSet* StyleGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 1260, 2320);
+    UK2Node_VariableSet* StyleLuckyFilter = AddExternalVariableSet(Graph, OverlayLuckyFilterIdVariableName, OverlayClass, 1540, 2320);
     if (!StyleOverlayGet || !StyleOverlayValid || !StyleOverlayBranch || !StyleTopGuide || !StyleName || !StyleLevel || !StyleDistance
-        || !StyleGenderFilter
+        || !StyleGenderFilter || !StyleLuckyFilter
         || !Link(SetDisplayStyle, UEdGraphSchema_K2::PN_Then, StyleOverlayBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleOverlayValid, TEXT("Object"))
         || !Link(StyleOverlayValid, UEdGraphSchema_K2::PN_ReturnValue, StyleOverlayBranch, UEdGraphSchema_K2::PN_Condition)
@@ -3366,7 +3543,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StyleOverlayGet, OverlayVariableName, StyleDistance, UEdGraphSchema_K2::PN_Self)
         || !Link(StyleDistance, UEdGraphSchema_K2::PN_Then, StyleGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(SetDisplayStyle, TEXT("GenderFilterId"), StyleGenderFilter, OverlayGenderFilterIdVariableName)
-        || !Link(StyleOverlayGet, OverlayVariableName, StyleGenderFilter, UEdGraphSchema_K2::PN_Self)) {
+        || !Link(StyleOverlayGet, OverlayVariableName, StyleGenderFilter, UEdGraphSchema_K2::PN_Self)
+        || !Link(StyleGenderFilter, UEdGraphSchema_K2::PN_Then, StyleLuckyFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SetDisplayStyle, TEXT("LuckyFilterId"), StyleLuckyFilter, OverlayLuckyFilterIdVariableName)
+        || !Link(StyleOverlayGet, OverlayVariableName, StyleLuckyFilter, UEdGraphSchema_K2::PN_Self)) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildModActor display style graph failed"));
         return false;
     }
@@ -3429,6 +3609,19 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     if (!ModActor || !Bridge || !Overlay || !Panel || !PalMonsterClass || !CharacterParameterComponentClass
         || !IndividualParameterClass || !GenderEnum || !PalUtilityClass) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] required asset or class missing"));
+        return false;
+    }
+
+    UEdGraph* ModActorGraph = EventGraph(ModActor);
+    if (!ModActorGraph) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] ModActor dependency reset graph missing"));
+        return false;
+    }
+    ClearGraph(ModActorGraph);
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(ModActor);
+    FKismetEditorUtilities::CompileBlueprint(ModActor);
+    if (ModActor->Status == BS_Error) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] ModActor dependency reset failed"));
         return false;
     }
 

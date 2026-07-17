@@ -1,8 +1,8 @@
 local user_settings = {}
 
-local VERSION = "v1"
+local VERSION = "v2"
 
-local fields = {
+local v1_fields = {
     { name = "runtime_enabled", kind = "boolean", default = true },
     { name = "profile_id", kind = "integer", min = 0, max = 3, default = 2 },
     { name = "preset_id", kind = "integer", min = 0, max = 2, default = 1 },
@@ -18,9 +18,24 @@ local fields = {
     { name = "gender", kind = "integer", min = 0, max = 2, default = 0 },
 }
 
-local fields_by_name = {}
-for _, field in ipairs(fields) do
-    fields_by_name[field.name] = field
+local fields = {}
+for _, field in ipairs(v1_fields) do
+    fields[#fields + 1] = field
+end
+fields[#fields + 1] = { name = "lucky", kind = "integer", min = 0, max = 2, default = 0 }
+
+local schemas = {
+    v1 = v1_fields,
+    v2 = fields,
+}
+
+local fields_by_version = {}
+for version, schema_fields in pairs(schemas) do
+    local by_name = {}
+    for _, field in ipairs(schema_fields) do
+        by_name[field.name] = field
+    end
+    fields_by_version[version] = by_name
 end
 
 local function normalize_value(field, value)
@@ -52,7 +67,9 @@ function user_settings.parse_line(line)
         return nil, "line_not_string"
     end
     local version, payload = line:match("^%s*(v%d+)%s+(..-)%s*$")
-    if version ~= VERSION or payload == nil or payload == "" then
+    local schema_fields = schemas[version]
+    local fields_by_name = fields_by_version[version]
+    if schema_fields == nil or payload == nil or payload == "" then
         return nil, "unsupported_version"
     end
 
@@ -82,10 +99,17 @@ function user_settings.parse_line(line)
         count = count + 1
     end
 
-    if count ~= #fields then
+    if count ~= #schema_fields then
         return nil, "incomplete_snapshot"
     end
-    return user_settings.normalize(parsed)
+    local normalized = {}
+    for _, field in ipairs(schema_fields) do
+        normalized[field.name] = normalize_value(field, parsed[field.name])
+    end
+    if version == "v1" then
+        normalized.lucky = 0
+    end
+    return normalized, nil, version
 end
 
 function user_settings.serialize(values)
@@ -109,11 +133,13 @@ function user_settings.load_latest(path, io_backend)
     end
 
     local latest = nil
+    local latest_version = nil
     local ok, read_error = pcall(function()
         for line in file:lines() do
-            local parsed = user_settings.parse_line(line)
+            local parsed, _, version = user_settings.parse_line(line)
             if parsed ~= nil then
                 latest = parsed
+                latest_version = version
             end
         end
     end)
@@ -126,7 +152,7 @@ function user_settings.load_latest(path, io_backend)
     if latest == nil then
         return nil, "no_valid_snapshot"
     end
-    return latest
+    return latest, nil, latest_version
 end
 
 function user_settings.append(path, values, io_backend)

@@ -2,7 +2,7 @@
 
 ## Status
 
-- Implementation: wrapper-safe snapshots, live target distance, independent metadata visibility, numeric panel ranges, gender filtering, and capture tooling complete; slider/name/settings runtime regression pending
+- Implementation: wrapper-safe snapshots, live target distance, independent metadata visibility, numeric panel ranges, gender and Lucky filtering, and capture tooling complete; Lucky runtime regression pending
 - Maintainer-required environment: Steam PC single-player
 - Server environments: community pending and not a Phase 2 gate
 - Human player invariant: every runtime run must report `candidate_player_count=0`
@@ -17,10 +17,10 @@
 | Active UE4SS root | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss` |
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
-| LogicMod pak SHA-256 | `E4FC5A5DC70DCC0DC02B2B7EAB4431FC2F4398DB49B81A58F7F8CD4FE7438C3F`; slider/name/settings checkpoint |
-| `main.lua` SHA-256 | `5FA9C2AE907B0EDFC54EDC04EC6C3812CCDB192D4CAC926EB22230BD6C51CC63` |
+| LogicMod pak SHA-256 | `A72FBF5AD746EBBA671027E8D138BD1E09DA70D507756AFEDE1CB55096520F6D`; Lucky filter checkpoint |
+| `main.lua` SHA-256 | `D9ADDF5653593F732319A76BC341509C06BC020754F3F898C1EB2F4B76CF481F` |
 | `config.lua` SHA-256 | `00C56472CC7B2BBA2A7BA1488093EEB3C6B0C2D9BB5DE3B0E9B8A0881763F33E` |
-| `user_settings.lua` SHA-256 | `3E123871CAD66C6CF4B073CAFA07BA612C98C49EFD30B83FB5D835FAE55D4ECA` |
+| `user_settings.lua` SHA-256 | `73F569E50AA1AFBB8F3FC7F223C3ADB8E45B93493F3254894C602BDBF6A3F0D2` |
 | Newest recorded crash | `2026-07-17 15:07:26`, `UECC-Windows-226A46F0425C013D3C68EAA1329F05E1_0000`; delayed-wrapper reconcile during movement |
 | Runtime baseline backup | `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp_backups/20260716_entity_core_baseline` |
 
@@ -60,6 +60,7 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-28 | Versioned local settings | Only whitelisted bounded scalars round-trip; invalid lines fail closed; the last valid snapshot wins | Pass | Unit suite covers parsing, clamping, append format, path derivation, and coalesced runtime writes |
 | AT-29 | Slider deferred commit | Slider movement only updates the paired SpinBox; mouse/controller release and SpinBox commit each increment once | Pass | Source contract test passes; regenerated panel compiles with status 3 and clean Cook completes with 0 errors |
 | AT-30 | Name and outlined labels | Blueprint nickname remains indexed with each target; name visibility is independent and text has a black outline | Pass | Overlay stores one nickname per target, compiles with status 5, and clean Cook completes with 0 errors; UE 5.1 outline uses four black offset draws plus white foreground |
+| AT-31 | Lucky filter provider | Blueprint reads `IsRarePal()` only after Lua admission; all/only/exclude is scalar-controlled and unknown fails closed | Pass | Unit/static contracts cover `v1` migration, `v2` round-trip, ID clamping, bridge payloads, indexed `-1/0/1` states, and pre-projection filtering; Overlay/Panel/ModActor compile and clean Cook completes 408/408 with 0 errors |
 
 ## Performance Investigation
 
@@ -92,6 +93,7 @@ All three real runs passed capture cleanup, death cleanup, return to Title, norm
 | EC-13 | Gender filtering | All shows both known genders; male/female modes show only matching targets; reopening the panel preserves the value and highlighted segment | Pass | Maintainer confirmed filtering, selected-state highlighting, and normal exit. |
 | EC-14 | Slider commit and label rendering | Dragging remains responsive; release applies once; name/level/distance text is outlined and independently switchable | Pending | Current runtime package has not been tested. |
 | EC-15 | Settings restart | Last stable controls and language restore after a full restart; capture remains stopped | Pending | Current runtime package has not been tested. |
+| EC-16 | Lucky filtering | All shows normal and Lucky Pals; only Lucky hides normal Pals; exclude Lucky hides Lucky Pals; selection survives panel recreation and restart | Pending | Automated provider and persistence contracts pass; requires a real Lucky sample for the positive/negative split. |
 
 ## Runtime Procedure
 
@@ -99,11 +101,12 @@ All three real runs passed capture cleanup, death cleanup, return to Title, norm
 2. Launch Palworld, enter the Steam single-player save, and remain near multiple wild Pals for at least 20 seconds.
 3. Confirm multiple independent top-anchored guides remain visible. No guide may target a human player.
 4. Switch gender through all, male, and female. Confirm each restricted mode hides the opposite known gender, then close/reopen the panel and confirm the current selection is preserved.
-5. Capture one guided Pal and kill another. Confirm both guides disappear and stay absent after at least six seconds.
-6. Return to Title, wait at least 10 seconds, and exit normally.
-7. Extract `ADAPTER_REGISTERED`, `PLAYER_AUDIT`, `ENTITY_SNAPSHOT`, `FILTER_RESULT`, `DISPLAY_BUDGET`, `SCAN_DONE`, `DISPLAY_STYLE`, bridge, lifecycle, and error rows.
-8. Re-run the privacy/capability scans and compare the crash directory timestamp.
+5. Switch Lucky through all, only Lucky, and exclude Lucky. Without a Lucky sample, at minimum confirm only Lucky hides all ordinary Pals; record the other two cases as sample-pending rather than passing them.
+6. Capture one guided Pal and kill another. Confirm both guides disappear and stay absent after at least six seconds.
+7. Return to Title, wait at least 10 seconds, and exit normally.
+8. Extract `ADAPTER_REGISTERED`, `PLAYER_AUDIT`, `ENTITY_SNAPSHOT`, `FILTER_RESULT`, `DISPLAY_BUDGET`, `SCAN_DONE`, `DISPLAY_STYLE`, bridge, lifecycle, and error rows.
+9. Re-run the privacy/capability scans and compare the crash directory timestamp.
 
 ## Completion Rule
 
-ADR-0005 remains `Proposed` until EC-01 through EC-15 pass. After that evidence is recorded, change the ADR to `Accepted`, mark Phase 2 complete in the PRD, update source/deployment hashes, and make the Draft PR ready for review. Multiplayer remains community-pending.
+ADR-0005 remains `Proposed` until EC-01 through EC-16 pass. After that evidence is recorded, change the ADR to `Accepted`, mark Phase 2 complete in the PRD, update source/deployment hashes, and make the Draft PR ready for review. Multiplayer remains community-pending.

@@ -16,9 +16,10 @@ The Mod remains a pure client-side UE4SS Lua plus LogicMod package. Settings mus
 
 ## Decision
 
-Persist panel preferences in `PalworldResourceESP/Scripts/user-settings.log` as an append-only sequence of complete `v1` snapshots.
+Persist panel preferences in `PalworldResourceESP/Scripts/user-settings.log` as an append-only sequence of complete versioned snapshots. New writes use `v2`; the reader accepts strict complete `v1` and `v2` records.
 
-- Every snapshot contains only a fixed whitelist of booleans and bounded integers: runtime/profile/preset, language, level endpoints, maximum distance, visible target limit, top guide, name/level/distance visibility, and gender filter.
+- Every snapshot contains only a fixed whitelist of booleans and bounded integers: runtime/profile/preset, language, level endpoints, maximum distance, visible target limit, top guide, name/level/distance visibility, gender filter, and Lucky filter.
+- A valid `v1` snapshot migrates in memory by defaulting Lucky to `all`; it is never rewritten in place. The next stable user change appends a complete `v2` snapshot.
 - Capture state, players, entities, names, IDs, and coordinates are never persisted.
 - Lua loads the last valid complete snapshot and ignores malformed, incomplete, unknown-version, or unknown-field lines.
 - Loaded values are clamped to the public UI limits and written once to the passive ModActor before the panel is initialized.
@@ -73,6 +74,7 @@ Negative effects:
 - Settings storage depends on the Mod directory being writable.
 - Append-only history has unbounded theoretical growth.
 - Schema changes require a new parser version or an explicit migration.
+- Supporting older strict schemas adds a small compatibility surface to the parser.
 
 Follow-up considerations:
 - Do not accept this ADR until a real restart proves restoration and normal exit.
@@ -82,5 +84,6 @@ Follow-up considerations:
 
 - [x] Add strict parser, normalization, last-valid loading, and append tests.
 - [x] Add a 750 ms coalesced runtime save path.
+- [x] Add strict `v1` read compatibility and `v2` writes for the Lucky selector.
 - [ ] Verify settings restoration after a full Palworld restart.
 - [ ] Verify a malformed final line falls back to the preceding valid line in the game environment.

@@ -16,6 +16,7 @@ local function complete(overrides)
         show_level = true,
         show_distance = true,
         gender = 0,
+        lucky = 0,
     }
     for name, value in pairs(overrides or {}) do
         values[name] = value
@@ -49,6 +50,7 @@ return {
             level_min = 12,
             show_name = false,
             gender = 2,
+            lucky = 1,
         })
         local parsed = assert(user_settings.parse_line(user_settings.serialize(input)))
         helper.equal(parsed.runtime_enabled, false)
@@ -56,6 +58,15 @@ return {
         helper.equal(parsed.level_min, 12)
         helper.equal(parsed.show_name, false)
         helper.equal(parsed.gender, 2)
+        helper.equal(parsed.lucky, 1)
+    end),
+
+    helper.case("settings v1 snapshots remain readable with Lucky defaulted to all", function()
+        local v1 = user_settings.serialize(complete()):gsub("^v2 ", "v1 "):gsub(" lucky=0$", "")
+        local parsed, parse_error, version = user_settings.parse_line(v1)
+        helper.equal(parse_error, nil)
+        helper.equal(version, "v1")
+        helper.equal(parsed.lucky, 0)
     end),
 
     helper.case("settings parser rejects unknown or incomplete snapshots", function()
@@ -73,6 +84,7 @@ return {
             distance_max = 999,
             display_limit = 0,
             gender = 9,
+            lucky = -4,
         }))
         helper.equal(normalized.profile_id, 3)
         helper.equal(normalized.language_id, 0)
@@ -80,6 +92,7 @@ return {
         helper.equal(normalized.distance_max, 330)
         helper.equal(normalized.display_limit, 1)
         helper.equal(normalized.gender, 2)
+        helper.equal(normalized.lucky, 0)
     end),
 
     helper.case("settings loader uses the last valid snapshot", function()
@@ -110,8 +123,9 @@ return {
         }
         local ok = user_settings.append("memory.log", complete({ show_name = false }), backend)
         helper.truthy(ok)
-        helper.truthy(written:match("^v1 "))
+        helper.truthy(written:match("^v2 "))
         helper.truthy(written:match("show_name=false"))
+        helper.truthy(written:match("lucky=0"))
         helper.truthy(written:match("\n$"))
     end),
 

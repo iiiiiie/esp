@@ -40,7 +40,7 @@ Use a Lua-owned, generation-scoped entity snapshot pipeline.
 - The Blueprint bridge receives only actors from the filtered, budgeted output. Blueprint may enrich or filter already admitted wild entities in later phases, but it must never discover actors or widen admission.
 - No snapshot, filter, or diagnostic may contain player identity, player coordinates, or player parameters.
 
-The first Entity Core implementation proves the contract with Lua-safe fields such as level and reconciliation-time distance. Gender is the first validated Blueprint field provider: Blueprint maps `EPalGenderType` to `0 = unknown`, `1 = male`, or `2 = female` for each already-admitted target and applies the selected filter before projection. Lua reads only the scalar filter selector and never receives the enum or a gender-derived Actor reference. Species, passive skills, IVs, Lucky/Alpha, elements, and capture count remain explicit `bridge` or `unavailable` values until their dedicated adapters are validated.
+The first Entity Core implementation proves the contract with Lua-safe fields such as level and reconciliation-time distance. Gender is the first validated Blueprint field provider: Blueprint maps `EPalGenderType` to `0 = unknown`, `1 = male`, or `2 = female` for each already-admitted target and applies the selected filter before projection. Lucky is a separate Blueprint provider backed by `UPalIndividualCharacterParameter::IsRarePal()`: `-1 = unknown`, `0 = normal`, and `1 = Lucky`. Its `all / only Lucky / exclude Lucky` selector rejects unknown values in either restricted mode. Lua reads only scalar filter selectors and never receives the enum, Lucky result, or a field-derived Actor reference. Lucky does not imply Alpha/Boss; Alpha/Boss remains an independent unavailable field until a stable classifier is validated. Species, passive skills, IVs, Alpha/Boss, elements, and capture count remain explicit `bridge` or `unavailable` values until their dedicated adapters are validated.
 
 ## Options Considered
 
@@ -130,7 +130,9 @@ Follow-up concerns:
 
 - [x] Implement the Entity Core PRP and unit-test the adapter/filter contracts.
 - [x] Implement the gender Blueprint field provider without marshalling `EPalGenderType` through Lua.
-- [ ] Validate all/male/female filtering, panel-state restoration, and lifecycle cleanup in Steam single-player.
+- [x] Validate all/male/female filtering, panel-state restoration, and lifecycle cleanup in Steam single-player.
+- [x] Implement the Lucky Blueprint field provider without exposing the result or UObject to Lua.
+- [ ] Validate all/only Lucky/exclude Lucky behavior, panel-state restoration, and lifecycle cleanup in Steam single-player.
 - [ ] Validate snapshot replacement, capture/death cleanup, map teardown, and normal exit in Steam single-player.
 - [ ] Measure reconciliation, filtering, ordering, and bridge synchronization separately.
 - [ ] Accept this ADR only after the Entity Core smoke matrix passes.

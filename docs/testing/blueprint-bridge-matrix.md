@@ -17,11 +17,11 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | MSVC | `14.38` installed; UBT selected `14.39.33523` for the current editor-plugin build |
 | Wwise | Not required by the accepted no-Wwise PMK path |
 | Last fully verified LogicMod pak | `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14`; 8 files |
-| Current deployed panel pak | `E4FC5A5DC70DCC0DC02B2B7EAB4431FC2F4398DB49B81A58F7F8CD4FE7438C3F`; slider/name/settings checkpoint, runtime regression pending |
+| Current deployed panel pak | `A72FBF5AD746EBBA671027E8D138BD1E09DA70D507756AFEDE1CB55096520F6D`; Lucky filter checkpoint, runtime regression pending |
 | Current Pak contents | 10 files under `../../../Pal/Content/Mods/PalworldResourceESP/`; no DLL |
-| Current Lua script hash | `5FA9C2AE907B0EDFC54EDC04EC6C3812CCDB192D4CAC926EB22230BD6C51CC63` |
+| Current Lua script hash | `D9ADDF5653593F732319A76BC341509C06BC020754F3F898C1EB2F4B76CF481F` |
 | Current Lua config hash | `00C56472CC7B2BBA2A7BA1488093EEB3C6B0C2D9BB5DE3B0E9B8A0881763F33E` |
-| Current settings module hash | `3E123871CAD66C6CF4B073CAFA07BA612C98C49EFD30B83FB5D835FAE55D4ECA` |
+| Current settings module hash | `73F569E50AA1AFBB8F3FC7F223C3ADB8E45B93493F3254894C602BDBF6A3F0D2` |
 
 ## Required Cases
 
@@ -48,6 +48,7 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | BP-19 | Slider commit behavior | Dragging updates only the visible number; releasing applies one filter revision without continuous hitching | Pending | Source and automated contract complete; Steam verification required. |
 | BP-20 | Name label and outline | Name visibility is independent; all name/level/distance text uses a black outline | Pending | Generated Blueprint and Steam verification required. |
 | BP-21 | Settings restoration | Restart restores the last stable functional settings and language without restoring capture state | Pending | Parser/runtime tests pass; full restart verification required. |
+| BP-22 | Lucky filter | All/only Lucky/exclude Lucky filters already-admitted wild Pals; unknown states fail closed in restricted modes | Pending | `IsRarePal()` provider, three-state UI, persistence, Blueprint compilation, and 10-file Pak checks pass; Steam verification requires an ordinary Pal and ideally a Lucky sample. |
 
 ## Panel Regression Evidence
 
@@ -60,7 +61,7 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | 2026-07-17 functional panel run | Shift+Y, localization, master switch, range and visibility controls | Maintainer confirmed panel interaction, all numeric filters, target limit, and live level/distance display; no reported crash. |
 | 2026-07-17 gender filter run | All/male/female behavior and normal exit | Male/female filtering passed and the game exited normally. Selected-button accent remained on the wrong segment, exposing BP-18. |
 | 2026-07-17 gender highlight follow-up | Gender selector highlight fix | Maintainer confirmed the selected segment highlight is correct. |
-| Next run | Slider commit, name/outline, and settings restoration | Pending. Verify one release-time apply, label rendering, then restart once to prove persistence. |
+| Next run | Lucky selector and settings restoration | Pending. Verify ordinary Pals disappear in only-Lucky mode, validate a Lucky sample when available, then restart once to prove persistence. |
 
 ## Privacy Check
 
