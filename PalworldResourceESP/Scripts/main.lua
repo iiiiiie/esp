@@ -2,6 +2,7 @@ local config = require("config")
 local adapter_registry = require("core.adapter_registry")
 local entity_snapshot = require("core.entity_snapshot")
 local filter_engine = require("core.filter_engine")
+local runtime_profiles = require("core.runtime_profiles")
 local pal_adapter = require("adapters.pal")
 
 local MOD_NAME = "PalworldResourceESP"
@@ -9,6 +10,7 @@ local BRIDGE_READY_EVENT = "PalworldResourceESP_LuaBridgeReady"
 local BRIDGE_METHOD_RESET_SESSION = "PalworldResourceESP_ResetSession"
 local BRIDGE_METHOD_SET_TARGET = "PalworldResourceESP_SetTarget"
 local BRIDGE_METHOD_CLEAR_TARGET = "PalworldResourceESP_ClearTarget"
+local BRIDGE_METHOD_TOGGLE_PANEL = "PalworldResourceESP_TogglePanel"
 local BRIDGE_CLASS_FULL_NAME = "BlueprintGeneratedClass /Game/Mods/PalworldResourceESP/ModActor.ModActor_C"
 
 local CLASS_PATHS = {
@@ -116,6 +118,10 @@ local state = {
     notification_registered = false,
     notification_dirty = false,
     notification_deferred_logged = false,
+    event_queue = {},
+    event_queue_head = 1,
+    event_queue_scheduled = false,
+    event_queue_overflow_logged = false,
     lifecycle_hooks_registered = false,
     load_map_hooks_registered = false,
     bridge_event_registered = false,
@@ -133,6 +139,21 @@ local state = {
     reconcile_started = false,
     reconcile_handle = nil,
     reconcile_job = nil,
+    next_reconcile_at = 0.0,
+    runtime_profile = runtime_profiles.resolve(
+        config.DEFAULT_RUNTIME_PROFILE_ID,
+        config.DEFAULT_PERFORMANCE_PRESET_ID
+    ),
+    selected_profile_id = config.DEFAULT_RUNTIME_PROFILE_ID,
+    selected_preset_id = config.DEFAULT_PERFORMANCE_PRESET_ID,
+    runtime_master_enabled = true,
+    profile_generation = 0,
+    control_revision = -1,
+    control_pending_logged = false,
+    panel_keybind_registered = false,
+    capture_requested = false,
+    capture_active = false,
+    capture_session_id = 0,
     bootstrap_pending = false,
     lifecycle_generation = 0,
     world_transitioning = false,
@@ -157,6 +178,10 @@ local state = {
         invalidated = 0,
         notification_count = 0,
         notifications_deferred = 0,
+        event_queue_admitted = 0,
+        event_queue_rejected = 0,
+        event_queue_overflow = 0,
+        event_callback_max_seconds = 0.0,
         scan_count = 0,
         scan_seconds = 0.0,
         draw_callbacks = 0,
@@ -657,6 +682,21 @@ local function classify_actor(actor, player_gate_already_passed)
     return "wild", component, parameter, save_parameter
 end
 
+local function runtime_enabled()
+    return config.ENABLED and state.runtime_profile.runtime_enabled
+end
+
+local function clear_event_queue(reason)
+    local pending = math.max(0, #state.event_queue - state.event_queue_head + 1)
+    state.event_queue = {}
+    state.event_queue_head = 1
+    state.event_queue_scheduled = false
+    state.event_queue_overflow_logged = false
+    if pending > 0 then
+        debug_event("EVENT_QUEUE_CLEARED", string.format("reason=%s pending=%d", reason, pending))
+    end
+end
+
 local function reject_player_representation(actor)
     actor = unwrap(actor)
     if not is_valid(actor) then
@@ -907,6 +947,7 @@ local function clear_candidate_cache(reason)
     state.metrics.display_truncated = 0
     state.notification_dirty = false
     state.selected = nil
+    clear_event_queue(reason)
 
     if previous_count > 0 then
         debug_event("CANDIDATES_CLEARED", string.format(
@@ -1078,7 +1119,7 @@ local function add_entity_candidate(actor, source, generation, context)
     end
 
     actor = unwrap(actor)
-    if not config.ENABLED or not is_valid(actor) then
+    if not runtime_enabled() or not is_valid(actor) then
         return false
     end
 
@@ -1374,9 +1415,11 @@ local function emit_metrics(force)
     ]]
     local current = entity_snapshot.current(state.entity_store)
     log_event("METRIC", string.format(
-        "session=%d generation=%d raw=%d admitted=%d matched=%d displayed=%d admission_rejected=%d display_truncated=%d accepted_total=%d rejected_player=%d rejected_owned=%d rejected_dead=%d rejected_unknown=%d notifications=%d notifications_deferred=%d scans=%d reconcile_batches=%d max_batch_ms=%.3f busy_skips=%d scan_ms=%.3f discovery_ms=%.3f admission_ms=%.3f filter_ms=%.3f order_ms=%.3f budget_ms=%.3f bridge_syncs=%d bridge_set_calls=%d bridge_sync_ms=%.3f",
+        "session=%d generation=%d profile=%s preset=%s raw=%d admitted=%d matched=%d displayed=%d admission_rejected=%d display_truncated=%d accepted_total=%d rejected_player=%d rejected_owned=%d rejected_dead=%d rejected_unknown=%d notifications=%d notifications_deferred=%d event_admitted=%d event_rejected=%d event_overflow=%d event_max_ms=%.3f scans=%d reconcile_batches=%d max_batch_ms=%.3f busy_skips=%d scan_ms=%.3f discovery_ms=%.3f admission_ms=%.3f filter_ms=%.3f order_ms=%.3f budget_ms=%.3f bridge_syncs=%d bridge_set_calls=%d bridge_sync_ms=%.3f",
         state.session_index,
         current.generation_id,
+        state.runtime_profile.name,
+        state.runtime_profile.preset_name,
         state.metrics.raw_monsters,
         state.metrics.admitted,
         state.metrics.matched,
@@ -1390,6 +1433,10 @@ local function emit_metrics(force)
         state.metrics.rejected_unknown,
         state.metrics.notification_count,
         state.metrics.notifications_deferred,
+        state.metrics.event_queue_admitted,
+        state.metrics.event_queue_rejected,
+        state.metrics.event_queue_overflow,
+        state.metrics.event_callback_max_seconds * 1000.0,
         state.metrics.scan_count,
         state.metrics.reconcile_batches,
         state.metrics.reconcile_batch_max_seconds * 1000.0,
@@ -1410,6 +1457,89 @@ local sync_bridge_target
 
 local process_reconcile_batch
 
+local process_event_queue
+
+local function event_queue_has_pending()
+    return state.event_queue_head <= #state.event_queue
+end
+
+local function schedule_event_queue_process()
+    if state.event_queue_scheduled or not event_queue_has_pending() then
+        return
+    end
+    if type(ExecuteInGameThreadWithDelay) ~= "function" then
+        state.notification_dirty = true
+        return
+    end
+
+    state.event_queue_scheduled = true
+    local profile_generation = state.profile_generation
+    local ok, err = pcall(function()
+        ExecuteInGameThreadWithDelay(config.EVENT_QUEUE_DELAY_MS, function()
+            process_event_queue(profile_generation)
+        end)
+    end)
+    if not ok then
+        state.event_queue_scheduled = false
+        state.notification_dirty = true
+        log_event("EVENT_QUEUE_SCHEDULE_FAILED", tostring(err))
+    end
+end
+
+process_event_queue = function(profile_generation)
+    state.event_queue_scheduled = false
+    if profile_generation ~= state.profile_generation
+        or not runtime_enabled()
+        or not state.runtime_profile.event_admission
+        or state.world_transitioning
+        or not state.gameplay_active then
+        clear_event_queue("stale_event_callback")
+        return
+    end
+
+    if state.reconcile_job ~= nil then
+        schedule_event_queue_process()
+        return
+    end
+
+    local actor = state.event_queue[state.event_queue_head]
+    state.event_queue_head = state.event_queue_head + 1
+
+    local started_at = os.clock()
+    local added = false
+    local ok, err = pcall(function()
+        local generation = entity_snapshot.current(state.entity_store)
+        added = add_entity_candidate(actor, "notify_queue", generation, {
+            source = "notify_queue",
+            camera_location = get_camera_location(find_player_controller()),
+        })
+        if added then
+            refresh_pipeline_output("notify_queue")
+            sync_bridge_target()
+        end
+    end)
+    local elapsed = os.clock() - started_at
+    state.metrics.event_callback_max_seconds = math.max(
+        state.metrics.event_callback_max_seconds,
+        elapsed
+    )
+    if ok and added then
+        state.metrics.event_queue_admitted = state.metrics.event_queue_admitted + 1
+    else
+        state.metrics.event_queue_rejected = state.metrics.event_queue_rejected + 1
+        if not ok then
+            log_event("ERROR_EVENT_CANDIDATE", tostring(err))
+        end
+    end
+
+    if not event_queue_has_pending() then
+        state.event_queue = {}
+        state.event_queue_head = 1
+        return
+    end
+    schedule_event_queue_process()
+end
+
 local function abandon_reconcile_job(job, reason)
     if state.reconcile_job ~= job then
         return
@@ -1424,9 +1554,11 @@ end
 local function reconcile_job_is_current(job)
     return state.reconcile_job == job
         and not job.cancelled
+        and runtime_enabled()
         and not state.world_transitioning
         and state.gameplay_active
         and job.lifecycle_generation == state.lifecycle_generation
+        and job.profile_generation == state.profile_generation
         and job.session_id == state.entity_store.session_id
 end
 
@@ -1483,7 +1615,7 @@ local function schedule_reconcile_batch(job)
         return false
     end
 
-    local delay_ms = math.max(0, tonumber(config.RECONCILE_BATCH_DELAY_MS) or 0)
+    local delay_ms = job.batch_delay_ms
     local ok, err = pcall(function()
         ExecuteInGameThreadWithDelay(delay_ms, function()
             local batch_ok, batch_error = pcall(function()
@@ -1510,7 +1642,7 @@ process_reconcile_batch = function(job)
     end
 
     local batch_started_at = os.clock()
-    local batch_size = math.max(1, math.floor(tonumber(config.RECONCILE_BATCH_SIZE) or 1))
+    local batch_size = job.batch_size
     local last_index = math.min(#job.objects, job.index + batch_size - 1)
     for index = job.index, last_index do
         local actor = job.objects[index]
@@ -1541,7 +1673,7 @@ process_reconcile_batch = function(job)
     schedule_reconcile_batch(job)
 end
 
-local function start_chunked_reconcile()
+local function start_chunked_reconcile(source)
     if state.reconcile_job ~= nil then
         state.metrics.reconcile_busy_skips = state.metrics.reconcile_busy_skips + 1
         debug_event("RECONCILE_SKIPPED", "reason=job_in_progress")
@@ -1549,7 +1681,8 @@ local function start_chunked_reconcile()
     end
 
     local descriptor = state.entity_registry:get("pal")
-    local generation = entity_snapshot.begin_generation(state.entity_store, "reconcile", now())
+    source = source or "reconcile"
+    local generation = entity_snapshot.begin_generation(state.entity_store, source, now())
     state.metrics.scan_count = state.metrics.scan_count + 1
     state.metrics.admission_rejected = 0
 
@@ -1564,21 +1697,24 @@ local function start_chunked_reconcile()
     end
 
     local job = {
-        source = "reconcile",
+        source = source,
         objects = objects,
         generation = generation,
         context = {
-            source = "reconcile",
+            source = source,
             camera_location = get_camera_location(find_player_controller()),
         },
         index = 1,
         session_id = state.entity_store.session_id,
         lifecycle_generation = state.lifecycle_generation,
+        profile_generation = state.profile_generation,
         notification_version = state.metrics.notifications_deferred,
         discovery_seconds = discovery_seconds,
         admission_seconds = 0.0,
         batch_count = 0,
         max_batch_seconds = 0.0,
+        batch_size = math.max(1, math.floor(tonumber(state.runtime_profile.batch_size) or 1)),
+        batch_delay_ms = math.max(0, tonumber(state.runtime_profile.batch_delay_ms) or 0),
         cancelled = false,
     }
     state.reconcile_job = job
@@ -1590,14 +1726,14 @@ local function start_chunked_reconcile()
     debug_event("RECONCILE_CHUNKED", string.format(
         "raw=%d batch_size=%d delay_ms=%d",
         #objects,
-        math.max(1, math.floor(tonumber(config.RECONCILE_BATCH_SIZE) or 1)),
-        math.max(0, tonumber(config.RECONCILE_BATCH_DELAY_MS) or 0)
+        job.batch_size,
+        job.batch_delay_ms
     ))
     return schedule_reconcile_batch(job)
 end
 
 local function reconcile()
-    if not config.ENABLED then
+    if not runtime_enabled() then
         return
     end
 
@@ -1666,6 +1802,8 @@ local function clear_bridge_cache(reason)
     state.bridge_target_count = 0
     state.bridge_gender_logged = false
     state.bridge_gender_pending_reason = nil
+    state.control_revision = -1
+    state.control_pending_logged = false
 
     if had_bridge then
         debug_event("BRIDGE_CLEARED", string.format("reason=%s", reason))
@@ -1703,6 +1841,8 @@ local function register_blueprint_bridge_discovery()
             state.bridge_target_count = 0
             state.bridge_gender_logged = false
             state.bridge_gender_pending_reason = nil
+            state.control_revision = -1
+            state.control_pending_logged = false
             log_event("BRIDGE_READY", "mode=lua_discovery class=ModActor_C")
             sync_bridge_target()
         end)
@@ -1888,6 +2028,199 @@ sync_bridge_target = function()
     ))
 end
 
+local function emit_capture_mode_marker(reason)
+    log_event("PERF_MODE_CHANGED", string.format(
+        "capture_session=%d profile=%s preset=%s reason=%s",
+        state.capture_session_id,
+        state.runtime_profile.name,
+        state.runtime_profile.preset_name,
+        reason
+    ))
+end
+
+local function set_capture_active(requested, reason)
+    requested = requested == true
+    if requested == state.capture_active then
+        return
+    end
+
+    state.capture_requested = requested
+    state.capture_active = requested
+    if requested then
+        state.capture_session_id = state.capture_session_id + 1
+        log_event("PERF_SESSION_START", string.format(
+            "capture_session=%d reason=%s",
+            state.capture_session_id,
+            reason
+        ))
+        emit_capture_mode_marker("capture_start")
+        return
+    end
+
+    log_event("PERF_SESSION_STOP", string.format(
+        "capture_session=%d profile=%s reason=%s",
+        state.capture_session_id,
+        state.runtime_profile.name,
+        reason
+    ))
+end
+
+local function apply_runtime_profile(master_enabled, profile_id, preset_id, reason)
+    master_enabled = master_enabled == true
+    profile_id = runtime_profiles.normalize_profile_id(profile_id)
+    preset_id = runtime_profiles.normalize_preset_id(preset_id)
+    local effective_profile_id = master_enabled and profile_id or runtime_profiles.PROFILE.OFF
+    local next_profile = runtime_profiles.resolve(effective_profile_id, preset_id)
+    local changed = state.runtime_master_enabled ~= master_enabled
+        or state.selected_profile_id ~= profile_id
+        or state.selected_preset_id ~= preset_id
+        or state.runtime_profile.id ~= next_profile.id
+        or state.runtime_profile.max_display_targets ~= next_profile.max_display_targets
+        or state.runtime_profile.reconcile_interval_ms ~= next_profile.reconcile_interval_ms
+    if not changed then
+        return false
+    end
+
+    state.runtime_master_enabled = master_enabled
+    state.selected_profile_id = profile_id
+    state.selected_preset_id = preset_id
+    state.profile_generation = state.profile_generation + 1
+    state.runtime_profile = next_profile
+    state.next_reconcile_at = 0.0
+    config.MAX_DISPLAY_TARGETS = math.min(
+        next_profile.max_display_targets,
+        config.MAX_CONFIGURABLE_DISPLAY_TARGETS
+    )
+
+    clear_candidate_cache("profile_change:" .. reason)
+    sync_bridge_target()
+    log_event("RUNTIME_PROFILE", string.format(
+        "generation=%d master_enabled=%s profile=%s preset=%s interval_ms=%d max_display=%d reason=%s",
+        state.profile_generation,
+        tostring(master_enabled),
+        next_profile.name,
+        next_profile.preset_name,
+        next_profile.reconcile_interval_ms,
+        config.MAX_DISPLAY_TARGETS,
+        reason
+    ))
+    if state.capture_active then
+        emit_capture_mode_marker("profile_change")
+    end
+
+    if runtime_enabled() and state.gameplay_active and not state.world_transitioning then
+        start_chunked_reconcile("profile_enter")
+        if next_profile.reconcile_interval_ms > 0 then
+            state.next_reconcile_at = now() + (next_profile.reconcile_interval_ms / 1000.0)
+        end
+    end
+    return true
+end
+
+local function read_panel_number(property_name)
+    local ok, value = safe_get_property(state.bridge_actor, property_name)
+    if not ok then
+        return nil
+    end
+    return read_number(value)
+end
+
+local function read_panel_boolean(property_name)
+    local ok, value = safe_get_property(state.bridge_actor, property_name)
+    if not ok or type(value) ~= "boolean" then
+        return nil
+    end
+    return value
+end
+
+local function poll_panel_controls()
+    if not is_valid(state.bridge_actor) then
+        return
+    end
+
+    local revision = read_panel_number("ESP_ControlRevision")
+    if revision == nil then
+        if not state.control_pending_logged then
+            state.control_pending_logged = true
+            debug_event("PANEL_CONTROL_PENDING", "reason=revision_unavailable")
+        end
+        return
+    end
+    revision = math.floor(revision)
+    if revision == state.control_revision then
+        return
+    end
+
+    local master_enabled = read_panel_boolean("ESP_RuntimeEnabled")
+    local profile_id = read_panel_number("ESP_ProfileId")
+    local preset_id = read_panel_number("ESP_PresetId")
+    local capture_requested = read_panel_boolean("ESP_CaptureRequested")
+    if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil then
+        if not state.control_pending_logged then
+            state.control_pending_logged = true
+            debug_event("PANEL_CONTROL_PENDING", "reason=property_unavailable")
+        end
+        return
+    end
+
+    state.control_pending_logged = false
+    apply_runtime_profile(master_enabled, profile_id, preset_id, "panel_revision")
+    set_capture_active(capture_requested, "panel_revision")
+    state.control_revision = revision
+    debug_event("PANEL_CONTROL_APPLIED", string.format("revision=%d", revision))
+end
+
+local function runtime_tick()
+    poll_panel_controls()
+
+    if state.runtime_profile.event_admission and event_queue_has_pending() then
+        schedule_event_queue_process()
+    end
+    if not runtime_enabled() or state.world_transitioning then
+        emit_metrics(false)
+        return
+    end
+
+    local interval_ms = state.runtime_profile.reconcile_interval_ms
+    local current = now()
+    if interval_ms > 0 and current >= state.next_reconcile_at then
+        state.next_reconcile_at = current + (interval_ms / 1000.0)
+        reconcile_safely()
+    end
+    emit_metrics(false)
+end
+
+local function runtime_tick_safely()
+    local ok, err = pcall(runtime_tick)
+    if not ok then
+        log_event("ERROR_RUNTIME_TICK", tostring(err))
+    end
+end
+
+local function register_panel_keybind()
+    if state.panel_keybind_registered then
+        return
+    end
+    if type(RegisterKeyBind) ~= "function" or type(Key) ~= "table" or type(ModifierKey) ~= "table" then
+        log_event("PANEL_KEYBIND_UNAVAILABLE", "key=Shift+E")
+        return
+    end
+
+    local ok, err = pcall(function()
+        RegisterKeyBind(Key.E, { ModifierKey.SHIFT }, function()
+            run_on_game_thread(function()
+                call_bridge(BRIDGE_METHOD_TOGGLE_PANEL)
+            end)
+        end)
+    end)
+    if not ok then
+        log_event("PANEL_KEYBIND_FAILED", tostring(err))
+        return
+    end
+    state.panel_keybind_registered = true
+    log_event("PANEL_KEYBIND_READY", "key=Shift+E")
+end
+
 local function register_blueprint_bridge()
     if not config.BLUEPRINT_BRIDGE_ENABLED or state.bridge_event_registered then
         return
@@ -1913,6 +2246,8 @@ local function register_blueprint_bridge()
                 state.bridge_target_count = 0
                 state.bridge_gender_logged = false
                 state.bridge_gender_pending_reason = nil
+                state.control_revision = -1
+                state.control_pending_logged = false
                 log_event("BRIDGE_READY", string.format("event=%s", BRIDGE_READY_EVENT))
                 sync_bridge_target()
             end)
@@ -1953,8 +2288,11 @@ local function bootstrap(reason)
 
     local gameplay_active, inactive_reason = gameplay_world_available()
     state.gameplay_active = gameplay_active
-    if gameplay_active then
-        scan_monsters("bootstrap")
+    if gameplay_active and runtime_enabled() then
+        start_chunked_reconcile("bootstrap")
+        if state.runtime_profile.reconcile_interval_ms > 0 then
+            state.next_reconcile_at = now() + (state.runtime_profile.reconcile_interval_ms / 1000.0)
+        end
         -- __DEPRECATED_20260716__ [reason: Blueprint receives all candidates; nearest selection remains Lua-draw-only]
         -- if config.DRAW_ENABLED or config.BLUEPRINT_BRIDGE_ENABLED then
         if config.DRAW_ENABLED then
@@ -1962,12 +2300,13 @@ local function bootstrap(reason)
         end
         sync_bridge_target()
     else
-        clear_candidate_cache(inactive_reason)
+        local skip_reason = inactive_reason or "runtime_off"
+        clear_candidate_cache(skip_reason)
         sync_bridge_target()
         state.metrics.raw_monsters = 0
         debug_event("SCAN_SKIPPED", string.format(
             "source=bootstrap reason=%s",
-            inactive_reason
+            skip_reason
         ))
     end
 
@@ -2067,6 +2406,9 @@ local function register_load_map_hooks()
     if type(RegisterLoadMapPreHook) == "function" then
         local ok, err = pcall(function()
             RegisterLoadMapPreHook(function()
+                if state.capture_active then
+                    set_capture_active(false, "map_transition")
+                end
                 state.lifecycle_generation = state.lifecycle_generation + 1
                 state.bootstrap_pending = false
                 state.world_transitioning = true
@@ -2116,13 +2458,27 @@ local function register_monster_notification()
     end
 
     local ok, err = pcall(function()
-        NotifyOnNewObject("/Script/Pal.PalMonsterCharacter", function(_constructed_object)
+        NotifyOnNewObject("/Script/Pal.PalMonsterCharacter", function(constructed_object)
             state.metrics.notification_count = state.metrics.notification_count + 1
-            if state.world_transitioning or not state.gameplay_active then
+            if state.world_transitioning or not state.gameplay_active or not runtime_enabled() then
                 return
             end
             state.notification_dirty = true
             state.metrics.notifications_deferred = state.metrics.notifications_deferred + 1
+            if state.runtime_profile.event_admission then
+                local pending = math.max(0, #state.event_queue - state.event_queue_head + 1)
+                if pending >= config.MAX_EVENT_QUEUE then
+                    state.metrics.event_queue_overflow = state.metrics.event_queue_overflow + 1
+                    if not state.event_queue_overflow_logged then
+                        state.event_queue_overflow_logged = true
+                        log_event("EVENT_QUEUE_OVERFLOW", string.format("limit=%d", config.MAX_EVENT_QUEUE))
+                    end
+                    return
+                end
+                state.event_queue[#state.event_queue + 1] = constructed_object
+                schedule_event_queue_process()
+                return
+            end
             if not state.notification_deferred_logged then
                 state.notification_deferred_logged = true
                 log_event("NOTIFY_DEFERRED", "mode=next_reconcile")
@@ -2167,11 +2523,11 @@ local function start_reconcile_loop()
 
     if type(LoopInGameThreadWithDelay) == "function" then
         local ok, handle = pcall(function()
-            return LoopInGameThreadWithDelay(config.RECONCILE_INTERVAL_MS, reconcile_safely)
+            return LoopInGameThreadWithDelay(config.RUNTIME_TICK_INTERVAL_MS, runtime_tick_safely)
         end)
         if ok then
             state.reconcile_handle = handle
-            debug_event("RECONCILE_STARTED", "api=LoopInGameThreadWithDelay")
+            debug_event("RUNTIME_LOOP_STARTED", "api=LoopInGameThreadWithDelay")
             return
         end
         log_event("RECONCILE_FAILED", tostring(handle))
@@ -2179,13 +2535,13 @@ local function start_reconcile_loop()
 
     if type(LoopAsync) == "function" then
         local ok, err = pcall(function()
-            LoopAsync(config.RECONCILE_INTERVAL_MS, function()
-                run_on_game_thread(reconcile_safely)
+            LoopAsync(config.RUNTIME_TICK_INTERVAL_MS, function()
+                run_on_game_thread(runtime_tick_safely)
                 return false
             end)
         end)
         if ok then
-            debug_event("RECONCILE_STARTED", "api=LoopAsync_fallback")
+            debug_event("RUNTIME_LOOP_STARTED", "api=LoopAsync_fallback")
             return
         end
         log_event("RECONCILE_FAILED", tostring(err))
@@ -2296,7 +2652,7 @@ local function log_draw_block_once(reason)
 end
 
 local function on_draw_hud(context, size_x_parameter, size_y_parameter)
-    if not config.ENABLED or not config.DRAW_ENABLED or config.MAX_DISPLAY_TARGETS < 1 then
+    if not runtime_enabled() or not config.DRAW_ENABLED or config.MAX_DISPLAY_TARGETS < 1 then
         return
     end
     if state.world_transitioning or not state.gameplay_active then
@@ -2418,6 +2774,7 @@ register_monster_notification()
 register_lifecycle_hooks()
 register_load_map_hooks()
 register_draw_hook()
+register_panel_keybind()
 start_reconcile_loop()
 schedule_bootstrap("mod_load")
 log_event("BOOT_FILE_LOADED", "server_compatibility=community_untested")

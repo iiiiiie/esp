@@ -3,6 +3,7 @@ local specs = {
     "filter_engine_spec",
     "adapter_registry_spec",
     "pal_adapter_spec",
+    "runtime_profiles_spec",
 }
 
 local passed = 0

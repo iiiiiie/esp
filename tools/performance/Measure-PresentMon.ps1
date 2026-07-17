@@ -10,10 +10,16 @@ param(
     [ValidateRange(0, 120)]
     [double]$WarmupSeconds = 0,
 
+    [string]$SegmentMetadataPath,
+
+    [ValidateRange(0, 30)]
+    [double]$TransitionSeconds = 2,
+
     [switch]$AsJson
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'PanelCapture.Common.ps1')
 $invariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
 $numberStyles = [System.Globalization.NumberStyles]::Float
 
@@ -56,7 +62,8 @@ function Get-PresentMonStatistics {
     param(
         [string]$CsvPath,
         [string]$ApplicationFilter,
-        [double]$Warmup
+        [double]$Warmup,
+        [object[]]$Intervals = @()
     )
 
     if (-not (Test-Path -LiteralPath $CsvPath -PathType Leaf)) {
@@ -86,13 +93,18 @@ function Get-PresentMonStatistics {
         Select-Object -First 1
     $selectedRows = @($primaryGroup.Group)
 
+    $hasCpuStartDateTime = 'CPUStartDateTime' -in $rows[0].PSObject.Properties.Name
     $hasCpuStartTime = 'CPUStartTime' -in $rows[0].PSObject.Properties.Name
     $cumulativeStartMs = 0.0
 
     $samples = foreach ($row in $selectedRows) {
         $startMs = $null
+        $startDateTime = $null
         $frameTimeMs = Convert-ToDouble $row.FrameTime
         if ($null -ne $frameTimeMs -and $frameTimeMs -gt 0) {
+            if ($hasCpuStartDateTime) {
+                $startDateTime = ConvertTo-EspTimestamp $row.CPUStartDateTime
+            }
             $startMs = if ($hasCpuStartTime) {
                 Convert-ToDouble $row.CPUStartTime
             } else {
@@ -101,24 +113,56 @@ function Get-PresentMonStatistics {
             $cumulativeStartMs += $frameTimeMs
         }
         if ($null -ne $startMs -and $null -ne $frameTimeMs -and $frameTimeMs -gt 0) {
-            if ($startMs -ge ($Warmup * 1000.0)) {
-                [pscustomobject]@{
-                    StartMs = $startMs
-                    FrameTimeMs = $frameTimeMs
-                }
+            [pscustomobject]@{
+                StartMs = $startMs
+                StartDateTime = $startDateTime
+                FrameTimeMs = $frameTimeMs
             }
         }
     }
-    $samples = @($samples | Sort-Object -Property StartMs)
+    $samples = if ($hasCpuStartDateTime) {
+        @($samples | Sort-Object -Property StartDateTime)
+    } else {
+        @($samples | Sort-Object -Property StartMs)
+    }
+    if ($Intervals.Count -gt 0) {
+        if (-not $hasCpuStartDateTime) {
+            throw "Segment analysis requires the CPUStartDateTime column. Capture with PresentMon --date_time: $CsvPath"
+        }
+        $samples = @($samples | Where-Object {
+            $sample = $_
+            @($Intervals | Where-Object {
+                $intervalStart = if ($_.AnalysisStartsAt -is [datetimeoffset]) {
+                    $_.AnalysisStartsAt
+                } else {
+                    ConvertTo-EspTimestamp ([string]$_.AnalysisStartsAt)
+                }
+                $intervalEnd = if ($_.EndsAt -is [datetimeoffset]) {
+                    $_.EndsAt
+                } else {
+                    ConvertTo-EspTimestamp ([string]$_.EndsAt)
+                }
+                $sample.StartDateTime -ge $intervalStart -and $sample.StartDateTime -lt $intervalEnd
+            }).Count -gt 0
+        })
+    } elseif ($samples.Count -gt 0 -and $Warmup -gt 0) {
+        if ($hasCpuStartDateTime) {
+            $warmupEndsAt = $samples[0].StartDateTime.AddSeconds($Warmup)
+            $samples = @($samples | Where-Object { $_.StartDateTime -ge $warmupEndsAt })
+        } else {
+            $warmupEndsAtMs = $samples[0].StartMs + ($Warmup * 1000.0)
+            $samples = @($samples | Where-Object { $_.StartMs -ge $warmupEndsAtMs })
+        }
+    }
     if ($samples.Count -lt 30) {
         throw "Fewer than 30 usable frames remain after filtering: $CsvPath"
     }
 
     [double[]]$sortedFrameTimes = @($samples.FrameTimeMs | Sort-Object)
     $averageMs = ($sortedFrameTimes | Measure-Object -Average).Average
-    $durationSeconds = (($samples[-1].StartMs - $samples[0].StartMs) + $samples[-1].FrameTimeMs) / 1000.0
+    $durationSeconds = ($sortedFrameTimes | Measure-Object -Sum).Sum / 1000.0
     if ($durationSeconds -le 0) {
-        $durationSeconds = ($sortedFrameTimes | Measure-Object -Sum).Sum / 1000.0
+        throw "PresentMon samples have no measurable duration: $CsvPath"
     }
 
     $p50 = Get-Percentile $sortedFrameTimes 50
@@ -135,7 +179,13 @@ function Get-PresentMonStatistics {
         Application = $selectedRows[0].Application
         ProcessId = [int]$selectedRows[0].ProcessID
         SwapChainAddress = $selectedRows[0].SwapChainAddress
-        StartTimeSource = if ($hasCpuStartTime) { 'CPUStartTime' } else { 'cumulative FrameTime' }
+        StartTimeSource = if ($hasCpuStartDateTime) {
+            'CPUStartDateTime'
+        } elseif ($hasCpuStartTime) {
+            'CPUStartTime'
+        } else {
+            'cumulative FrameTime'
+        }
         Frames = $samples.Count
         DurationSeconds = [math]::Round($durationSeconds, 3)
         AverageFps = [math]::Round(1000.0 / $averageMs, 3)
@@ -163,8 +213,52 @@ function Get-PercentDelta {
     return (($Candidate - $Baseline) / $Baseline) * 100.0
 }
 
-$candidate = Get-PresentMonStatistics $CandidateCsv $Application $WarmupSeconds
-if (-not $BaselineCsv) {
+$candidate = $null
+if ($SegmentMetadataPath) {
+    if ($BaselineCsv) {
+        throw 'SegmentMetadataPath cannot be combined with BaselineCsv. Analyze the segmented capture separately.'
+    }
+    if (-not (Test-Path -LiteralPath $SegmentMetadataPath -PathType Leaf)) {
+        throw "Segment metadata not found: $SegmentMetadataPath"
+    }
+    $metadata = Get-Content -Raw -LiteralPath $SegmentMetadataPath | ConvertFrom-Json
+    $markers = @($metadata.Markers | ForEach-Object {
+        [pscustomobject]@{
+            Event = $_.Event
+            Timestamp = ConvertTo-EspTimestamp ([string]$_.Timestamp)
+            CaptureSession = $_.CaptureSession
+            Profile = $_.Profile
+            Preset = $_.Preset
+            Reason = $_.Reason
+        }
+    })
+    $segments = @(Get-EspPerformanceSegments -Markers $markers -TransitionSeconds $TransitionSeconds)
+    $segmentResults = @($segments | ForEach-Object {
+        $segment = $_
+        [pscustomobject]@{
+            Sequence = $segment.Sequence
+            CaptureSession = $segment.CaptureSession
+            Profile = $segment.Profile
+            Preset = $segment.Preset
+            StartedAt = $segment.StartedAt
+            AnalysisStartsAt = $segment.AnalysisStartsAt
+            EndsAt = $segment.EndsAt
+            TransitionSeconds = $segment.TransitionSeconds
+            Statistics = Get-PresentMonStatistics $CandidateCsv $Application 0 @($segment)
+        }
+    })
+    $result = [pscustomobject]@{
+        CandidateCsv = (Resolve-Path -LiteralPath $CandidateCsv).Path
+        SegmentMetadataPath = (Resolve-Path -LiteralPath $SegmentMetadataPath).Path
+        TransitionSeconds = $TransitionSeconds
+        Segments = $segmentResults
+    }
+} else {
+    $candidate = Get-PresentMonStatistics $CandidateCsv $Application $WarmupSeconds
+}
+if ($SegmentMetadataPath) {
+    # The segmented result is complete above.
+} elseif (-not $BaselineCsv) {
     $result = $candidate
 } else {
     $baseline = Get-PresentMonStatistics $BaselineCsv $Application $WarmupSeconds

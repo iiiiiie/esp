@@ -2,11 +2,11 @@
 
 ## Status
 
-- Implementation: complete; chunked reconcile runtime regression pending
+- Implementation: panel profiles and capture tooling complete; runtime regression pending
 - Maintainer-required environment: Steam PC single-player
 - Server environments: community pending and not a Phase 2 gate
 - Human player invariant: every runtime run must report `candidate_player_count=0`
-- Last updated: 2026-07-16
+- Last updated: 2026-07-17
 
 ## Current Fingerprint
 
@@ -17,9 +17,9 @@
 | Active UE4SS root | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss` |
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
-| LogicMod pak SHA-256 | `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14` |
-| `main.lua` SHA-256 | `224005B71890E1E0E6AAC97169DD66B2E4FB248EACD63F2F3A7A920F35ABF4D6`; chunked reconcile checkpoint |
-| `config.lua` SHA-256 | `C75215D7AF748169332DB2973F0EE57ECE13BF4393CA67BCD0304FC8AE9D5945` |
+| LogicMod pak SHA-256 | `B5690A72AEC77D5E3B7E9E0027E76A61476FB4FCCC6A2664AB11F93B20DA9D6B`; panel checkpoint |
+| `main.lua` SHA-256 | `A08DFFA0808594440497A0EF5651DB9FAA133B2393CEB3EF0CB37DF5E3BF118B` |
+| `config.lua` SHA-256 | `EFDDC99B1E233D527CB36BF55F215A1C1444BCB31BF2B7F1F348E2C24EF6EF39` |
 | Newest pre-test crash | `2026-07-16 09:56:11`, `UECC-Windows-FCB962FF452A9E89E36EB182C7EE5C0C_0000` |
 | Runtime baseline backup | `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp_backups/20260716_entity_core_baseline` |
 
@@ -29,7 +29,7 @@ Record final source hashes and the implementation commit immediately before the 
 
 | ID | Check | Required result | Status | Evidence |
 |---|---|---|---|---|
-| AT-01 | Lua parser | Every shipped and test Lua file parses as Lua 5.3 | Pass | `npm test` parsed 12 files |
+| AT-01 | Lua parser | Every shipped and test Lua file parses as Lua 5.3 | Pass | `npm test` parsed 14 files |
 | AT-02 | Pure core isolation | Core modules contain no UE4SS runtime globals | Pass | Test runner static check passed |
 | AT-03 | Snapshot cells | Only finite scalars or scalar lists can be `known` | Pass | Opaque-value test rejects a function value |
 | AT-04 | Generation lifecycle | Replacement drops the old lookup; clear does not dereference actors | Pass | Snapshot generation and teardown tests pass |
@@ -43,7 +43,10 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-12 | Capability/privacy scan | No sensitive player diagnostics or prohibited mutation primitives | Pass | Both source scans return no matches |
 | AT-13 | Chunked reconcile | Four simulated Pal actors complete in two scheduled batches and one atomic replacement | Pass | Stub emitted `admitted=4`, `batches=2`, and terminated its delayed queue |
 | AT-14 | Chunk cancellation | Map pre-load cancels a pending job without committing its stale generation | Pass | Queued stale callback completed without a second `SCAN_DONE` |
-| AT-15 | Frame-time analyzer | PresentMon v2 CSV statistics and same-file A/B comparison are deterministic | Pass | 201-frame validation returned zero deltas and a passing comparison |
+| AT-15 | Frame-time analyzer | PresentMon v2 CSV statistics and same-file A/B comparison are deterministic | Pass | Existing 4,100-frame capture remains analyzable after the extension |
+| AT-16 | Runtime profiles | Off, snapshot, current chunking, and event-first resolve deterministic experiment intervals and preset budgets | Pass | Profile unit suite covers defaults, invalid IDs, fixed intervals, and 32/64/128 display budgets |
+| AT-17 | Panel control plane | Shift+E bridge call, scalar revision polling, runtime-off clearing, capture markers, and stale-job invalidation | Pass | Stubbed runtime entrypoint exercises each transition without Blueprint-to-Lua calls |
+| AT-18 | Capture segmentation | Concatenated UE4SS markers and PresentMon absolute timestamps split by mode with a 2-second transition exclusion | Pass | Synthetic parser plus 31-frame end-to-end segmented analysis pass |
 
 ## Performance Investigation
 

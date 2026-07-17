@@ -1,0 +1,35 @@
+{
+  "SchemaVersion": 1,
+  "SessionName": "PalworldResourceESP-4242-test",
+  "ProcessId": 4242,
+  "CsvPath": "segmented-presentmon.csv",
+  "PresentMonStartedAt": "2026-07-17T09:59:59+08:00",
+  "StoppedAt": "2026-07-17T10:00:05.2+08:00",
+  "StopReason": "panel_stop",
+  "Markers": [
+    {
+      "Event": "PERF_SESSION_START",
+      "Timestamp": "2026-07-17T10:00:00+08:00",
+      "CaptureSession": 7,
+      "Profile": null,
+      "Preset": null,
+      "Reason": "panel_revision"
+    },
+    {
+      "Event": "PERF_MODE_CHANGED",
+      "Timestamp": "2026-07-17T10:00:00.1+08:00",
+      "CaptureSession": 7,
+      "Profile": "off",
+      "Preset": "balanced",
+      "Reason": "capture_start"
+    },
+    {
+      "Event": "PERF_SESSION_STOP",
+      "Timestamp": "2026-07-17T10:00:05.2+08:00",
+      "CaptureSession": 7,
+      "Profile": "off",
+      "Preset": null,
+      "Reason": "panel_revision"
+    }
+  ]
+}

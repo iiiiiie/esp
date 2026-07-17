@@ -14,7 +14,9 @@ The PMK assets must be generated without requiring the maintainer to operate Unr
 
 ## Decision
 
-Add an editor-only `ESPBlueprintAutomation` plugin to the experimental PMK. It constructs and links the project-owned Blueprint graphs and overlay widget tree through Unreal's C++ editor APIs. The plugin is enabled only while generating/cooking assets and is not included in the packaged LogicMod runtime.
+Add an editor-only `ESPBlueprintAutomation` plugin that constructs and links the project-owned Blueprint graphs and Widget trees through Unreal's C++ editor APIs. The canonical plugin source and asset-generation scripts live under `tools/logicmod` in this repository. A build step copies that fixed source set into the external experimental PMK before generation and cooking.
+
+The external PMK is a build workspace, not a source of record. Its `Binaries`, `Intermediate`, `Saved`, cooked assets, and unrelated local compatibility changes are never copied into this repository. The plugin is enabled only while generating/cooking assets and is not included in the packaged LogicMod runtime.
 
 ## Options Considered
 
@@ -51,14 +53,17 @@ Option 3 meets the user's requirement that the assistant perform the editor work
 
 Positive:
 - Blueprint graph generation is reproducible and scriptable.
+- Community contributors can inspect and rebuild the generator without receiving the maintainer's PMK workspace.
 - No manual editor operation is required.
 - Runtime remains client-only and asset-based.
 
 Negative:
 - The experimental PMK editor target must be rebuilt once after adding the plugin.
 - Generated assets should be regenerated when the graph contract changes.
+- The sync step must verify the external PMK destination before replacing the build-workspace copy.
 
 ## Follow-ups
 
 - [x] Validate the generated bridge events in a Steam single-player smoke test.
-- [x] Keep the editor-only plugin out of the final LogicMod package; the pak contains exactly eight Blueprint asset files and no DLL.
+- [x] Keep the editor-only plugin out of the final LogicMod package; the panel pak contains exactly ten asset files and no DLL.
+- [x] Regenerate and cook `WBP_ESPPanel`; retain five canonical source assets in `LogicMod/Content`.

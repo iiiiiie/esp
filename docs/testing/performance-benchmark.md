@@ -18,35 +18,42 @@ The benchmark combines:
 | Source | `GameTechDev/PresentMon` GitHub release |
 | Executable | `D:/AllDownload/PresentMon-2.5.1-x64.exe` |
 | SHA-256 | `9BEC3083069F58F911E6A512F4806DB51A27BD096103087BC1D05EF54C80A191` |
-| Metrics | PresentMon v2 with `FrameTime` and relative `CPUStartTime` |
+| Metrics | PresentMon v2 with `FrameTime` and absolute `CPUStartDateTime` for panel captures |
 
 The executable is a portable development tool and is not shipped with the Mod.
 
-## Fixed Procedure
+## Fixed-View Panel Procedure
 
-1. Use the same Steam build, save, graphics settings, resolution, frame cap, other Mods, route, camera behavior, and 60-second duration.
-2. Enter the save and wait until world loading settles before capture.
-3. Capture at least two Mod-enabled runs and two Mod-disabled runs. Alternate order when possible to reduce thermal and cache bias.
-4. Begin the same movement route when the five-second capture delay expires. Move through an area that streams new Pals.
-5. Do not open menus, fast travel, or change graphics settings during a capture.
-6. Retain dropped and long frames; they are part of the result.
-7. Compare the median run from each mode and attach sanitized UE4SS events covering the same wall-clock window.
+1. Keep the same Steam build, save, graphics settings, resolution, frame cap, and other Mods for the complete run.
+2. Start the external watcher before launching or entering Palworld. It waits for one game PID and starts one named PresentMon session.
+3. Enter the save, wait 20 seconds near several wild Pals, then remain still without moving or rotating the camera.
+4. Open the panel with `Shift+E`, expand advanced diagnostics, and start capture.
+5. Run `off -> snapshot_once -> chunked_current -> event_first`, holding each mode for at least 15 seconds.
+6. Run the same modes in reverse order, again holding each for at least 15 seconds, then stop capture.
+7. Retain dropped and long frames. The analyzer excludes only the first two seconds after every mode marker.
 
-Capture command:
+The assistant normally starts the watcher so the maintainer only operates the in-game panel:
 
 ```powershell
-./tools/performance/Capture-Palworld.ps1 -Label mod-on-run1 -DurationSeconds 60 -DelaySeconds 5
+./tools/performance/Watch-PalworldPanelCapture.ps1
 ```
 
-Analyze one capture:
+The watcher writes one absolute-time CSV plus one `.segments.json` file under `D:/AllDownload/PalworldResourceESP-Benchmarks`. Analyze them together:
 
 ```powershell
-./tools/performance/Measure-PresentMon.ps1 -CandidateCsv <capture.csv>
+./tools/performance/Measure-PresentMon.ps1 `
+    -CandidateCsv <capture.csv> `
+    -SegmentMetadataPath <capture.segments.json>
 ```
 
-Compare Mod enabled against disabled:
+Each segment reports its profile, preset, timestamps, frame percentiles, and normalized hitch counts. A mode remains eligible only if guide behavior, capture/death cleanup, lifecycle, and `candidate_player_count=0` are correct. Among eligible modes, select the lowest `Hitch50PerMinute`, then the lowest P99 frame time.
+
+## Follow-up Captures
+
+After one steady-state strategy passes, run one movement capture to measure new-Pal streaming and admission cost. The older fixed-duration tool remains available for a fully disabled process-level A/B baseline:
 
 ```powershell
+./tools/performance/Capture-Palworld.ps1 -Label mod-off-run1 -DurationSeconds 60 -DelaySeconds 5
 ./tools/performance/Measure-PresentMon.ps1 `
     -BaselineCsv <mod-off.csv> `
     -CandidateCsv <mod-on.csv>
@@ -86,7 +93,8 @@ The gate is provisional until at least two complete A/B pairs establish normal r
 
 ## Safety
 
-- PresentMon attaches read-only ETW capture to an existing Palworld process; it does not launch, stop, inject into, or modify the game.
-- The capture command reports expected local start/end times so the matching UE4SS log window can be extracted.
+- PresentMon attaches read-only ETW capture to an existing Palworld process; it does not launch, inject into, or modify the game.
+- The watcher stops only its unique PresentMon trace session after the matching panel stop marker or game-process exit.
+- Segment metadata contains only session, mode, preset, reason, and timestamps.
 - Benchmark CSV files stay outside the repository by default under `D:/AllDownload/PalworldResourceESP-Benchmarks`.
 - Never record player names, platform IDs, UIDs, or player coordinates in benchmark metadata.
