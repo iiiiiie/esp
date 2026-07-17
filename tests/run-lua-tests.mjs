@@ -66,6 +66,18 @@ if (!generatorSource.includes('TEXT("IsRarePal")')
     || !generatorSource.includes("LuckyRestrictedMatch")) {
   throw new Error("Blueprint Lucky provider or fail-closed filter contract is incomplete");
 }
+if (!generatorSource.includes('TEXT("GetCharacterID")')
+    || !generatorSource.includes('TEXT("GetDatabaseCharacterParameter")')
+    || !generatorSource.includes('TEXT("GetIsBoss")')
+    || !generatorSource.includes('TEXT("ESP_TargetBossStates")')
+    || !generatorSource.includes('SetPinDefault(AddBossStateItem, TEXT("NewItem"), TEXT("-1"))')
+    || !generatorSource.includes('TEXT("ESP_BossFilterId")')
+    || !generatorSource.includes('TEXT("ESP_BossOnlyButton")')
+    || !generatorSource.includes('TEXT("ESP_BossExcludeButton")')
+    || !generatorSource.includes("BossFilterRestricted")
+    || !generatorSource.includes("BossRestrictedMatch")) {
+  throw new Error("Blueprint Boss provider or fail-closed filter contract is incomplete");
+}
 
 const normalize = (value) => value.replaceAll("\\", "/");
 const packagePaths = [
@@ -93,9 +105,10 @@ end
 
 local runtime_settings_writes = {}
 local runtime_settings_snapshot = "v1 runtime_enabled=true profile_id=2 preset_id=1 language_id=0 level_min=0 level_max=0 distance_max=330 display_limit=64 show_top=true show_name=true show_level=true show_distance=true gender=0"
-PalworldResourceESPSettingsPath = "memory-user-settings.log"
+local runtime_settings_open_path = nil
 PalworldResourceESPSettingsIO = {
-    open = function(_, mode)
+    open = function(path, mode)
+        runtime_settings_open_path = path
         if mode == "r" then
             local emitted = false
             return {
@@ -264,6 +277,7 @@ local bridge_actor = {
     ESP_ShowDistance = true,
     ESP_GenderFilterId = 0,
     ESP_LuckyFilterId = 0,
+    ESP_BossFilterId = 0,
     ESP_DisplayTargetLimit = 64,
     ESP_BridgeGenderDiagnosticCode = 0,
 }
@@ -282,7 +296,7 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
     }
 end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
-function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, gender_filter_id, lucky_filter_id)
+function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, gender_filter_id, lucky_filter_id, boss_filter_id)
     bridge_style_payloads[#bridge_style_payloads + 1] = {
         show_top = show_top,
         show_name = show_name,
@@ -290,6 +304,7 @@ function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, s
         show_distance = show_distance,
         gender_filter_id = gender_filter_id,
         lucky_filter_id = lucky_filter_id,
+        boss_filter_id = boss_filter_id,
     }
 end
 function bridge_actor:PalworldResourceESP_TogglePanel()
@@ -306,8 +321,16 @@ FindAllOf = function(class_name)
     return {}
 end
 
+local original_debug_getinfo = debug.getinfo
+debug.getinfo = function()
+    return { source = "=[C]" }
+end
 dofile([[${runtimeEntrypoint}]])
+debug.getinfo = original_debug_getinfo
 print("Runtime entrypoint load passed")
+
+assert(runtime_settings_open_path == [[${normalize(path.join(runtimeRoot, "user-settings.log"))}]],
+    "runtime did not resolve user settings beside config.lua")
 
 assert(type(reconcile_loop) == "function", "reconcile loop was not captured")
 delayed_callbacks = {}
@@ -504,6 +527,15 @@ reconcile_loop()
 bridge_actor.ESP_LuckyFilterId = 99
 bridge_actor.ESP_ControlRevision = 58
 reconcile_loop()
+bridge_actor.ESP_BossFilterId = 1
+bridge_actor.ESP_ControlRevision = 59
+reconcile_loop()
+bridge_actor.ESP_BossFilterId = 2
+bridge_actor.ESP_ControlRevision = 60
+reconcile_loop()
+bridge_actor.ESP_BossFilterId = 99
+bridge_actor.ESP_ControlRevision = 61
+reconcile_loop()
 local top_guide_hidden_found = false
 local top_guide_shown_found = false
 local metadata_hidden_found = false
@@ -516,6 +548,9 @@ local gender_clamped_found = false
 local lucky_only_found = false
 local lucky_excluded_found = false
 local lucky_clamped_found = false
+local boss_only_found = false
+local boss_excluded_found = false
+local boss_clamped_found = false
 for _, message in ipairs(runtime_logs) do
     top_guide_hidden_found = top_guide_hidden_found or message:match("DISPLAY_STYLE.*top_guide_line=false") ~= nil
     top_guide_shown_found = top_guide_shown_found or message:match("DISPLAY_STYLE.*top_guide_line=true") ~= nil
@@ -533,6 +568,10 @@ for _, message in ipairs(runtime_logs) do
     lucky_excluded_found = lucky_excluded_found or message:match("DISPLAY_STYLE.*lucky_filter=exclude_lucky") ~= nil
     lucky_clamped_found = lucky_clamped_found
         or message:match("DISPLAY_STYLE.*lucky_filter=exclude_lucky") ~= nil
+    boss_only_found = boss_only_found or message:match("DISPLAY_STYLE.*boss_filter=only_boss") ~= nil
+    boss_excluded_found = boss_excluded_found or message:match("DISPLAY_STYLE.*boss_filter=exclude_boss") ~= nil
+    boss_clamped_found = boss_clamped_found
+        or message:match("DISPLAY_STYLE.*boss_filter=exclude_boss") ~= nil
 end
 assert(top_guide_hidden_found and top_guide_shown_found, "panel top-guide style did not round-trip")
 assert(metadata_hidden_found and metadata_shown_found, "panel metadata styles did not round-trip")
@@ -541,9 +580,12 @@ assert(gender_male_found and gender_female_found, "panel gender filters did not 
 assert(gender_clamped_found, "invalid gender filter was not clamped")
 assert(lucky_only_found and lucky_excluded_found, "panel Lucky filters did not round-trip")
 assert(lucky_clamped_found, "invalid Lucky filter was not clamped")
+assert(boss_only_found and boss_excluded_found, "panel Boss filters did not round-trip")
+assert(boss_clamped_found, "invalid Boss filter was not clamped")
 assert(#bridge_style_payloads >= 4, "display styles were not sent through the actor-free bridge event")
 assert(bridge_style_payloads[#bridge_style_payloads].gender_filter_id == 2, "gender filter clamp did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].lucky_filter_id == 2, "Lucky filter clamp did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].boss_filter_id == 2, "Boss filter clamp did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].show_name == true, "name style did not reach the bridge")
 print("Panel display styles passed")
 
@@ -561,9 +603,10 @@ for _, message in ipairs(runtime_logs) do
 end
 reconcile_loop()
 assert(#runtime_settings_writes == 1, "stable settings changes were not coalesced into one append")
-assert(runtime_settings_writes[1]:match("^v2 "), "saved settings did not use the current versioned format")
+assert(runtime_settings_writes[1]:match("^v3 "), "saved settings did not use the current versioned format")
 assert(runtime_settings_writes[1]:match("show_name=true"), "saved settings omitted the name toggle")
 assert(runtime_settings_writes[1]:match("lucky=2"), "saved settings omitted the Lucky filter")
+assert(runtime_settings_writes[1]:match("boss=2"), "saved settings omitted the Boss filter")
 assert(#delayed_callbacks == 0, "periodic reconcile retained actors in delayed callbacks")
 local scan_done_count_after = 0
 for _, message in ipairs(runtime_logs) do
@@ -590,7 +633,7 @@ if (status !== lua.LUA_OK) {
 
 console.log(`Parsed Lua files: ${files.length}`);
 console.log("Pure core runtime-global check passed");
-console.log("Blueprint slider/name/outline/Lucky source contract passed");
+console.log("Blueprint slider/name/outline/Lucky/Boss source contract passed");
 
 if (process.platform === "win32") {
   const performanceTests = path.join(root, "tests", "performance", "run-performance-tests.ps1");

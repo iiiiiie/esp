@@ -1,6 +1,6 @@
 local user_settings = {}
 
-local VERSION = "v2"
+local VERSION = "v3"
 
 local v1_fields = {
     { name = "runtime_enabled", kind = "boolean", default = true },
@@ -18,15 +18,22 @@ local v1_fields = {
     { name = "gender", kind = "integer", min = 0, max = 2, default = 0 },
 }
 
-local fields = {}
+local v2_fields = {}
 for _, field in ipairs(v1_fields) do
+    v2_fields[#v2_fields + 1] = field
+end
+v2_fields[#v2_fields + 1] = { name = "lucky", kind = "integer", min = 0, max = 2, default = 0 }
+
+local fields = {}
+for _, field in ipairs(v2_fields) do
     fields[#fields + 1] = field
 end
-fields[#fields + 1] = { name = "lucky", kind = "integer", min = 0, max = 2, default = 0 }
+fields[#fields + 1] = { name = "boss", kind = "integer", min = 0, max = 2, default = 0 }
 
 local schemas = {
     v1 = v1_fields,
-    v2 = fields,
+    v2 = v2_fields,
+    v3 = fields,
 }
 
 local fields_by_version = {}
@@ -108,6 +115,9 @@ function user_settings.parse_line(line)
     end
     if version == "v1" then
         normalized.lucky = 0
+    end
+    if version ~= "v3" then
+        normalized.boss = 0
     end
     return normalized, nil, version
 end
@@ -195,6 +205,31 @@ function user_settings.path_for_script(source)
     end
     local separator = source:find("\\", 1, true) and "\\" or "/"
     return directory .. separator .. "user-settings.log"
+end
+
+function user_settings.resolve_path(script_source, package_path, searchpath)
+    local path = user_settings.path_for_script(script_source)
+    if path ~= nil then
+        return path, "debug_source"
+    end
+
+    if type(package_path) ~= "string" or package_path == "" then
+        return nil, "package_path_missing"
+    end
+    if type(searchpath) ~= "function" then
+        return nil, "package_search_unavailable"
+    end
+
+    local ok, config_path = pcall(searchpath, "config", package_path)
+    if not ok or type(config_path) ~= "string" or config_path == "" then
+        return nil, "package_search_failed"
+    end
+
+    path = user_settings.path_for_script(config_path)
+    if path == nil then
+        return nil, "package_result_invalid"
+    end
+    return path, "package_search"
 end
 
 return user_settings

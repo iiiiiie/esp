@@ -17,11 +17,11 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | MSVC | `14.38` installed; UBT selected `14.39.33523` for the current editor-plugin build |
 | Wwise | Not required by the accepted no-Wwise PMK path |
 | Last fully verified LogicMod pak | `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14`; 8 files |
-| Current deployed panel pak | `A72FBF5AD746EBBA671027E8D138BD1E09DA70D507756AFEDE1CB55096520F6D`; Lucky filter checkpoint, runtime regression pending |
+| Current deployed panel pak | `6C988F39EF76283A55491129B2991DE274DC3A0D50236BFE51057FEA341782CA`; settings-path fix plus Boss filter checkpoint, runtime regression pending |
 | Current Pak contents | 10 files under `../../../Pal/Content/Mods/PalworldResourceESP/`; no DLL |
-| Current Lua script hash | `D9ADDF5653593F732319A76BC341509C06BC020754F3F898C1EB2F4B76CF481F` |
+| Current Lua script hash | `13DD521428C9C88A216EDB7EF5B029A402AFA1B0E17CC0D1D6A07C7CF4160A16` |
 | Current Lua config hash | `00C56472CC7B2BBA2A7BA1488093EEB3C6B0C2D9BB5DE3B0E9B8A0881763F33E` |
-| Current settings module hash | `73F569E50AA1AFBB8F3FC7F223C3ADB8E45B93493F3254894C602BDBF6A3F0D2` |
+| Current settings module hash | `32EEB3A772439CB9DE508A50AAB603C8B07256852154EEF585B059BC164D88B4` |
 
 ## Required Cases
 
@@ -49,6 +49,7 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | BP-20 | Name label and outline | Name visibility is independent; all name/level/distance text uses a black outline | Pending | Generated Blueprint and Steam verification required. |
 | BP-21 | Settings restoration | Restart restores the last stable functional settings and language without restoring capture state | Pending | Parser/runtime tests pass; full restart verification required. |
 | BP-22 | Lucky filter | All/only Lucky/exclude Lucky filters already-admitted wild Pals; unknown states fail closed in restricted modes | Pending | `IsRarePal()` provider, three-state UI, persistence, Blueprint compilation, and 10-file Pak checks pass; Steam verification requires an ordinary Pal and ideally a Lucky sample. |
+| BP-23 | Boss filter | All/only Boss/exclude Boss filters already-admitted wild Pals; unknown states fail closed in restricted modes | Pending | `GetCharacterID()` + character database `GetIsBoss()` provider, three-state UI, `v3` persistence, Blueprint compilation, and 10-file Pak checks pass; Steam verification requires a fixed-map Boss and ordinary Pal. |
 
 ## Panel Regression Evidence
 
@@ -61,7 +62,7 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | 2026-07-17 functional panel run | Shift+Y, localization, master switch, range and visibility controls | Maintainer confirmed panel interaction, all numeric filters, target limit, and live level/distance display; no reported crash. |
 | 2026-07-17 gender filter run | All/male/female behavior and normal exit | Male/female filtering passed and the game exited normally. Selected-button accent remained on the wrong segment, exposing BP-18. |
 | 2026-07-17 gender highlight follow-up | Gender selector highlight fix | Maintainer confirmed the selected segment highlight is correct. |
-| Next run | Lucky selector and settings restoration | Pending. Verify ordinary Pals disappear in only-Lucky mode, validate a Lucky sample when available, then restart once to prove persistence. |
+| Next run | Settings restoration plus Boss selector | Pending. First prove the path fallback by saving and restarting; then verify ordinary Pals disappear in only-Boss mode and a fixed-map Boss disappears in exclude-Boss mode. Lucky positive matching remains sample-pending. |
 
 ## Privacy Check
 
@@ -73,4 +74,4 @@ Expected result: no matches.
 
 ## Completion Rule
 
-The original Blueprint bridge spike passed BP-01 through BP-11 on Steam single-player. The current panel checkpoint is complete only when BP-12 through BP-21 pass without regressing BP-01 through BP-11 or `candidate_player_count=0`.
+The original Blueprint bridge spike passed BP-01 through BP-11 on Steam single-player. The current panel checkpoint is complete only when BP-12 through BP-23 pass without regressing BP-01 through BP-11 or `candidate_player_count=0`.

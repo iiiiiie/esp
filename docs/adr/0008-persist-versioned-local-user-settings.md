@@ -14,17 +14,20 @@ The in-game panel currently resets to Blueprint defaults whenever Palworld start
 
 The Mod remains a pure client-side UE4SS Lua plus LogicMod package. Settings must not introduce a runtime DLL, service, server component, player identity record, entity snapshot, or coordinate history. A failed or partially written settings record must not prevent the Mod from loading.
 
+The first in-game deployment exposed an additional runtime constraint: UE4SS can omit a usable script filename from `debug.getinfo()`. The original implementation depended exclusively on that value, logged `USER_SETTINGS_UNAVAILABLE reason=storage_path`, and therefore never attempted a read or append.
+
 ## Decision
 
-Persist panel preferences in `PalworldResourceESP/Scripts/user-settings.log` as an append-only sequence of complete versioned snapshots. New writes use `v2`; the reader accepts strict complete `v1` and `v2` records.
+Persist panel preferences in `PalworldResourceESP/Scripts/user-settings.log` as an append-only sequence of complete versioned snapshots. New writes use `v3`; the reader accepts strict complete `v1`, `v2`, and `v3` records.
 
-- Every snapshot contains only a fixed whitelist of booleans and bounded integers: runtime/profile/preset, language, level endpoints, maximum distance, visible target limit, top guide, name/level/distance visibility, gender filter, and Lucky filter.
-- A valid `v1` snapshot migrates in memory by defaulting Lucky to `all`; it is never rewritten in place. The next stable user change appends a complete `v2` snapshot.
+- Every snapshot contains only a fixed whitelist of booleans and bounded integers: runtime/profile/preset, language, level endpoints, maximum distance, visible target limit, top guide, name/level/distance visibility, gender filter, Lucky filter, and Boss filter.
+- A valid `v1` snapshot migrates in memory by defaulting Lucky and Boss to `all`; `v2` defaults Boss to `all`. Old records are never rewritten in place. The next stable user change appends a complete `v3` snapshot.
 - Capture state, players, entities, names, IDs, and coordinates are never persisted.
 - Lua loads the last valid complete snapshot and ignores malformed, incomplete, unknown-version, or unknown-field lines.
 - Loaded values are clamped to the public UI limits and written once to the passive ModActor before the panel is initialized.
 - Runtime changes are coalesced for 750 ms before one complete snapshot is appended. Slider preview changes do not change the ModActor and therefore do not schedule writes.
 - Storage failures are logged and retried without disabling ESP behavior.
+- Resolve the settings location from a valid `debug.getinfo()` source when available. Otherwise use `package.searchpath("config", package.path)` to locate the already loaded sibling `config.lua`, then place `user-settings.log` in that directory. If neither source resolves, log the specific resolution failure and continue with defaults.
 - The generated settings log is ignored by Git.
 
 ## Options Considered
@@ -85,5 +88,7 @@ Follow-up considerations:
 - [x] Add strict parser, normalization, last-valid loading, and append tests.
 - [x] Add a 750 ms coalesced runtime save path.
 - [x] Add strict `v1` read compatibility and `v2` writes for the Lucky selector.
+- [x] Add strict `v2` read compatibility and `v3` writes for the Boss selector.
+- [x] Add and runtime-stub test the `package.searchpath` fallback required by UE4SS when the debug source is unavailable.
 - [ ] Verify settings restoration after a full Palworld restart.
 - [ ] Verify a malformed final line falls back to the preceding valid line in the game environment.

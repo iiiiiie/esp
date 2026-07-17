@@ -159,6 +159,7 @@ local state = {
     show_distance = config.SHOW_DISTANCE,
     gender_filter_id = 0,
     lucky_filter_id = 0,
+    boss_filter_id = 0,
     language_id = 0,
     settings_path = nil,
     settings_io = nil,
@@ -332,6 +333,7 @@ local SETTINGS_PROPERTIES = {
     { name = "show_distance", property = "ESP_ShowDistance" },
     { name = "gender", property = "ESP_GenderFilterId" },
     { name = "lucky", property = "ESP_LuckyFilterId" },
+    { name = "boss", property = "ESP_BossFilterId" },
 }
 
 local function initialize_user_settings()
@@ -353,13 +355,25 @@ local function initialize_user_settings()
                 source = info.source
             end
         end
-        state.settings_path = user_settings.path_for_script(source)
+        local package_path = type(package) == "table" and package.path or nil
+        local package_searchpath = type(package) == "table" and package.searchpath or nil
+        local resolution
+        state.settings_path, resolution = user_settings.resolve_path(source, package_path, package_searchpath)
+        state.settings_path_resolution = resolution
     end
 
     if state.settings_path == nil or type(state.settings_io) ~= "table" then
-        log_event("USER_SETTINGS_UNAVAILABLE", "reason=storage_path")
+        log_event("USER_SETTINGS_UNAVAILABLE", string.format(
+            "reason=%s",
+            tostring(state.settings_path_resolution or "storage_path")
+        ))
         return
     end
+
+    debug_event("USER_SETTINGS_PATH", string.format(
+        "resolution=%s",
+        tostring(state.settings_path_resolution or "override")
+    ))
 
     local loaded, load_reason, loaded_version = user_settings.load_latest(state.settings_path, state.settings_io)
     if loaded == nil then
@@ -463,7 +477,7 @@ local function flush_user_settings_if_due()
     state.settings_pending = nil
     state.settings_save_due_at = nil
     state.settings_save_error_logged = false
-    debug_event("USER_SETTINGS_SAVED", "version=v2")
+    debug_event("USER_SETTINGS_SAVED", "version=v3")
 end
 
 local function safe_call_no_args(object, method_name)
@@ -2468,22 +2482,32 @@ local function normalize_lucky_filter_id(raw_id)
     return math.max(0, math.min(2, math.floor(raw_id)))
 end
 
+local function normalize_boss_filter_id(raw_id)
+    if type(raw_id) ~= "number" or raw_id ~= raw_id or raw_id == math.huge or raw_id == -math.huge then
+        return 0
+    end
+    return math.max(0, math.min(2, math.floor(raw_id)))
+end
+
 local function apply_display_styles(
     show_top_guide_line,
     show_name,
     show_level,
     show_distance,
     raw_gender_filter_id,
-    raw_lucky_filter_id
+    raw_lucky_filter_id,
+    raw_boss_filter_id
 )
     local gender_filter_id = normalize_gender_filter_id(raw_gender_filter_id)
     local lucky_filter_id = normalize_lucky_filter_id(raw_lucky_filter_id)
+    local boss_filter_id = normalize_boss_filter_id(raw_boss_filter_id)
     if show_top_guide_line == state.show_top_guide_line
         and show_name == state.show_name
         and show_level == state.show_level
         and show_distance == state.show_distance
         and gender_filter_id == state.gender_filter_id
-        and lucky_filter_id == state.lucky_filter_id then
+        and lucky_filter_id == state.lucky_filter_id
+        and boss_filter_id == state.boss_filter_id then
         return false
     end
     state.show_top_guide_line = show_top_guide_line
@@ -2492,6 +2516,7 @@ local function apply_display_styles(
     state.show_distance = show_distance
     state.gender_filter_id = gender_filter_id
     state.lucky_filter_id = lucky_filter_id
+    state.boss_filter_id = boss_filter_id
     call_bridge(
         BRIDGE_METHOD_SET_DISPLAY_STYLE,
         show_top_guide_line,
@@ -2499,18 +2524,21 @@ local function apply_display_styles(
         show_level,
         show_distance,
         gender_filter_id,
-        lucky_filter_id
+        lucky_filter_id,
+        boss_filter_id
     )
     local gender_filter_names = { [0] = "all", [1] = "male", [2] = "female" }
     local lucky_filter_names = { [0] = "all", [1] = "only_lucky", [2] = "exclude_lucky" }
+    local boss_filter_names = { [0] = "all", [1] = "only_boss", [2] = "exclude_boss" }
     log_event("DISPLAY_STYLE", string.format(
-        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s gender_filter=%s lucky_filter=%s",
+        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s gender_filter=%s lucky_filter=%s boss_filter=%s",
         tostring(show_top_guide_line),
         tostring(show_name),
         tostring(show_level),
         tostring(show_distance),
         gender_filter_names[gender_filter_id],
-        lucky_filter_names[lucky_filter_id]
+        lucky_filter_names[lucky_filter_id],
+        boss_filter_names[boss_filter_id]
     ))
     return true
 end
@@ -2565,6 +2593,7 @@ local function poll_panel_controls()
     local show_distance = read_panel_boolean("ESP_ShowDistance")
     local gender_filter_id = read_panel_number("ESP_GenderFilterId")
     local lucky_filter_id = read_panel_number("ESP_LuckyFilterId")
+    local boss_filter_id = read_panel_number("ESP_BossFilterId")
     local language_id = read_panel_number("ESP_LanguageId")
     local display_target_limit = read_panel_number("ESP_DisplayTargetLimit")
     if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil
@@ -2572,7 +2601,7 @@ local function poll_panel_controls()
         -- or level_min == nil or level_max == nil or distance_min == nil or distance_max == nil
         or level_min == nil or level_max == nil or distance_max == nil
         or show_top_guide_line == nil or show_name == nil or show_level == nil or show_distance == nil
-        or gender_filter_id == nil or lucky_filter_id == nil
+        or gender_filter_id == nil or lucky_filter_id == nil or boss_filter_id == nil
         or language_id == nil or display_target_limit == nil then
         if not state.control_pending_logged then
             state.control_pending_logged = true
@@ -2592,7 +2621,8 @@ local function poll_panel_controls()
         show_level,
         show_distance,
         gender_filter_id,
-        lucky_filter_id
+        lucky_filter_id,
+        boss_filter_id
     )
     local limit_changed = apply_display_target_limit(display_target_limit)
     if runtime_enabled() and state.gameplay_active and (filters_changed or limit_changed) then
@@ -2616,6 +2646,7 @@ local function poll_panel_controls()
         show_distance = show_distance,
         gender = gender_filter_id,
         lucky = lucky_filter_id,
+        boss = boss_filter_id,
     })
     state.control_revision = revision
     debug_event("PANEL_CONTROL_APPLIED", string.format("revision=%d", revision))
