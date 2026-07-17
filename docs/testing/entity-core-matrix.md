@@ -17,7 +17,7 @@
 | Active UE4SS root | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss` |
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
-| LogicMod pak SHA-256 | `1F253B790A39EA79FF602C955F3EC4999883DD9A4B8BAD24BA40CB0986952442`; gender-filter checkpoint |
+| LogicMod pak SHA-256 | `5C107B9E427DAB13FB5DC516FE17A86099DAEFE321B179F1315013DCD23C0251`; gender-selector-highlight checkpoint |
 | `main.lua` SHA-256 | `0F80D0C261B4A3E58926F7F4A37C75AB5027A0AEA26D32D6725D3A29881EE40F` |
 | `config.lua` SHA-256 | `8DFE28F204DF66F1F2E212665F2D23B0A6D1789DA118FCF56717B0F7A19699C9` |
 | Newest recorded crash | `2026-07-17 15:07:26`, `UECC-Windows-226A46F0425C013D3C68EAA1329F05E1_0000`; delayed-wrapper reconcile during movement |
@@ -49,12 +49,13 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-18 | Capture segmentation | Concatenated UE4SS markers and PresentMon absolute timestamps split by mode with a 2-second transition exclusion | Pass | Synthetic parser plus 31-frame end-to-end segmented analysis pass |
 | AT-19 | Panel range filters | Level endpoints compose with a fixed 0m distance lower bound; unavailable fields remain fail-closed | Pass | Stubbed runtime ignores legacy `ESP_DistanceMin=999`, clamps the maximum to 330m, and validates both 0-0m and 0-330m ranges |
 | AT-20 | Top-guide style control | The panel boolean round-trips through scalar polling without resubmitting snapshot Actors | Pass | Stubbed runtime records both hidden and shown actor-free style transitions |
-| AT-21 | LogicMod package | Generated package contains exactly five `.uasset` and five `.uexp` files with no runtime DLL | Pass | Clean Cook completed 408/408 with 0 errors; UnrealPak lists 10 files, 0 DLL, SHA-256 `1F253B790A39EA79FF602C955F3EC4999883DD9A4B8BAD24BA40CB0986952442` |
+| AT-21 | LogicMod package | Generated package contains exactly five `.uasset` and five `.uexp` files with no runtime DLL | Pass | Clean Cook completed 408/408 with 0 errors; UnrealPak lists 10 files, 0 DLL, SHA-256 `5C107B9E427DAB13FB5DC516FE17A86099DAEFE321B179F1315013DCD23C0251` |
 | AT-22 | Target display metadata | The exact Entity Core level and rounded snapshot distance accompany each submitted target | Pass | Stubbed bridge receives level 1 and distance 1m for the first synthetic target |
 | AT-23 | Numeric panel controls | Slider plus exact numeric input preserves scalar polling for level endpoints, 0-330m maximum distance, and the 1-100 display limit | Pass | Stubbed runtime reduces five displayed targets to three, clamps an attempted 999-target limit to 100, and restores the configured limit |
 | AT-24 | Metadata visibility | Level and distance booleans round-trip independently through the actor-free style bridge | Pass | Stub records hidden and shown combinations without resubmitting snapshot Actors |
 | AT-25 | Live distance graph | Overlay computes meters from current player and target locations during each paint pass | Pass | Generator links `GetPlayerPawn`, both live Actor locations, `Vector_Distance`, meter conversion, and integer text; final Blueprint statuses are warning-only/up-to-date |
 | AT-26 | Gender filter bridge | Scalar all/male/female control reaches Blueprint without resubmitting Actors; invalid selectors clamp to female | Pass | Stub records `0/1/2`, generator stores one normalized gender code per admitted target, and OnPaint filters before projection |
+| AT-27 | Gender selector visual state | Click and panel initialization set exactly one segment to the green accent and reset the other two | Pass | Generated panel graph uses `SetBackgroundColor` on all three segments in every click path, clamps initialization to `0..2`, and derives colors from `GenderFilterId`; Blueprint compiles with status 3 |
 
 ## Performance Investigation
 
@@ -84,7 +85,7 @@ All three real runs passed capture cleanup, death cleanup, return to Title, norm
 | EC-10 | Performance | PresentMon A/B frame-time gates pass and Mod stage timings identify no over-budget callback | Pending | Chunked run reached `max_batch_ms=24`; standardized Mod-on/off captures are required |
 | EC-11 | Adapter extension | Synthetic second adapter changes no gate/filter/renderer module | Pass | Covered by AT-08 |
 | EC-12 | Normal exit | No new crash report; source and active deployment hashes match | Regression pending | Both pre-chunk runs exited normally; no crash newer than `09:56:11` |
-| EC-13 | Gender filtering | All shows both known genders; male/female modes show only matching targets; reopening the panel preserves the selection | Pending | Automated scalar bridge and generated Blueprint graph pass; Steam single-player verification required |
+| EC-13 | Gender filtering | All shows both known genders; male/female modes show only matching targets; reopening the panel preserves the value and highlighted segment | Regression pending | Maintainer confirmed male/female filtering and normal exit; the first package failed to highlight the selected segment, and the rebuilt highlight path requires verification |
 
 ## Runtime Procedure
 

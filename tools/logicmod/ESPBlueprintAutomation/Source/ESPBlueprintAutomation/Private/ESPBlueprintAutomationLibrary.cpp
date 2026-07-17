@@ -1490,6 +1490,23 @@ UButton* AddPanelButtonV2(
     return Button;
 }
 
+void ConfigurePanelSegmentButtonV2(UButton* Button, bool bSelected) {
+    if (!Button) {
+        return;
+    }
+    const FLinearColor HoverMultiplier(1.08f, 1.08f, 1.08f, 1.0f);
+    const FLinearColor PressedMultiplier(0.88f, 0.88f, 0.88f, 1.0f);
+    FButtonStyle Style = FButtonStyle::GetDefault();
+    Style.SetNormal(FSlateRoundedBoxBrush(FLinearColor::White, 6.0f, FVector2D(0.0f, 34.0f)))
+        .SetHovered(FSlateRoundedBoxBrush(HoverMultiplier, 6.0f, FVector2D(0.0f, 34.0f)))
+        .SetPressed(FSlateRoundedBoxBrush(PressedMultiplier, 6.0f, FVector2D(0.0f, 34.0f)))
+        .SetDisabled(FSlateRoundedBoxBrush(PanelV2Style::Disabled, 6.0f, FVector2D(0.0f, 34.0f)))
+        .SetNormalPadding(FMargin(12.0f, 7.0f))
+        .SetPressedPadding(FMargin(12.0f, 7.0f));
+    Button->SetStyle(Style);
+    Button->SetBackgroundColor(bSelected ? PanelV2Style::Accent : PanelV2Style::SurfaceRaised);
+}
+
 UCheckBox* AddPanelToggleV2(
     UWidgetBlueprint* Blueprint,
     UVerticalBox* Parent,
@@ -1685,6 +1702,105 @@ bool AppendRevisionIncrement(
     return true;
 }
 
+bool AppendPanelSegmentVisualsConstant(
+    UEdGraph* Graph,
+    const TArray<UButton*>& Buttons,
+    int32 SelectedIndex,
+    UEdGraphNode*& ExecTail,
+    int32 X,
+    int32 Y) {
+    if (!Graph || Buttons.Num() == 0 || !Buttons.IsValidIndex(SelectedIndex)) {
+        return false;
+    }
+    for (int32 Index = 0; Index < Buttons.Num(); ++Index) {
+        UButton* Button = Buttons[Index];
+        UK2Node_VariableGet* ButtonGet = Button
+            ? AddVariableGet(Graph, Button->GetFName(), X, Y + 140)
+            : nullptr;
+        UK2Node_CallFunction* SetBackground = AddStaticCall(
+            Graph, UButton::StaticClass(), TEXT("SetBackgroundColor"), X + 260, Y);
+        const FLinearColor Color = Index == SelectedIndex
+            ? PanelV2Style::Accent
+            : PanelV2Style::SurfaceRaised;
+        if (!ButtonGet || !SetBackground
+            || !SetPinDefault(SetBackground, TEXT("InBackgroundColor"), Color.ToString())
+            || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetBackground, UEdGraphSchema_K2::PN_Execute)
+            || !Link(ButtonGet, Button->GetFName(), SetBackground, UEdGraphSchema_K2::PN_Self)) {
+            return false;
+        }
+        ExecTail = SetBackground;
+        X += 520;
+    }
+    return true;
+}
+
+bool AppendPanelSegmentVisualsDynamic(
+    UEdGraph* Graph,
+    UK2Node_CustomEvent* Event,
+    const FName& InputName,
+    const TArray<UButton*>& Buttons,
+    UEdGraphNode*& ExecTail,
+    int32 X,
+    int32 Y) {
+    if (!Graph || !Event || Buttons.Num() != 3) {
+        return false;
+    }
+
+    UK2Node_CallFunction* ClampedId = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Clamp"), X, Y + 210);
+    UK2Node_CallFunction* IsMale = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 260, Y + 140);
+    UK2Node_CallFunction* IsFemale = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 260, Y + 280);
+    UK2Node_CallFunction* IsRestricted = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), X + 520, Y + 210);
+    UK2Node_CallFunction* IsAll = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 780, Y + 210);
+    if (!ClampedId || !IsMale || !IsFemale || !IsRestricted || !IsAll
+        || !Link(Event, InputName, ClampedId, TEXT("Value"))
+        || !SetPinDefault(ClampedId, TEXT("Min"), TEXT("0"))
+        || !SetPinDefault(ClampedId, TEXT("Max"), TEXT("2"))
+        || !Link(ClampedId, UEdGraphSchema_K2::PN_ReturnValue, IsMale, TEXT("A"))
+        || !SetPinDefault(IsMale, TEXT("B"), TEXT("1"))
+        || !Link(ClampedId, UEdGraphSchema_K2::PN_ReturnValue, IsFemale, TEXT("A"))
+        || !SetPinDefault(IsFemale, TEXT("B"), TEXT("2"))
+        || !Link(IsMale, UEdGraphSchema_K2::PN_ReturnValue, IsRestricted, TEXT("A"))
+        || !Link(IsFemale, UEdGraphSchema_K2::PN_ReturnValue, IsRestricted, TEXT("B"))
+        || !Link(IsRestricted, UEdGraphSchema_K2::PN_ReturnValue, IsAll, TEXT("A"))) {
+        return false;
+    }
+
+    const TArray<UK2Node_CallFunction*> Conditions = {IsAll, IsMale, IsFemale};
+    X += 1040;
+    for (int32 Index = 0; Index < Buttons.Num(); ++Index) {
+        UButton* Button = Buttons[Index];
+        UK2Node_CallFunction* SelectAlpha = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectFloat"), X, Y + 280);
+        UK2Node_CallFunction* SelectColor = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("LinearColorLerp"), X + 260, Y + 280);
+        UK2Node_VariableGet* ButtonGet = Button
+            ? AddVariableGet(Graph, Button->GetFName(), X + 520, Y + 420)
+            : nullptr;
+        UK2Node_CallFunction* SetBackground = AddStaticCall(
+            Graph, UButton::StaticClass(), TEXT("SetBackgroundColor"), X + 780, Y);
+        if (!ButtonGet || !SelectAlpha || !SelectColor || !SetBackground
+            || !SetPinDefault(SelectAlpha, TEXT("A"), TEXT("1.0"))
+            || !SetPinDefault(SelectAlpha, TEXT("B"), TEXT("0.0"))
+            || !Link(Conditions[Index], UEdGraphSchema_K2::PN_ReturnValue, SelectAlpha, TEXT("bPickA"))
+            || !SetPinDefault(SelectColor, TEXT("A"), PanelV2Style::SurfaceRaised.ToString())
+            || !SetPinDefault(SelectColor, TEXT("B"), PanelV2Style::Accent.ToString())
+            || !Link(SelectAlpha, UEdGraphSchema_K2::PN_ReturnValue, SelectColor, TEXT("Alpha"))
+            || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetBackground, UEdGraphSchema_K2::PN_Execute)
+            || !Link(ButtonGet, Button->GetFName(), SetBackground, UEdGraphSchema_K2::PN_Self)
+            || !Link(SelectColor, UEdGraphSchema_K2::PN_ReturnValue, SetBackground, TEXT("InBackgroundColor"))) {
+            return false;
+        }
+        ExecTail = SetBackground;
+        X += 1040;
+    }
+    return true;
+}
+
 struct FPanelControlAssignment {
     FName Name;
     FString Value;
@@ -1697,7 +1813,9 @@ bool BuildPanelControlEvent(
     const TArray<FPanelControlAssignment>& Assignments,
     const FName& StatusTextName,
     const TCHAR* StatusText,
-    int32 Y) {
+    int32 Y,
+    const TArray<UButton*>* SegmentButtons = nullptr,
+    int32 SelectedSegmentIndex = INDEX_NONE) {
     UEdGraph* Graph = EventGraph(Blueprint);
     UK2Node_ComponentBoundEvent* Event = AddButtonEvent(Blueprint, Button, -1300, Y);
     UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1040, Y + 120);
@@ -1718,6 +1836,13 @@ bool BuildPanelControlEvent(
         return false;
     }
     X += StatusTextName == NAME_None ? 0 : 560;
+    if (SegmentButtons) {
+        if (!AppendPanelSegmentVisualsConstant(
+                Graph, *SegmentButtons, SelectedSegmentIndex, ExecTail, X, Y)) {
+            return false;
+        }
+        X += SegmentButtons->Num() * 520;
+    }
     return AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, ExecTail, X, Y);
 }
 
@@ -1895,6 +2020,7 @@ bool BuildPanelInitializeControlsV2(
     UCheckBox* ShowLevel,
     UCheckBox* ShowDistance,
     UTextBlock* GenderStatus,
+    const TArray<UButton*>& GenderButtons,
     int32 Y,
     UK2Node_CustomEvent* ExistingEvent = nullptr) {
     UEdGraph* Graph = EventGraph(Blueprint);
@@ -1995,7 +2121,9 @@ bool BuildPanelInitializeControlsV2(
         || !Link(ToText, UEdGraphSchema_K2::PN_ReturnValue, SetGenderStatus, TEXT("InText"))) {
         return false;
     }
-    return true;
+    ExecTail = SetGenderStatus;
+    return AppendPanelSegmentVisualsDynamic(
+        Graph, Event, TEXT("GenderFilterId"), GenderButtons, ExecTail, X + 1400, Y);
 }
 
 bool BuildPanelVisibilityEvent(
@@ -2358,7 +2486,7 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         SetVerticalPadding(GenderRow, FMargin(0.0f, 2.0f, 0.0f, 6.0f));
     }
     UButton* GenderAll = GenderRow
-        ? AddPanelButtonV2(Blueprint, GenderRow, TEXT("ESP_GenderAllButton"), TEXT("ESP_GenderAllText"), TEXT("全部"), true)
+        ? AddPanelButtonV2(Blueprint, GenderRow, TEXT("ESP_GenderAllButton"), TEXT("ESP_GenderAllText"), TEXT("全部"))
         : nullptr;
     UButton* GenderMale = GenderRow
         ? AddPanelButtonV2(Blueprint, GenderRow, TEXT("ESP_GenderMaleButton"), TEXT("ESP_GenderMaleText"), TEXT("雄性"))
@@ -2366,6 +2494,9 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     UButton* GenderFemale = GenderRow
         ? AddPanelButtonV2(Blueprint, GenderRow, TEXT("ESP_GenderFemaleButton"), TEXT("ESP_GenderFemaleText"), TEXT("雌性"))
         : nullptr;
+    ConfigurePanelSegmentButtonV2(GenderAll, true);
+    ConfigurePanelSegmentButtonV2(GenderMale, false);
+    ConfigurePanelSegmentButtonV2(GenderFemale, false);
 
     UTextBlock* LanguageHeading = AddPanelTextV2(Blueprint, Content, TEXT("ESP_LanguageHeadingText"), TEXT("Language"), 13, true);
     UHorizontalBox* LanguageRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_LanguageRow"));
@@ -2545,15 +2676,24 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         return false;
     }
 
-    if (!Control(GenderAll, {{GenderFilterIdVariableName, TEXT("0")}}, TEXT("ESP_GenderStatusText"), TEXT("当前 / Current: 全部 / All"))
-        || !Control(GenderMale, {{GenderFilterIdVariableName, TEXT("1")}}, TEXT("ESP_GenderStatusText"), TEXT("当前 / Current: 雄性 / Male"))
-        || !Control(GenderFemale, {{GenderFilterIdVariableName, TEXT("2")}}, TEXT("ESP_GenderStatusText"), TEXT("当前 / Current: 雌性 / Female"))) {
+    const TArray<UButton*> GenderButtons = {GenderAll, GenderMale, GenderFemale};
+    if (!BuildPanelControlEvent(
+            Blueprint, GenderAll, ModActorClass, {{GenderFilterIdVariableName, TEXT("0")}},
+            TEXT("ESP_GenderStatusText"), TEXT("当前 / Current: 全部 / All"), Y, &GenderButtons, 0)
+        || !BuildPanelControlEvent(
+            Blueprint, GenderMale, ModActorClass, {{GenderFilterIdVariableName, TEXT("1")}},
+            TEXT("ESP_GenderStatusText"), TEXT("当前 / Current: 雄性 / Male"), Y + 360, &GenderButtons, 1)
+        || !BuildPanelControlEvent(
+            Blueprint, GenderFemale, ModActorClass, {{GenderFilterIdVariableName, TEXT("2")}},
+            TEXT("ESP_GenderStatusText"), TEXT("当前 / Current: 雌性 / Female"), Y + 720, &GenderButtons, 2)) {
         return false;
     }
+    Y += 1080;
 
     if (!BuildPanelInitializeControlsV2(
             Blueprint, DisplayLimit, LevelMin, LevelMax, DistanceMax,
-            RuntimeEnabled, TopGuide, ShowLevel, ShowDistance, GenderStatus, Y, PanelInitializeV2)) {
+            RuntimeEnabled, TopGuide, ShowLevel, ShowDistance,
+            GenderStatus, GenderButtons, Y, PanelInitializeV2)) {
         return false;
     }
     Y += 900;
