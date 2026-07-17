@@ -23,12 +23,17 @@
 #include "Components/Button.h"
 #include "Components/CheckBox.h"
 #include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
+#include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
+#include "Components/Slider.h"
 #include "Components/SpinBox.h"
 #include "Components/Spacer.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraphSchema_K2.h"
@@ -76,6 +81,7 @@ const FName CaptureRequestedVariableName(TEXT("ESP_CaptureRequested"));
 const FName LanguageIdVariableName(TEXT("ESP_LanguageId"));
 const FName LevelMinVariableName(TEXT("ESP_LevelMin"));
 const FName LevelMaxVariableName(TEXT("ESP_LevelMax"));
+// __DEPRECATED_20260717__ [reason: retained on ModActor only so older assets remain reversible]
 const FName DistanceMinVariableName(TEXT("ESP_DistanceMin"));
 const FName DistanceMaxVariableName(TEXT("ESP_DistanceMax"));
 const FName ShowTopGuideLineVariableName(TEXT("ESP_ShowTopGuideLine"));
@@ -83,6 +89,7 @@ const FName ShowLevelVariableName(TEXT("ESP_ShowLevel"));
 const FName ShowDistanceVariableName(TEXT("ESP_ShowDistance"));
 const FName DisplayTargetLimitVariableName(TEXT("ESP_DisplayTargetLimit"));
 const FName PanelInitializeControlsEventName(TEXT("PalworldResourceESP_InitializeControls"));
+const FName PanelInitializeControlsV2EventName(TEXT("PalworldResourceESP_InitializeControlsV2"));
 
 UBlueprint* LoadBlueprint(const TCHAR* Path) {
     return LoadObject<UBlueprint>(nullptr, Path);
@@ -603,6 +610,41 @@ UK2Node_ComponentBoundEvent* AddSpinBoxValueChangedEvent(
     );
     if (!Graph || !ComponentProperty || !DelegateProperty) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] AddSpinBoxEvent missing graph/property spinbox=%s"), *GetNameSafe(SpinBox));
+        return nullptr;
+    }
+
+    UK2Node_ComponentBoundEvent* Node = NewObject<UK2Node_ComponentBoundEvent>(Graph);
+    if (!Node) {
+        return nullptr;
+    }
+    Node->InitializeComponentBoundEventParams(ComponentProperty, DelegateProperty);
+    Node->NodePosX = X;
+    Node->NodePosY = Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->AllocateDefaultPins();
+    return Node;
+}
+
+UK2Node_ComponentBoundEvent* AddSliderValueChangedEvent(
+    UWidgetBlueprint* Blueprint,
+    USlider* Slider,
+    int32 X,
+    int32 Y) {
+    if (!Blueprint || !Slider || !Blueprint->SkeletonGeneratedClass) {
+        return nullptr;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    FObjectProperty* ComponentProperty = FindFProperty<FObjectProperty>(
+        Blueprint->SkeletonGeneratedClass,
+        Slider->GetFName()
+    );
+    FMulticastDelegateProperty* DelegateProperty = FindFProperty<FMulticastDelegateProperty>(
+        USlider::StaticClass(),
+        GET_MEMBER_NAME_CHECKED(USlider, OnValueChanged)
+    );
+    if (!Graph || !ComponentProperty || !DelegateProperty) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] AddSliderEvent missing graph/property slider=%s"), *GetNameSafe(Slider));
         return nullptr;
     }
 
@@ -1163,8 +1205,9 @@ bool PrepareModActorControls(UBlueprint* Blueprint) {
         || !EnsureMemberVariable(Blueprint, LanguageIdVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, LevelMinVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, LevelMaxVariableName, IntPin(), TEXT("0"))
+        // __DEPRECATED_20260717__ [reason: retained on ModActor only so older assets remain reversible]
         || !EnsureMemberVariable(Blueprint, DistanceMinVariableName, IntPin(), TEXT("0"))
-        || !EnsureMemberVariable(Blueprint, DistanceMaxVariableName, IntPin(), TEXT("0"))
+        || !EnsureMemberVariable(Blueprint, DistanceMaxVariableName, IntPin(), TEXT("330"))
         || !EnsureMemberVariable(Blueprint, DisplayTargetLimitVariableName, IntPin(), TEXT("64"))
         || !EnsureMemberVariable(Blueprint, ShowTopGuideLineVariableName, BoolPin(), TEXT("true"))
         || !EnsureMemberVariable(Blueprint, ShowLevelVariableName, BoolPin(), TEXT("true"))
@@ -1249,6 +1292,238 @@ USpinBox* AddPanelSpinBox(
     SpinBox->ForegroundColor = FSlateColor(FLinearColor(0.96f, 0.97f, 0.98f, 1.0f));
     Parent->AddChild(SpinBox);
     return SpinBox;
+}
+
+namespace PanelV2Style {
+const FLinearColor Surface(0.055f, 0.058f, 0.064f, 0.985f);
+const FLinearColor SurfaceRaised(0.105f, 0.11f, 0.12f, 1.0f);
+const FLinearColor SurfaceHover(0.15f, 0.155f, 0.165f, 1.0f);
+const FLinearColor Border(0.22f, 0.225f, 0.235f, 1.0f);
+const FLinearColor PrimaryText(0.95f, 0.955f, 0.96f, 1.0f);
+const FLinearColor SecondaryText(0.67f, 0.69f, 0.71f, 1.0f);
+const FLinearColor Accent(0.16f, 0.72f, 0.45f, 1.0f);
+const FLinearColor AccentHover(0.20f, 0.82f, 0.52f, 1.0f);
+const FLinearColor Disabled(0.18f, 0.185f, 0.195f, 0.72f);
+}
+
+void SetVerticalPadding(UWidget* Widget, const FMargin& Padding) {
+    if (Widget) {
+        if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Widget->Slot)) {
+            Slot->SetPadding(Padding);
+        }
+    }
+}
+
+void SetHorizontalLayout(
+    UWidget* Widget,
+    const FMargin& Padding,
+    ESlateSizeRule::Type SizeRule,
+    EHorizontalAlignment HorizontalAlignment = HAlign_Fill) {
+    if (Widget) {
+        if (UHorizontalBoxSlot* Slot = Cast<UHorizontalBoxSlot>(Widget->Slot)) {
+            Slot->SetPadding(Padding);
+            Slot->SetSize(FSlateChildSize(SizeRule));
+            Slot->SetHorizontalAlignment(HorizontalAlignment);
+            Slot->SetVerticalAlignment(VAlign_Center);
+        }
+    }
+}
+
+UTextBlock* AddPanelTextV2(
+    UWidgetBlueprint* Blueprint,
+    UPanelWidget* Parent,
+    const FName& Name,
+    const TCHAR* Text,
+    int32 FontSize,
+    bool bSecondary = false) {
+    UTextBlock* Widget = Blueprint->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
+    if (!Widget) {
+        return nullptr;
+    }
+    Widget->bIsVariable = true;
+    Widget->SetText(FText::FromString(Text));
+    Widget->SetColorAndOpacity(FSlateColor(bSecondary ? PanelV2Style::SecondaryText : PanelV2Style::PrimaryText));
+    FSlateFontInfo Font = Widget->Font;
+    Font.Size = FontSize;
+    Widget->SetFont(Font);
+    Widget->SetAutoWrapText(true);
+    Parent->AddChild(Widget);
+    return Widget;
+}
+
+UButton* AddPanelButtonV2(
+    UWidgetBlueprint* Blueprint,
+    UPanelWidget* Parent,
+    const FName& ButtonName,
+    const FName& TextName,
+    const TCHAR* Text,
+    bool bAccent = false) {
+    UButton* Button = Blueprint->WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), ButtonName);
+    UTextBlock* Label = Blueprint->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TextName);
+    if (!Button || !Label) {
+        return nullptr;
+    }
+    const FLinearColor Normal = bAccent ? PanelV2Style::Accent : PanelV2Style::SurfaceRaised;
+    const FLinearColor Hovered = bAccent ? PanelV2Style::AccentHover : PanelV2Style::SurfaceHover;
+    FButtonStyle Style = FButtonStyle::GetDefault();
+    Style.SetNormal(FSlateRoundedBoxBrush(Normal, 6.0f, FVector2D(0.0f, 34.0f)))
+        .SetHovered(FSlateRoundedBoxBrush(Hovered, 6.0f, FVector2D(0.0f, 34.0f)))
+        .SetPressed(FSlateRoundedBoxBrush(PanelV2Style::Accent, 6.0f, FVector2D(0.0f, 34.0f)))
+        .SetDisabled(FSlateRoundedBoxBrush(PanelV2Style::Disabled, 6.0f, FVector2D(0.0f, 34.0f)))
+        .SetNormalPadding(FMargin(12.0f, 7.0f))
+        .SetPressedPadding(FMargin(12.0f, 7.0f));
+    Button->bIsVariable = true;
+    Button->IsFocusable = true;
+    Button->SetStyle(Style);
+    Button->SetBackgroundColor(FLinearColor::White);
+    Label->bIsVariable = true;
+    Label->SetText(FText::FromString(Text));
+    Label->SetColorAndOpacity(FSlateColor(PanelV2Style::PrimaryText));
+    FSlateFontInfo Font = Label->Font;
+    Font.Size = 13;
+    Label->SetFont(Font);
+    Label->SetJustification(ETextJustify::Center);
+    Button->AddChild(Label);
+    Parent->AddChild(Button);
+    if (Parent->IsA<UHorizontalBox>()) {
+        SetHorizontalLayout(Button, FMargin(0.0f, 0.0f, 6.0f, 0.0f), ESlateSizeRule::Fill);
+    } else {
+        SetVerticalPadding(Button, FMargin(0.0f, 4.0f));
+    }
+    return Button;
+}
+
+UCheckBox* AddPanelToggleV2(
+    UWidgetBlueprint* Blueprint,
+    UVerticalBox* Parent,
+    const FName& RowName,
+    const FName& TextName,
+    const FName& ToggleName,
+    const TCHAR* Text,
+    bool bInitialValue) {
+    UHorizontalBox* Row = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), RowName);
+    if (!Row) {
+        return nullptr;
+    }
+    Parent->AddChild(Row);
+    SetVerticalPadding(Row, FMargin(0.0f, 2.0f));
+    UTextBlock* Label = AddPanelTextV2(Blueprint, Row, TextName, Text, 14);
+    UCheckBox* Toggle = Blueprint->WidgetTree->ConstructWidget<UCheckBox>(UCheckBox::StaticClass(), ToggleName);
+    if (!Label || !Toggle) {
+        return nullptr;
+    }
+    FCheckBoxStyle Style = FCheckBoxStyle::GetDefault();
+    Style.SetCheckBoxType(ESlateCheckBoxType::CheckBox)
+        .SetUncheckedImage(FSlateRoundedBoxBrush(PanelV2Style::SurfaceRaised, 11.0f, FVector2D(42.0f, 22.0f)))
+        .SetUncheckedHoveredImage(FSlateRoundedBoxBrush(PanelV2Style::SurfaceHover, 11.0f, FVector2D(42.0f, 22.0f)))
+        .SetUncheckedPressedImage(FSlateRoundedBoxBrush(PanelV2Style::Border, 11.0f, FVector2D(42.0f, 22.0f)))
+        .SetCheckedImage(FSlateRoundedBoxBrush(PanelV2Style::Accent, 11.0f, FVector2D(42.0f, 22.0f)))
+        .SetCheckedHoveredImage(FSlateRoundedBoxBrush(PanelV2Style::AccentHover, 11.0f, FVector2D(42.0f, 22.0f)))
+        .SetCheckedPressedImage(FSlateRoundedBoxBrush(PanelV2Style::Accent, 11.0f, FVector2D(42.0f, 22.0f)))
+        .SetPadding(FMargin(0.0f));
+    Toggle->bIsVariable = true;
+    Toggle->SetWidgetStyle(Style);
+    Toggle->SetIsChecked(bInitialValue);
+    Row->AddChild(Toggle);
+    SetHorizontalLayout(Label, FMargin(0.0f, 0.0f, 12.0f, 0.0f), ESlateSizeRule::Fill);
+    SetHorizontalLayout(Toggle, FMargin(0.0f), ESlateSizeRule::Automatic, HAlign_Right);
+    return Toggle;
+}
+
+struct FPanelNumericControlV2 {
+    USlider* Slider = nullptr;
+    USpinBox* SpinBox = nullptr;
+};
+
+FPanelNumericControlV2 AddPanelNumericControlV2(
+    UWidgetBlueprint* Blueprint,
+    UVerticalBox* Parent,
+    const FName& LabelName,
+    const FName& RowName,
+    const FName& SliderName,
+    const FName& SpinBoxName,
+    const FName& UnitName,
+    const TCHAR* LabelText,
+    const TCHAR* UnitText,
+    float InitialValue,
+    float Minimum,
+    float Maximum,
+    float Step) {
+    FPanelNumericControlV2 Result;
+    UTextBlock* Label = AddPanelTextV2(Blueprint, Parent, LabelName, LabelText, 13, true);
+    UHorizontalBox* Row = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), RowName);
+    if (!Label || !Row) {
+        return Result;
+    }
+    Parent->AddChild(Row);
+    SetVerticalPadding(Label, FMargin(0.0f, 5.0f, 0.0f, 1.0f));
+    SetVerticalPadding(Row, FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+
+    USlider* Slider = Blueprint->WidgetTree->ConstructWidget<USlider>(USlider::StaticClass(), SliderName);
+    USpinBox* SpinBox = Blueprint->WidgetTree->ConstructWidget<USpinBox>(USpinBox::StaticClass(), SpinBoxName);
+    if (!Slider || !SpinBox) {
+        return Result;
+    }
+    FSliderStyle SliderStyle = FSliderStyle::GetDefault();
+    SliderStyle.SetNormalBarImage(FSlateRoundedBoxBrush(PanelV2Style::Border, 2.0f, FVector2D(8.0f, 4.0f)))
+        .SetHoveredBarImage(FSlateRoundedBoxBrush(PanelV2Style::SurfaceHover, 2.0f, FVector2D(8.0f, 4.0f)))
+        .SetDisabledBarImage(FSlateRoundedBoxBrush(PanelV2Style::Disabled, 2.0f, FVector2D(8.0f, 4.0f)))
+        .SetNormalThumbImage(FSlateRoundedBoxBrush(PanelV2Style::Accent, 8.0f, FVector2D(16.0f, 16.0f)))
+        .SetHoveredThumbImage(FSlateRoundedBoxBrush(PanelV2Style::AccentHover, 9.0f, FVector2D(18.0f, 18.0f)))
+        .SetDisabledThumbImage(FSlateRoundedBoxBrush(PanelV2Style::Disabled, 8.0f, FVector2D(16.0f, 16.0f)))
+        .SetBarThickness(4.0f);
+    Slider->bIsVariable = true;
+    Slider->SetWidgetStyle(SliderStyle);
+    Slider->SetMinValue(Minimum);
+    Slider->SetMaxValue(Maximum);
+    Slider->SetStepSize(Step);
+    Slider->SetValue(InitialValue);
+    Slider->SetIndentHandle(true);
+    Slider->SetLocked(false);
+    Slider->MouseUsesStep = true;
+    Slider->IsFocusable = true;
+
+    FSpinBoxStyle SpinStyle = FSpinBoxStyle::GetDefault();
+    SpinStyle.SetBackgroundBrush(FSlateRoundedBoxBrush(PanelV2Style::SurfaceRaised, 5.0f, FVector2D(72.0f, 32.0f)))
+        .SetActiveBackgroundBrush(FSlateRoundedBoxBrush(PanelV2Style::SurfaceRaised, 5.0f, FVector2D(72.0f, 32.0f)))
+        .SetHoveredBackgroundBrush(FSlateRoundedBoxBrush(PanelV2Style::SurfaceHover, 5.0f, FVector2D(72.0f, 32.0f)))
+        .SetActiveFillBrush(FSlateRoundedBoxBrush(PanelV2Style::Accent, 5.0f, FVector2D(72.0f, 32.0f)))
+        .SetHoveredFillBrush(FSlateRoundedBoxBrush(PanelV2Style::Border, 5.0f, FVector2D(72.0f, 32.0f)))
+        .SetInactiveFillBrush(FSlateRoundedBoxBrush(PanelV2Style::SurfaceRaised, 5.0f, FVector2D(72.0f, 32.0f)))
+        .SetForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetTextPadding(FMargin(8.0f, 5.0f));
+    SpinBox->bIsVariable = true;
+    SpinBox->WidgetStyle = SpinStyle;
+    SpinBox->SetValue(InitialValue);
+    SpinBox->SetMinValue(Minimum);
+    SpinBox->SetMaxValue(Maximum);
+    SpinBox->SetMinSliderValue(Minimum);
+    SpinBox->SetMaxSliderValue(Maximum);
+    SpinBox->SetDelta(Step);
+    SpinBox->SetMinFractionalDigits(0);
+    SpinBox->SetMaxFractionalDigits(0);
+    SpinBox->SetAlwaysUsesDeltaSnap(true);
+    SpinBox->bEnableSlider = false;
+    SpinBox->MinDesiredWidth = 72.0f;
+    SpinBox->ForegroundColor = FSlateColor(PanelV2Style::PrimaryText);
+    FSlateFontInfo SpinFont = SpinBox->Font;
+    SpinFont.Size = 13;
+    SpinBox->Font = SpinFont;
+
+    Row->AddChild(Slider);
+    Row->AddChild(SpinBox);
+    SetHorizontalLayout(Slider, FMargin(0.0f, 0.0f, 12.0f, 0.0f), ESlateSizeRule::Fill);
+    SetHorizontalLayout(SpinBox, FMargin(0.0f), ESlateSizeRule::Automatic, HAlign_Right);
+    if (UnitText && UnitText[0] != '\0') {
+        UTextBlock* Unit = AddPanelTextV2(Blueprint, Row, UnitName, UnitText, 13, true);
+        if (!Unit) {
+            return Result;
+        }
+        SetHorizontalLayout(Unit, FMargin(5.0f, 0.0f, 0.0f, 0.0f), ESlateSizeRule::Automatic, HAlign_Right);
+    }
+    Result.Slider = Slider;
+    Result.SpinBox = SpinBox;
+    return Result;
 }
 
 bool AppendExternalAssignment(
@@ -1465,6 +1740,140 @@ bool BuildPanelInitializeControls(
     return true;
 }
 
+bool BuildPanelNumericEventV2(
+    UWidgetBlueprint* Blueprint,
+    const FPanelNumericControlV2& Control,
+    UClass* ModActorClass,
+    const FName& VariableName,
+    int32 Y) {
+    UEdGraph* Graph = EventGraph(Blueprint);
+    UK2Node_ComponentBoundEvent* SliderEvent = AddSliderValueChangedEvent(Blueprint, Control.Slider, -1500, Y);
+    UK2Node_VariableGet* SliderBridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1240, Y + 160);
+    UK2Node_VariableGet* SpinBoxGet = AddVariableGet(Graph, Control.SpinBox->GetFName(), -1240, Y + 280);
+    UK2Node_CallFunction* SyncSpinBox = AddStaticCall(Graph, USpinBox::StaticClass(), TEXT("SetValue"), -980, Y);
+    UK2Node_CallFunction* SliderRound = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Round"), -980, Y + 160);
+    UK2Node_VariableSet* SliderStore = AddExternalVariableSet(Graph, VariableName, ModActorClass, -700, Y);
+    UEdGraphNode* SliderExecTail = SliderStore;
+    if (!Graph || !SliderEvent || !SliderBridgeGet || !SpinBoxGet || !SyncSpinBox || !SliderRound || !SliderStore
+        || !Link(SliderEvent, UEdGraphSchema_K2::PN_Then, SyncSpinBox, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SliderEvent, TEXT("Value"), SyncSpinBox, TEXT("NewValue"))
+        || !Link(SpinBoxGet, Control.SpinBox->GetFName(), SyncSpinBox, UEdGraphSchema_K2::PN_Self)
+        || !Link(SliderEvent, TEXT("Value"), SliderRound, TEXT("A"))
+        || !Link(SyncSpinBox, UEdGraphSchema_K2::PN_Then, SliderStore, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SliderRound, UEdGraphSchema_K2::PN_ReturnValue, SliderStore, VariableName)
+        || !Link(SliderBridgeGet, PanelBridgeVariableName, SliderStore, UEdGraphSchema_K2::PN_Self)
+        || !AppendRevisionIncrement(Graph, ModActorClass, SliderBridgeGet, SliderExecTail, -420, Y)) {
+        return false;
+    }
+
+    UK2Node_ComponentBoundEvent* SpinEvent = AddSpinBoxValueChangedEvent(Blueprint, Control.SpinBox, -1500, Y + 420);
+    UK2Node_VariableGet* SpinBridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1240, Y + 580);
+    UK2Node_VariableGet* SliderGet = AddVariableGet(Graph, Control.Slider->GetFName(), -1240, Y + 700);
+    UK2Node_CallFunction* SyncSlider = AddStaticCall(Graph, USlider::StaticClass(), TEXT("SetValue"), -980, Y + 420);
+    UK2Node_CallFunction* SpinRound = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Round"), -980, Y + 580);
+    UK2Node_VariableSet* SpinStore = AddExternalVariableSet(Graph, VariableName, ModActorClass, -700, Y + 420);
+    UEdGraphNode* SpinExecTail = SpinStore;
+    if (!SpinEvent || !SpinBridgeGet || !SliderGet || !SyncSlider || !SpinRound || !SpinStore
+        || !Link(SpinEvent, UEdGraphSchema_K2::PN_Then, SyncSlider, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SpinEvent, TEXT("InValue"), SyncSlider, TEXT("InValue"))
+        || !Link(SliderGet, Control.Slider->GetFName(), SyncSlider, UEdGraphSchema_K2::PN_Self)
+        || !Link(SpinEvent, TEXT("InValue"), SpinRound, TEXT("A"))
+        || !Link(SyncSlider, UEdGraphSchema_K2::PN_Then, SpinStore, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SpinRound, UEdGraphSchema_K2::PN_ReturnValue, SpinStore, VariableName)
+        || !Link(SpinBridgeGet, PanelBridgeVariableName, SpinStore, UEdGraphSchema_K2::PN_Self)
+        || !AppendRevisionIncrement(Graph, ModActorClass, SpinBridgeGet, SpinExecTail, -420, Y + 420)) {
+        return false;
+    }
+    return true;
+}
+
+bool BuildPanelInitializeControlsV2(
+    UWidgetBlueprint* Blueprint,
+    const FPanelNumericControlV2& DisplayLimit,
+    const FPanelNumericControlV2& LevelMin,
+    const FPanelNumericControlV2& LevelMax,
+    const FPanelNumericControlV2& DistanceMax,
+    UCheckBox* RuntimeEnabled,
+    UCheckBox* ShowTopGuideLine,
+    UCheckBox* ShowLevel,
+    UCheckBox* ShowDistance,
+    int32 Y,
+    UK2Node_CustomEvent* ExistingEvent = nullptr) {
+    UEdGraph* Graph = EventGraph(Blueprint);
+    UK2Node_CustomEvent* Event = ExistingEvent;
+    if (!Event) {
+        Event = AddCustomEvent(Blueprint, Graph, *PanelInitializeControlsV2EventName.ToString(), -1600, Y, {
+            TPair<FName, FEdGraphPinType>(FName("DisplayTargetLimit"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LevelMin"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LevelMax"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("DistanceMax"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("RuntimeEnabled"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowTopGuideLine"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin())
+        });
+    }
+    if (!Graph || !Event) {
+        return false;
+    }
+
+    struct FNumericInitializerV2 {
+        FPanelNumericControlV2 Control;
+        FName InputName;
+    };
+    const TArray<FNumericInitializerV2> NumericInitializers = {
+        {DisplayLimit, TEXT("DisplayTargetLimit")},
+        {LevelMin, TEXT("LevelMin")},
+        {LevelMax, TEXT("LevelMax")},
+        {DistanceMax, TEXT("DistanceMax")},
+    };
+    UEdGraphNode* ExecTail = Event;
+    int32 X = -1320;
+    for (const FNumericInitializerV2& Initializer : NumericInitializers) {
+        UK2Node_VariableGet* SliderGet = AddVariableGet(Graph, Initializer.Control.Slider->GetFName(), X, Y + 160);
+        UK2Node_VariableGet* SpinGet = AddVariableGet(Graph, Initializer.Control.SpinBox->GetFName(), X, Y + 280);
+        UK2Node_CallFunction* ToFloat = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Conv_IntToFloat"), X, Y + 400);
+        UK2Node_CallFunction* SetSliderValue = AddStaticCall(Graph, USlider::StaticClass(), TEXT("SetValue"), X + 260, Y);
+        UK2Node_CallFunction* SetSpinValue = AddStaticCall(Graph, USpinBox::StaticClass(), TEXT("SetValue"), X + 520, Y);
+        if (!SliderGet || !SpinGet || !ToFloat || !SetSliderValue || !SetSpinValue
+            || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetSliderValue, UEdGraphSchema_K2::PN_Execute)
+            || !Link(SliderGet, Initializer.Control.Slider->GetFName(), SetSliderValue, UEdGraphSchema_K2::PN_Self)
+            || !Link(Event, Initializer.InputName, ToFloat, TEXT("InInt"))
+            || !Link(ToFloat, UEdGraphSchema_K2::PN_ReturnValue, SetSliderValue, TEXT("InValue"))
+            || !Link(SetSliderValue, UEdGraphSchema_K2::PN_Then, SetSpinValue, UEdGraphSchema_K2::PN_Execute)
+            || !Link(SpinGet, Initializer.Control.SpinBox->GetFName(), SetSpinValue, UEdGraphSchema_K2::PN_Self)
+            || !Link(ToFloat, UEdGraphSchema_K2::PN_ReturnValue, SetSpinValue, TEXT("NewValue"))) {
+            return false;
+        }
+        ExecTail = SetSpinValue;
+        X += 820;
+    }
+
+    struct FBooleanInitializerV2 {
+        UCheckBox* CheckBox;
+        FName InputName;
+    };
+    const TArray<FBooleanInitializerV2> BooleanInitializers = {
+        {RuntimeEnabled, TEXT("RuntimeEnabled")},
+        {ShowTopGuideLine, TEXT("ShowTopGuideLine")},
+        {ShowLevel, TEXT("ShowLevel")},
+        {ShowDistance, TEXT("ShowDistance")},
+    };
+    for (const FBooleanInitializerV2& Initializer : BooleanInitializers) {
+        UK2Node_VariableGet* CheckBoxGet = AddVariableGet(Graph, Initializer.CheckBox->GetFName(), X, Y + 160);
+        UK2Node_CallFunction* SetChecked = AddStaticCall(Graph, UCheckBox::StaticClass(), TEXT("SetIsChecked"), X + 260, Y);
+        if (!CheckBoxGet || !SetChecked
+            || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetChecked, UEdGraphSchema_K2::PN_Execute)
+            || !Link(CheckBoxGet, Initializer.CheckBox->GetFName(), SetChecked, UEdGraphSchema_K2::PN_Self)
+            || !Link(Event, Initializer.InputName, SetChecked, TEXT("InIsChecked"))) {
+            return false;
+        }
+        ExecTail = SetChecked;
+        X += 560;
+    }
+    return true;
+}
+
 bool BuildPanelVisibilityEvent(
     UWidgetBlueprint* Blueprint,
     UButton* Button,
@@ -1522,7 +1931,8 @@ bool BuildPanelLanguageEvent(
     return AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, ExecTail, X, Y);
 }
 
-bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
+// __DEPRECATED_20260717__ [reason: replaced by the compact slider-and-toggle panel; retained for rollback]
+bool BuildPanelDeprecated20260717(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildPanel begin blueprint=%s"), *GetNameSafe(Blueprint));
     if (!Blueprint || !Blueprint->WidgetTree || !ModActorClass) {
         return false;
@@ -1741,6 +2151,302 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     return Blueprint->Status != BS_Error;
 }
 
+bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
+    UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildPanelV2 begin blueprint=%s"), *GetNameSafe(Blueprint));
+    if (!Blueprint || !Blueprint->WidgetTree || !ModActorClass) {
+        return false;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    if (!Graph) {
+        return false;
+    }
+    ClearGraph(Graph);
+    if (!EnsureMemberVariable(Blueprint, PanelBridgeVariableName, ObjectPin(ModActorClass))) {
+        return false;
+    }
+
+    UCanvasPanel* Canvas = Blueprint->WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("ESP_PanelCanvas"));
+    USizeBox* Size = Blueprint->WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("ESP_PanelSize"));
+    UBorder* Border = Blueprint->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ESP_PanelBorder"));
+    UScrollBox* Scroll = Blueprint->WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("ESP_PanelScroll"));
+    UVerticalBox* Content = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ESP_PanelContent"));
+    if (!Canvas || !Size || !Border || !Scroll || !Content) {
+        return false;
+    }
+    Size->SetWidthOverride(500.0f);
+    Size->SetHeightOverride(680.0f);
+    Border->SetBrush(FSlateRoundedBoxBrush(PanelV2Style::Surface, 7.0f, PanelV2Style::Border, 1.0f));
+    Border->SetBrushColor(FLinearColor::White);
+    Border->SetPadding(FMargin(18.0f, 16.0f, 12.0f, 16.0f));
+    Scroll->SetScrollBarVisibility(ESlateVisibility::Visible);
+    Scroll->SetScrollbarThickness(FVector2D(3.0f, 3.0f));
+    Scroll->SetAlwaysShowScrollbar(false);
+    Scroll->SetAnimateWheelScrolling(true);
+    Scroll->SetConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible);
+    Scroll->AddChild(Content);
+    Border->AddChild(Scroll);
+    Size->AddChild(Border);
+    UCanvasPanelSlot* PanelSlot = Canvas->AddChildToCanvas(Size);
+    PanelSlot->SetPosition(FVector2D(24.0f, 24.0f));
+    PanelSlot->SetSize(FVector2D(500.0f, 680.0f));
+    Blueprint->WidgetTree->RootWidget = Canvas;
+
+    UTextBlock* Title = AddPanelTextV2(Blueprint, Content, TEXT("ESP_TitleText"), TEXT("帕鲁资源 ESP"), 22);
+    UCheckBox* RuntimeEnabled = AddPanelToggleV2(
+        Blueprint, Content, TEXT("ESP_RuntimeRow"), TEXT("ESP_RuntimeText"), TEXT("ESP_RuntimeToggle"), TEXT("启用 Mod"), true);
+
+    UTextBlock* StyleHeading = AddPanelTextV2(Blueprint, Content, TEXT("ESP_StyleHeadingText"), TEXT("显示"), 15);
+    UCheckBox* TopGuide = AddPanelToggleV2(
+        Blueprint, Content, TEXT("ESP_TopGuideRow"), TEXT("ESP_TopGuideText"), TEXT("ESP_TopGuideToggle"), TEXT("顶部引导线"), true);
+    UCheckBox* ShowLevel = AddPanelToggleV2(
+        Blueprint, Content, TEXT("ESP_ShowLevelRow"), TEXT("ESP_ShowLevelText"), TEXT("ESP_ShowLevelToggle"), TEXT("等级"), true);
+    UCheckBox* ShowDistance = AddPanelToggleV2(
+        Blueprint, Content, TEXT("ESP_ShowDistanceRow"), TEXT("ESP_ShowDistanceText"), TEXT("ESP_ShowDistanceToggle"), TEXT("距离"), true);
+
+    UTextBlock* FilterHeading = AddPanelTextV2(Blueprint, Content, TEXT("ESP_FilterHeadingText"), TEXT("筛选与数量"), 15);
+    const FPanelNumericControlV2 DisplayLimit = AddPanelNumericControlV2(
+        Blueprint, Content,
+        TEXT("ESP_DisplayTargetLimitLabelText"), TEXT("ESP_DisplayTargetLimitRow"),
+        TEXT("ESP_DisplayTargetLimitSlider"), TEXT("ESP_DisplayTargetLimitInput"), TEXT("ESP_DisplayTargetLimitUnitText"),
+        TEXT("目标显示上限"), TEXT(""), 64.0f, 1.0f, 100.0f, 1.0f);
+    UTextBlock* LevelHeading = AddPanelTextV2(Blueprint, Content, TEXT("ESP_LevelHeadingText"), TEXT("等级范围"), 13, true);
+    const FPanelNumericControlV2 LevelMin = AddPanelNumericControlV2(
+        Blueprint, Content,
+        TEXT("ESP_LevelMinLabelText"), TEXT("ESP_LevelMinRow"),
+        TEXT("ESP_LevelMinSlider"), TEXT("ESP_LevelMinInput"), TEXT("ESP_LevelMinUnitText"),
+        TEXT("最低等级（0 = 不限）"), TEXT(""), 0.0f, 0.0f, 100.0f, 1.0f);
+    const FPanelNumericControlV2 LevelMax = AddPanelNumericControlV2(
+        Blueprint, Content,
+        TEXT("ESP_LevelMaxLabelText"), TEXT("ESP_LevelMaxRow"),
+        TEXT("ESP_LevelMaxSlider"), TEXT("ESP_LevelMaxInput"), TEXT("ESP_LevelMaxUnitText"),
+        TEXT("最高等级（0 = 不限）"), TEXT(""), 0.0f, 0.0f, 100.0f, 1.0f);
+    const FPanelNumericControlV2 DistanceMax = AddPanelNumericControlV2(
+        Blueprint, Content,
+        TEXT("ESP_DistanceMaxLabelText"), TEXT("ESP_DistanceMaxRow"),
+        TEXT("ESP_DistanceMaxSlider"), TEXT("ESP_DistanceMaxInput"), TEXT("ESP_DistanceMaxUnitText"),
+        TEXT("最大距离"), TEXT("m"), 330.0f, 0.0f, 330.0f, 10.0f);
+
+    UTextBlock* LanguageHeading = AddPanelTextV2(Blueprint, Content, TEXT("ESP_LanguageHeadingText"), TEXT("Language"), 13, true);
+    UHorizontalBox* LanguageRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_LanguageRow"));
+    if (LanguageRow) {
+        Content->AddChild(LanguageRow);
+        SetVerticalPadding(LanguageRow, FMargin(0.0f, 2.0f, 0.0f, 6.0f));
+    }
+    UButton* Chinese = LanguageRow
+        ? AddPanelButtonV2(Blueprint, LanguageRow, TEXT("ESP_ChineseButton"), TEXT("ESP_ChineseText"), TEXT("中文"))
+        : nullptr;
+    UButton* English = LanguageRow
+        ? AddPanelButtonV2(Blueprint, LanguageRow, TEXT("ESP_EnglishButton"), TEXT("ESP_EnglishText"), TEXT("English"))
+        : nullptr;
+
+    UButton* AdvancedExpand = AddPanelButtonV2(
+        Blueprint, Content, TEXT("ESP_AdvancedExpandButton"), TEXT("ESP_AdvancedExpandText"), TEXT("高级诊断"));
+    UVerticalBox* Advanced = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ESP_AdvancedBox"));
+    if (Advanced) {
+        Advanced->bIsVariable = true;
+        Advanced->SetVisibility(ESlateVisibility::Collapsed);
+        Content->AddChild(Advanced);
+        SetVerticalPadding(Advanced, FMargin(0.0f, 4.0f, 0.0f, 10.0f));
+    }
+    UTextBlock* ModeHeading = Advanced
+        ? AddPanelTextV2(Blueprint, Advanced, TEXT("ESP_ModeHeadingText"), TEXT("实验模式"), 15)
+        : nullptr;
+    UTextBlock* ModeStatus = Advanced
+        ? AddPanelTextV2(Blueprint, Advanced, TEXT("ESP_ModeStatusText"), TEXT("当前模式：安全快照"), 13, true)
+        : nullptr;
+    UHorizontalBox* ModeRowA = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_ModeRowA"));
+    UHorizontalBox* ModeRowB = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_ModeRowB"));
+    if (Advanced && ModeRowA && ModeRowB) {
+        Advanced->AddChild(ModeRowA);
+        Advanced->AddChild(ModeRowB);
+        SetVerticalPadding(ModeRowA, FMargin(0.0f, 4.0f, 0.0f, 3.0f));
+        SetVerticalPadding(ModeRowB, FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+    }
+    UButton* ModeOff = ModeRowA
+        ? AddPanelButtonV2(Blueprint, ModeRowA, TEXT("ESP_ModeOffButton"), TEXT("ESP_ModeOffText"), TEXT("关闭"))
+        : nullptr;
+    UButton* ModeSnapshot = ModeRowA
+        ? AddPanelButtonV2(Blueprint, ModeRowA, TEXT("ESP_ModeSnapshotButton"), TEXT("ESP_ModeSnapshotText"), TEXT("单次快照"))
+        : nullptr;
+    UButton* ModeChunked = ModeRowB
+        ? AddPanelButtonV2(Blueprint, ModeRowB, TEXT("ESP_ModeChunkedButton"), TEXT("ESP_ModeChunkedText"), TEXT("安全快照"))
+        : nullptr;
+    UButton* ModeEvent = ModeRowB
+        ? AddPanelButtonV2(Blueprint, ModeRowB, TEXT("ESP_ModeEventButton"), TEXT("ESP_ModeEventText"), TEXT("事件优先"))
+        : nullptr;
+    UTextBlock* CaptureStatus = Advanced
+        ? AddPanelTextV2(Blueprint, Advanced, TEXT("ESP_CaptureStatusText"), TEXT("性能采集：已停止"), 13, true)
+        : nullptr;
+    UHorizontalBox* CaptureRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_CaptureRow"));
+    if (Advanced && CaptureRow) {
+        Advanced->AddChild(CaptureRow);
+        SetVerticalPadding(CaptureRow, FMargin(0.0f, 4.0f, 0.0f, 6.0f));
+    }
+    UButton* CaptureStart = CaptureRow
+        ? AddPanelButtonV2(Blueprint, CaptureRow, TEXT("ESP_CaptureStartButton"), TEXT("ESP_CaptureStartText"), TEXT("开始采集"), true)
+        : nullptr;
+    UButton* CaptureStop = CaptureRow
+        ? AddPanelButtonV2(Blueprint, CaptureRow, TEXT("ESP_CaptureStopButton"), TEXT("ESP_CaptureStopText"), TEXT("停止采集"))
+        : nullptr;
+    UButton* AdvancedCollapse = Advanced
+        ? AddPanelButtonV2(Blueprint, Advanced, TEXT("ESP_AdvancedCollapseButton"), TEXT("ESP_AdvancedCollapseText"), TEXT("收起"))
+        : nullptr;
+
+    if (!Title || !RuntimeEnabled || !StyleHeading || !TopGuide || !ShowLevel || !ShowDistance
+        || !FilterHeading || !DisplayLimit.Slider || !DisplayLimit.SpinBox || !LevelHeading
+        || !LevelMin.Slider || !LevelMin.SpinBox || !LevelMax.Slider || !LevelMax.SpinBox
+        || !DistanceMax.Slider || !DistanceMax.SpinBox || !LanguageHeading || !LanguageRow || !Chinese || !English
+        || !AdvancedExpand || !Advanced || !ModeHeading || !ModeStatus || !ModeRowA || !ModeRowB
+        || !ModeOff || !ModeSnapshot || !ModeChunked || !ModeEvent || !CaptureStatus || !CaptureRow
+        || !CaptureStart || !CaptureStop || !AdvancedCollapse) {
+        return false;
+    }
+    SetVerticalPadding(Title, FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+    SetVerticalPadding(StyleHeading, FMargin(0.0f, 12.0f, 0.0f, 4.0f));
+    SetVerticalPadding(FilterHeading, FMargin(0.0f, 12.0f, 0.0f, 2.0f));
+    SetVerticalPadding(LevelHeading, FMargin(0.0f, 6.0f, 0.0f, 0.0f));
+    SetVerticalPadding(LanguageHeading, FMargin(0.0f, 8.0f, 0.0f, 0.0f));
+
+    // __DEPRECATED_20260717__ [reason: signature-only bridge keeps a V1 ModActor compilable
+    // during the same generation pass; it has no execution body or distance control]
+    UK2Node_CustomEvent* LegacyInitializeCompatibility = AddCustomEvent(
+        Blueprint,
+        Graph,
+        *PanelInitializeControlsEventName.ToString(),
+        -1900,
+        -2200,
+        {
+            TPair<FName, FEdGraphPinType>(FName("DisplayTargetLimit"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LevelMin"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LevelMax"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("DistanceMin"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("DistanceMax"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin())
+        }
+    );
+    UK2Node_CustomEvent* PanelInitializeV2 = AddCustomEvent(
+        Blueprint,
+        Graph,
+        *PanelInitializeControlsV2EventName.ToString(),
+        -1900,
+        -1800,
+        {
+            TPair<FName, FEdGraphPinType>(FName("DisplayTargetLimit"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LevelMin"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LevelMax"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("DistanceMax"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("RuntimeEnabled"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowTopGuideLine"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin())
+        }
+    );
+    if (!LegacyInitializeCompatibility || !PanelInitializeV2) {
+        return false;
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+    if (Blueprint->Status == BS_Error) {
+        return false;
+    }
+
+    // __DEPRECATED_20260717__ [reason: moved before the first compile so dependent assets never see a missing function]
+#if 0
+    UK2Node_CustomEvent* LegacyInitializeCompatibilityAfterCompile = AddCustomEvent(
+        Blueprint,
+        Graph,
+        *PanelInitializeControlsEventName.ToString(),
+        -1900,
+        -2200,
+        {
+            TPair<FName, FEdGraphPinType>(FName("DisplayTargetLimit"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LevelMin"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("LevelMax"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("DistanceMin"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("DistanceMax"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin())
+        }
+    );
+    if (!LegacyInitializeCompatibilityAfterCompile) {
+        return false;
+    }
+#endif
+
+    int32 Y = -1600;
+    if (!BuildPanelBooleanEvent(Blueprint, RuntimeEnabled, ModActorClass, RuntimeEnabledVariableName, Y)
+        || !BuildPanelBooleanEvent(Blueprint, TopGuide, ModActorClass, ShowTopGuideLineVariableName, Y + 360)
+        || !BuildPanelBooleanEvent(Blueprint, ShowLevel, ModActorClass, ShowLevelVariableName, Y + 720)
+        || !BuildPanelBooleanEvent(Blueprint, ShowDistance, ModActorClass, ShowDistanceVariableName, Y + 1080)
+        || !BuildPanelNumericEventV2(Blueprint, DisplayLimit, ModActorClass, DisplayTargetLimitVariableName, Y + 1440)
+        || !BuildPanelNumericEventV2(Blueprint, LevelMin, ModActorClass, LevelMinVariableName, Y + 2400)
+        || !BuildPanelNumericEventV2(Blueprint, LevelMax, ModActorClass, LevelMaxVariableName, Y + 3360)
+        || !BuildPanelNumericEventV2(Blueprint, DistanceMax, ModActorClass, DistanceMaxVariableName, Y + 4320)) {
+        return false;
+    }
+    Y += 5400;
+    auto Control = [&](UButton* Button, const TArray<FPanelControlAssignment>& Assignments, const FName& StatusName, const TCHAR* Status) {
+        const bool bOk = BuildPanelControlEvent(Blueprint, Button, ModActorClass, Assignments, StatusName, Status, Y);
+        Y += 360;
+        return bOk;
+    };
+    if (!Control(ModeOff, {{RuntimeEnabledVariableName, TEXT("true")}, {ProfileIdVariableName, TEXT("0")}}, TEXT("ESP_ModeStatusText"), TEXT("当前模式：关闭"))
+        || !Control(ModeSnapshot, {{RuntimeEnabledVariableName, TEXT("true")}, {ProfileIdVariableName, TEXT("1")}}, TEXT("ESP_ModeStatusText"), TEXT("当前模式：单次快照"))
+        || !Control(ModeChunked, {{RuntimeEnabledVariableName, TEXT("true")}, {ProfileIdVariableName, TEXT("2")}}, TEXT("ESP_ModeStatusText"), TEXT("当前模式：安全快照"))
+        || !Control(ModeEvent, {{RuntimeEnabledVariableName, TEXT("true")}, {ProfileIdVariableName, TEXT("3")}}, TEXT("ESP_ModeStatusText"), TEXT("当前模式：事件优先"))
+        || !Control(CaptureStart, {{CaptureRequestedVariableName, TEXT("true")}}, TEXT("ESP_CaptureStatusText"), TEXT("性能采集：采集中"))
+        || !Control(CaptureStop, {{CaptureRequestedVariableName, TEXT("false")}}, TEXT("ESP_CaptureStatusText"), TEXT("性能采集：已停止"))) {
+        return false;
+    }
+
+    if (!BuildPanelInitializeControlsV2(
+            Blueprint, DisplayLimit, LevelMin, LevelMax, DistanceMax,
+            RuntimeEnabled, TopGuide, ShowLevel, ShowDistance, Y, PanelInitializeV2)) {
+        return false;
+    }
+    Y += 900;
+    if (!BuildPanelVisibilityEvent(Blueprint, AdvancedExpand, TEXT("ESP_AdvancedBox"), TEXT("Visible"), Y)
+        || !BuildPanelVisibilityEvent(Blueprint, AdvancedCollapse, TEXT("ESP_AdvancedBox"), TEXT("Collapsed"), Y + 360)) {
+        return false;
+    }
+    Y += 720;
+
+    const TArray<FPanelTranslation> Translations = {
+        {TEXT("ESP_TitleText"), TEXT("帕鲁资源 ESP"), TEXT("Pal & Resource ESP")},
+        {TEXT("ESP_RuntimeText"), TEXT("启用 Mod"), TEXT("Enable Mod")},
+        {TEXT("ESP_StyleHeadingText"), TEXT("显示"), TEXT("Display")},
+        {TEXT("ESP_TopGuideText"), TEXT("顶部引导线"), TEXT("Top guide lines")},
+        {TEXT("ESP_ShowLevelText"), TEXT("等级"), TEXT("Level")},
+        {TEXT("ESP_ShowDistanceText"), TEXT("距离"), TEXT("Distance")},
+        {TEXT("ESP_FilterHeadingText"), TEXT("筛选与数量"), TEXT("Filters & count")},
+        {TEXT("ESP_DisplayTargetLimitLabelText"), TEXT("目标显示上限"), TEXT("Visible target limit")},
+        {TEXT("ESP_LevelHeadingText"), TEXT("等级范围"), TEXT("Level range")},
+        {TEXT("ESP_LevelMinLabelText"), TEXT("最低等级（0 = 不限）"), TEXT("Minimum level (0 = any)")},
+        {TEXT("ESP_LevelMaxLabelText"), TEXT("最高等级（0 = 不限）"), TEXT("Maximum level (0 = any)")},
+        {TEXT("ESP_DistanceMaxLabelText"), TEXT("最大距离"), TEXT("Maximum distance")},
+        {TEXT("ESP_AdvancedExpandText"), TEXT("高级诊断"), TEXT("Advanced diagnostics")},
+        {TEXT("ESP_ModeHeadingText"), TEXT("实验模式"), TEXT("Experiment mode")},
+        {TEXT("ESP_ModeOffText"), TEXT("关闭"), TEXT("Off")},
+        {TEXT("ESP_ModeSnapshotText"), TEXT("单次快照"), TEXT("Snapshot once")},
+        {TEXT("ESP_ModeChunkedText"), TEXT("安全快照"), TEXT("Safe snapshot")},
+        {TEXT("ESP_ModeEventText"), TEXT("事件优先"), TEXT("Event first")},
+        {TEXT("ESP_CaptureStartText"), TEXT("开始采集"), TEXT("Start capture")},
+        {TEXT("ESP_CaptureStopText"), TEXT("停止采集"), TEXT("Stop capture")},
+        {TEXT("ESP_AdvancedCollapseText"), TEXT("收起"), TEXT("Collapse")},
+    };
+    if (!BuildPanelLanguageEvent(Blueprint, Chinese, ModActorClass, 0, Translations, Y)
+        || !BuildPanelLanguageEvent(Blueprint, English, ModActorClass, 1, Translations, Y + 720)) {
+        return false;
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+    UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildPanelV2 compile status=%d nodes=%d"), static_cast<int32>(Blueprint->Status), Graph->Nodes.Num());
+    return Blueprint->Status != BS_Error;
+}
+
 bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* OverlayClass, UClass* PanelClass) {
     UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildModActor begin blueprint=%s pal_class=%s overlay_class=%s panel_class=%s"), *GetNameSafe(Blueprint), *GetNameSafe(PalMonsterClass), *GetNameSafe(OverlayClass), *GetNameSafe(PanelClass));
     UEdGraph* Graph = EventGraph(Blueprint);
@@ -1840,14 +2546,19 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StorePanel = AddVariableSet(Graph, PanelVariableName, 980, 1760);
     UK2Node_VariableSet* SetPanelBridge = AddExternalVariableSet(Graph, PanelBridgeVariableName, PanelClass, 1260, 1760);
     UK2Node_Self* ActorSelf = AddSelfNode(Graph, 980, 1960);
-    UK2Node_CallFunction* InitializePanel = AddStaticCall(Graph, PanelClass, *PanelInitializeControlsEventName.ToString(), 1540, 1760);
+    // __DEPRECATED_20260717__ [reason: V2 initializes sliders and all visible toggle states]
+    // UK2Node_CallFunction* InitializePanel = AddStaticCall(Graph, PanelClass, *PanelInitializeControlsEventName.ToString(), 1540, 1760);
+    UK2Node_CallFunction* InitializePanel = AddStaticCall(Graph, PanelClass, *PanelInitializeControlsV2EventName.ToString(), 1540, 1760);
     UK2Node_VariableGet* PanelDisplayLimit = AddVariableGet(Graph, DisplayTargetLimitVariableName, 1260, 2080);
     UK2Node_VariableGet* PanelLevelMin = AddVariableGet(Graph, LevelMinVariableName, 1540, 2080);
     UK2Node_VariableGet* PanelLevelMax = AddVariableGet(Graph, LevelMaxVariableName, 1820, 2080);
-    UK2Node_VariableGet* PanelDistanceMin = AddVariableGet(Graph, DistanceMinVariableName, 2100, 2080);
+    // __DEPRECATED_20260717__ [reason: minimum distance is no longer a user-facing or runtime filter]
+    // UK2Node_VariableGet* PanelDistanceMin = AddVariableGet(Graph, DistanceMinVariableName, 2100, 2080);
     UK2Node_VariableGet* PanelDistanceMax = AddVariableGet(Graph, DistanceMaxVariableName, 2380, 2080);
     UK2Node_VariableGet* PanelShowLevel = AddVariableGet(Graph, ShowLevelVariableName, 2660, 2080);
     UK2Node_VariableGet* PanelShowDistance = AddVariableGet(Graph, ShowDistanceVariableName, 2940, 2080);
+    UK2Node_VariableGet* PanelRuntimeEnabled = AddVariableGet(Graph, RuntimeEnabledVariableName, 3220, 2080);
+    UK2Node_VariableGet* PanelTopGuide = AddVariableGet(Graph, ShowTopGuideLineVariableName, 3500, 2080);
     UK2Node_CallFunction* AddPanelToViewport = AddStaticCall(Graph, UUserWidget::StaticClass(), TEXT("AddToViewport"), 2100, 1760);
     UK2Node_VariableSet* ShowCursor = AddExternalVariableSet(Graph, TEXT("bShowMouseCursor"), APlayerController::StaticClass(), 2380, 1760);
     UK2Node_CallFunction* UiOnly = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("SetInputMode_UIOnlyEx"), 2660, 1760);
@@ -1855,7 +2566,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     if (!PanelGet || !PanelValid || !PanelBranch || !RemovePanel || !ClearPanel || !CloseController || !CloseWorldContext
         || !HideCursor || !GameOnly || !OpenController || !OpenWorldContext || !CreatePanel || !CastPanel || !StorePanel
         || !SetPanelBridge || !ActorSelf || !InitializePanel || !PanelDisplayLimit || !PanelLevelMin
-        || !PanelLevelMax || !PanelDistanceMin || !PanelDistanceMax || !PanelShowLevel || !PanelShowDistance
+        || !PanelLevelMax || !PanelDistanceMax || !PanelShowLevel || !PanelShowDistance
+        || !PanelRuntimeEnabled || !PanelTopGuide
         || !AddPanelToViewport || !ShowCursor || !UiOnly
         || !SetClassPin(CreatePanel, TEXT("WidgetType"), PanelClass)
         || !SetPinDefault(CloseController, TEXT("PlayerIndex"), TEXT("0"))
@@ -1891,8 +2603,11 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(PanelDisplayLimit, DisplayTargetLimitVariableName, InitializePanel, TEXT("DisplayTargetLimit"))
         || !Link(PanelLevelMin, LevelMinVariableName, InitializePanel, TEXT("LevelMin"))
         || !Link(PanelLevelMax, LevelMaxVariableName, InitializePanel, TEXT("LevelMax"))
-        || !Link(PanelDistanceMin, DistanceMinVariableName, InitializePanel, TEXT("DistanceMin"))
+        // __DEPRECATED_20260717__ [reason: minimum distance is no longer passed to the V2 panel]
+        // || !Link(PanelDistanceMin, DistanceMinVariableName, InitializePanel, TEXT("DistanceMin"))
         || !Link(PanelDistanceMax, DistanceMaxVariableName, InitializePanel, TEXT("DistanceMax"))
+        || !Link(PanelRuntimeEnabled, RuntimeEnabledVariableName, InitializePanel, TEXT("RuntimeEnabled"))
+        || !Link(PanelTopGuide, ShowTopGuideLineVariableName, InitializePanel, TEXT("ShowTopGuideLine"))
         || !Link(PanelShowLevel, ShowLevelVariableName, InitializePanel, TEXT("ShowLevel"))
         || !Link(PanelShowDistance, ShowDistanceVariableName, InitializePanel, TEXT("ShowDistance"))
         || !Link(InitializePanel, UEdGraphSchema_K2::PN_Then, AddPanelToViewport, UEdGraphSchema_K2::PN_Execute)

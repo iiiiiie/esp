@@ -183,8 +183,9 @@ local bridge_actor = {
     ESP_CaptureRequested = false,
     ESP_LevelMin = 0,
     ESP_LevelMax = 0,
-    ESP_DistanceMin = 0,
-    ESP_DistanceMax = 0,
+    -- __DEPRECATED_20260717__ Legacy property remains only to prove the runtime ignores it.
+    ESP_DistanceMin = 999,
+    ESP_DistanceMax = 330,
     ESP_ShowTopGuideLine = true,
     ESP_ShowLevel = true,
     ESP_ShowDistance = true,
@@ -314,7 +315,8 @@ bridge_actor.ESP_RuntimeEnabled = true
 bridge_actor.ESP_ProfileId = 3
 bridge_actor.ESP_LevelMin = 3
 bridge_actor.ESP_LevelMax = 4
-bridge_actor.ESP_DistanceMin = 0
+-- __DEPRECATED_20260717__ A nonzero legacy minimum proves it no longer affects filtering.
+bridge_actor.ESP_DistanceMin = 400
 bridge_actor.ESP_DistanceMax = 500
 bridge_actor.ESP_ControlRevision = 41
 reconcile_loop()
@@ -322,7 +324,7 @@ local filtered_result_found = false
 local filtered_config_found = false
 for _, message in ipairs(runtime_logs) do
     filtered_result_found = filtered_result_found or message:match("FILTER_RESULT.*admitted=5.*matched=2") ~= nil
-    filtered_config_found = filtered_config_found or message:match("FILTER_CONFIG.*level_min=3.*level_max=4.*distance_min=nil.*distance_max=500") ~= nil
+    filtered_config_found = filtered_config_found or message:match("FILTER_CONFIG.*level_min=3.*level_max=4.*distance_min=0.*distance_max=330") ~= nil
 end
 assert(filtered_result_found, "panel range filters did not update the matched output")
 assert(filtered_config_found, "panel range filter configuration was not logged")
@@ -330,19 +332,34 @@ print("Panel range filters passed")
 
 bridge_actor.ESP_LevelMin = 0
 bridge_actor.ESP_LevelMax = 0
-bridge_actor.ESP_DistanceMin = 0
-bridge_actor.ESP_DistanceMax = 0
+-- __DEPRECATED_20260717__ The removed bound stays ignored during filter reset.
+bridge_actor.ESP_DistanceMin = 999
+bridge_actor.ESP_DistanceMax = 330
 bridge_actor.ESP_ControlRevision = 42
 reconcile_loop()
 local reset_filter_found = false
 for _, message in ipairs(runtime_logs) do
     reset_filter_found = reset_filter_found or message:match("FILTER_RESULT.*admitted=5.*matched=5") ~= nil
 end
-assert(reset_filter_found, "panel range filters did not reset to unrestricted")
-print("Panel range filter reset passed")
+assert(reset_filter_found, "panel level filters did not reset while distance remained 0-330m")
+print("Panel fixed 0m distance lower bound passed")
+
+bridge_actor.ESP_DistanceMax = 0
+bridge_actor.ESP_ControlRevision = 43
+reconcile_loop()
+local zero_distance_range_found = false
+for _, message in ipairs(runtime_logs) do
+    zero_distance_range_found = zero_distance_range_found
+        or message:match("FILTER_RESULT.*admitted=5.*matched=0") ~= nil
+end
+assert(zero_distance_range_found, "0m maximum distance did not produce the fixed 0-0m range")
+bridge_actor.ESP_DistanceMax = 330
+bridge_actor.ESP_ControlRevision = 44
+reconcile_loop()
+print("Panel 0-330m maximum distance passed")
 
 bridge_actor.ESP_DisplayTargetLimit = 3
-bridge_actor.ESP_ControlRevision = 43
+bridge_actor.ESP_ControlRevision = 45
 reconcile_loop()
 local display_limit_found = false
 local display_limit_result_found = false
@@ -353,23 +370,36 @@ for _, message in ipairs(runtime_logs) do
 end
 assert(display_limit_found and display_limit_result_found, "numeric display target limit was not applied")
 bridge_actor.ESP_DisplayTargetLimit = 64
-bridge_actor.ESP_ControlRevision = 44
+bridge_actor.ESP_ControlRevision = 46
 reconcile_loop()
 print("Panel numeric display target limit passed")
 
+bridge_actor.ESP_DisplayTargetLimit = 999
+bridge_actor.ESP_ControlRevision = 47
+reconcile_loop()
+local display_limit_clamped_found = false
+for _, message in ipairs(runtime_logs) do
+    display_limit_clamped_found = display_limit_clamped_found or message:match("DISPLAY_TARGET_LIMIT.*value=100") ~= nil
+end
+assert(display_limit_clamped_found, "display target limit was not clamped to 100")
+bridge_actor.ESP_DisplayTargetLimit = 64
+bridge_actor.ESP_ControlRevision = 48
+reconcile_loop()
+print("Panel display target ceiling passed")
+
 bridge_actor.ESP_ShowTopGuideLine = false
-bridge_actor.ESP_ControlRevision = 45
+bridge_actor.ESP_ControlRevision = 49
 reconcile_loop()
 bridge_actor.ESP_ShowTopGuideLine = true
-bridge_actor.ESP_ControlRevision = 46
+bridge_actor.ESP_ControlRevision = 50
 reconcile_loop()
 bridge_actor.ESP_ShowLevel = false
 bridge_actor.ESP_ShowDistance = false
-bridge_actor.ESP_ControlRevision = 47
+bridge_actor.ESP_ControlRevision = 51
 reconcile_loop()
 bridge_actor.ESP_ShowLevel = true
 bridge_actor.ESP_ShowDistance = true
-bridge_actor.ESP_ControlRevision = 48
+bridge_actor.ESP_ControlRevision = 52
 reconcile_loop()
 local top_guide_hidden_found = false
 local top_guide_shown_found = false

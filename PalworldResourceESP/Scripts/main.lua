@@ -2198,7 +2198,15 @@ local function normalize_panel_filter_bound(value, minimum, maximum)
     return math.max(minimum, math.min(maximum, value))
 end
 
-local function apply_panel_filters(level_min_raw, level_max_raw, distance_min_raw, distance_max_raw)
+local function normalize_panel_distance_max(value)
+    if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
+        return nil
+    end
+    return math.max(0, math.min(config.MAX_DISTANCE_M, math.floor(value)))
+end
+
+-- __DEPRECATED_20260717__ [reason: the panel no longer exposes or applies a minimum-distance bound]
+local function apply_panel_filters_deprecated_20260717(level_min_raw, level_max_raw, distance_min_raw, distance_max_raw)
     local level_min = normalize_panel_filter_bound(level_min_raw, 1, 100)
     local level_max = normalize_panel_filter_bound(level_max_raw, 1, 100)
     local distance_min = normalize_panel_filter_bound(
@@ -2206,11 +2214,7 @@ local function apply_panel_filters(level_min_raw, level_max_raw, distance_min_ra
         config.MIN_DISTANCE_M,
         config.MAX_DISTANCE_M
     )
-    local distance_max = normalize_panel_filter_bound(
-        distance_max_raw,
-        config.MIN_DISTANCE_M,
-        config.MAX_DISTANCE_M
-    )
+    local distance_max = normalize_panel_distance_max(distance_max_raw)
     local key = string.format(
         "level:%s:%s;distance:%s:%s",
         tostring(level_min),
@@ -2236,6 +2240,38 @@ local function apply_panel_filters(level_min_raw, level_max_raw, distance_min_ra
         tostring(level_min),
         tostring(level_max),
         tostring(distance_min),
+        tostring(distance_max)
+    ))
+    return true
+end
+
+local function apply_panel_filters(level_min_raw, level_max_raw, distance_max_raw)
+    local level_min = normalize_panel_filter_bound(level_min_raw, 1, 100)
+    local level_max = normalize_panel_filter_bound(level_max_raw, 1, 100)
+    local distance_max = normalize_panel_distance_max(distance_max_raw)
+    local key = string.format(
+        "level:%s:%s;distance_max:%s",
+        tostring(level_min),
+        tostring(level_max),
+        tostring(distance_max)
+    )
+    if key == state.panel_filter_key then
+        return false
+    end
+
+    local fields = {}
+    if level_min ~= nil or level_max ~= nil then
+        fields.level = { mode = "range", min = level_min, max = level_max }
+    end
+    if distance_max ~= nil then
+        fields.distance_m = { mode = "range", min = 0, max = distance_max }
+    end
+    config.ACTIVE_FILTERS = { fields = fields }
+    state.panel_filter_key = key
+    log_event("FILTER_CONFIG", string.format(
+        "level_min=%s level_max=%s distance_min=0 distance_max=%s",
+        tostring(level_min),
+        tostring(level_max),
         tostring(distance_max)
     ))
     return true
@@ -2301,14 +2337,17 @@ local function poll_panel_controls()
     local capture_requested = read_panel_boolean("ESP_CaptureRequested")
     local level_min = read_panel_number("ESP_LevelMin")
     local level_max = read_panel_number("ESP_LevelMax")
-    local distance_min = read_panel_number("ESP_DistanceMin")
+    -- __DEPRECATED_20260717__ [reason: minimum distance is intentionally absent from the V2 panel and runtime]
+    -- local distance_min = read_panel_number("ESP_DistanceMin")
     local distance_max = read_panel_number("ESP_DistanceMax")
     local show_top_guide_line = read_panel_boolean("ESP_ShowTopGuideLine")
     local show_level = read_panel_boolean("ESP_ShowLevel")
     local show_distance = read_panel_boolean("ESP_ShowDistance")
     local display_target_limit = read_panel_number("ESP_DisplayTargetLimit")
     if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil
-        or level_min == nil or level_max == nil or distance_min == nil or distance_max == nil
+        -- __DEPRECATED_20260717__ [reason: minimum distance is no longer required]
+        -- or level_min == nil or level_max == nil or distance_min == nil or distance_max == nil
+        or level_min == nil or level_max == nil or distance_max == nil
         or show_top_guide_line == nil or show_level == nil or show_distance == nil
         or display_target_limit == nil then
         if not state.control_pending_logged then
@@ -2320,7 +2359,9 @@ local function poll_panel_controls()
 
     state.control_pending_logged = false
     apply_runtime_profile(master_enabled, profile_id, preset_id, "panel_revision")
-    local filters_changed = apply_panel_filters(level_min, level_max, distance_min, distance_max)
+    -- __DEPRECATED_20260717__ [reason: minimum distance is no longer applied]
+    -- local filters_changed = apply_panel_filters(level_min, level_max, distance_min, distance_max)
+    local filters_changed = apply_panel_filters(level_min, level_max, distance_max)
     apply_display_styles(show_top_guide_line, show_level, show_distance)
     local limit_changed = apply_display_target_limit(display_target_limit)
     if runtime_enabled() and state.gameplay_active and (filters_changed or limit_changed) then

@@ -25,11 +25,19 @@ config.MAX_ADMITTED_ENTITIES = 512
 -- config.MAX_DISPLAY_TARGETS = 512
 config.DEFAULT_DISPLAY_TARGETS = 64
 config.MAX_DISPLAY_TARGETS = config.DEFAULT_DISPLAY_TARGETS
-config.MAX_CONFIGURABLE_DISPLAY_TARGETS = 512
+-- __DEPRECATED_20260717__ [reason: the public panel now caps visible targets at 100]
+-- config.MAX_CONFIGURABLE_DISPLAY_TARGETS = 512
+config.MAX_CONFIGURABLE_DISPLAY_TARGETS = 100
 
-config.DEFAULT_DISTANCE_M = 2000
-config.MIN_DISTANCE_M = 10
-config.MAX_DISTANCE_M = 50000
+-- __DEPRECATED_20260717__ [reason: distance now uses one bounded maximum-distance control]
+-- config.DEFAULT_DISTANCE_M = 2000
+config.DEFAULT_DISTANCE_M = 330
+-- __DEPRECATED_20260717__ [reason: the distance range now has a fixed, non-configurable 0m lower bound]
+-- config.MIN_DISTANCE_M = 10
+config.MIN_DISTANCE_M = 0
+-- __DEPRECATED_20260717__ [reason: values beyond the supported visible range are no longer exposed]
+-- config.MAX_DISTANCE_M = 50000
+config.MAX_DISTANCE_M = 330
 config.ACTIVE_FILTERS = { fields = {} }
 
 config.FIELD_PROBES_ENABLED = true

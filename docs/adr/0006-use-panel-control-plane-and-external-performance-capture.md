@@ -22,8 +22,10 @@ Add a dedicated `WBP_ESPPanel` controlled by `Shift+Y` and keep it separate from
 - The key callback waits 50 ms before invoking Blueprint so Widget removal does not occur inside UE4SS key dispatch.
 - While open, the panel owns input through `UIOnlyEx`; closing restores `GameOnly`. Both transitions flush pending input.
 - The panel writes only scalar control properties and a monotonically increasing revision on the passive `ModActor`.
-- User-facing level, distance, and display-limit controls use integer SpinBox inputs. Level and distance use zero for an inactive bound; the display limit is clamped to 1-512.
-- Level and distance visibility use independent checkboxes. Recreated panel widgets initialize numeric and visibility controls from the passive `ModActor`; programmatic initialization still crosses only the Blueprint-to-Blueprint boundary.
+- User-facing numeric controls pair a Slider for rapid adjustment with a compact integer SpinBox for exact entry. Level remains one grouped two-endpoint range; visible targets are clamped to 1-100.
+- Distance exposes only a 0-330m maximum control. Its lower bound is fixed at 0m, and the deprecated `ESP_DistanceMin` property is neither displayed nor read by Lua.
+- Runtime, top-guide, level, and distance visibility each use one compact toggle. Recreated panel widgets initialize numeric and toggle controls from the passive `ModActor`; programmatic initialization still crosses only the Blueprint-to-Blueprint boundary.
+- The panel uses a restrained neutral surface, green state accent, compact rounded controls, and a scrollable 500x680 frame so expanded diagnostics remain usable at 720p-class heights.
 - Visible distance is computed from live player and target locations in the Blueprint paint pass. The snapshot distance remains the filter and ordering value.
 - Lua polls those properties every 250 ms and applies changes on the GameThread.
 - No panel option can bypass the registry-owned human-player rejection gate.
@@ -91,12 +93,17 @@ Two movement runs crashed at `15:04:37` and `15:07:26` with the same GameThread 
 
 The delayed chunking option is therefore rejected for the functional baseline. This amendment favors wrapper lifetime safety over frame-time smoothing and follows ADR-0007's rule that a reproducible crash blocks feature work. A future performance design must avoid retaining UE4SS wrappers across callbacks, for example by moving the hot path into a native or Blueprint-owned representation.
 
+## Panel Interaction Amendment (2026-07-17)
+
+[Material slider](https://m3.material.io/components/sliders/overview), [Carbon slider](https://carbondesignsystem.com/components/slider/usage/), and [Carbon toggle](https://carbondesignsystem.com/components/toggle/usage/) guidance is applied to the generated UMG panel: sliders expose the complete supported range and take effect immediately, exact values remain editable beside the track, binary settings use one reversible toggle, and command actions remain buttons. UE 5.1 UMG has no native two-thumb RangeSlider, so the level range uses two compact synchronized Slider/SpinBox endpoint rows rather than a custom runtime widget.
+
 ## Follow-ups
 
 - [x] Generate, cook, and package `WBP_ESPPanel` through ADR-0004 automation.
 - [x] Implement the PresentMon watcher, marker parser, segmented analyzer, and synthetic contract tests.
 - [x] Revalidate deferred open/close and gameplay input restoration in Steam single-player.
 - [ ] Validate Shift+Y button clicks and UI/game input restoration after the `UIOnlyEx` fix.
+- [ ] Validate the V2 Slider/SpinBox synchronization, 1-100 target ceiling, fixed 0m distance lower bound, and 330m distance ceiling in Steam single-player.
 - [ ] Run forward and reverse fixed-view profile sequences with PresentMon.
 - [ ] Run one movement capture after a steady-state strategy passes.
 - [ ] Accept this ADR only after panel lifecycle, capture segmentation, and normal exit pass.
