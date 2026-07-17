@@ -333,7 +333,7 @@ No production Widget asset, C++ module, package manifest, public README rewrite,
 
 - Player ESP, player diagnostics containing identity/location, or a setting that can enable either.
 - The production entity registry, filter engine, presets, or configuration persistence.
-- The final `Shift+T` panel, localization resources, or LogicMod Widget.
+- The final `Shift+Y` panel, localization resources, or LogicMod Widget.
 - More than one diagnostic target at a time.
 - Full boxes, outlines, health, skeletons, weak points, off-screen arrows, or map markers.
 - Resource adapters for chests, eggs, statues, ores, trees, or drops.

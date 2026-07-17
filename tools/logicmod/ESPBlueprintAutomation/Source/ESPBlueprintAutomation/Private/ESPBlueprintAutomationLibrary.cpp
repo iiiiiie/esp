@@ -1346,16 +1346,18 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_Self* ActorSelf = AddSelfNode(Graph, 980, 1960);
     UK2Node_CallFunction* AddPanelToViewport = AddStaticCall(Graph, UUserWidget::StaticClass(), TEXT("AddToViewport"), 1540, 1760);
     UK2Node_VariableSet* ShowCursor = AddExternalVariableSet(Graph, TEXT("bShowMouseCursor"), APlayerController::StaticClass(), 1820, 1760);
-    UK2Node_CallFunction* GameAndUi = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("SetInputMode_GameAndUIEx"), 2100, 1760);
+    UK2Node_CallFunction* UiOnly = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("SetInputMode_UIOnlyEx"), 2100, 1760);
 
     if (!PanelGet || !PanelValid || !PanelBranch || !RemovePanel || !ClearPanel || !CloseController || !CloseWorldContext
         || !HideCursor || !GameOnly || !OpenController || !OpenWorldContext || !CreatePanel || !CastPanel || !StorePanel
-        || !SetPanelBridge || !ActorSelf || !AddPanelToViewport || !ShowCursor || !GameAndUi
+        || !SetPanelBridge || !ActorSelf || !AddPanelToViewport || !ShowCursor || !UiOnly
         || !SetClassPin(CreatePanel, TEXT("WidgetType"), PanelClass)
         || !SetPinDefault(CloseController, TEXT("PlayerIndex"), TEXT("0"))
         || !SetPinDefault(OpenController, TEXT("PlayerIndex"), TEXT("0"))
         || !SetPinDefault(HideCursor, TEXT("bShowMouseCursor"), TEXT("false"))
         || !SetPinDefault(ShowCursor, TEXT("bShowMouseCursor"), TEXT("true"))
+        || !SetPinDefault(GameOnly, TEXT("bFlushInput"), TEXT("true"))
+        || !SetPinDefault(UiOnly, TEXT("bFlushInput"), TEXT("true"))
         || !SetPinDefault(AddPanelToViewport, TEXT("ZOrder"), TEXT("100"))
         || !Link(TogglePanel, UEdGraphSchema_K2::PN_Then, PanelBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(PanelGet, PanelVariableName, PanelValid, TEXT("Object"))
@@ -1382,9 +1384,9 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, AddPanelToViewport, UEdGraphSchema_K2::PN_Self)
         || !Link(AddPanelToViewport, UEdGraphSchema_K2::PN_Then, ShowCursor, UEdGraphSchema_K2::PN_Execute)
         || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, ShowCursor, UEdGraphSchema_K2::PN_Self)
-        || !Link(ShowCursor, UEdGraphSchema_K2::PN_Then, GameAndUi, UEdGraphSchema_K2::PN_Execute)
-        || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, GameAndUi, TEXT("PlayerController"))
-        || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, GameAndUi, TEXT("InWidgetToFocus"))) {
+        || !Link(ShowCursor, UEdGraphSchema_K2::PN_Then, UiOnly, UEdGraphSchema_K2::PN_Execute)
+        || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, UiOnly, TEXT("PlayerController"))
+        || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, UiOnly, TEXT("InWidgetToFocus"))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildModActor panel toggle graph failed"));
         return false;
     }

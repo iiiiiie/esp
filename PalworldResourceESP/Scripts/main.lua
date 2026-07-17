@@ -2204,12 +2204,12 @@ local function register_panel_keybind()
         return
     end
     if type(RegisterKeyBind) ~= "function" or type(Key) ~= "table" or type(ModifierKey) ~= "table" then
-        log_event("PANEL_KEYBIND_UNAVAILABLE", "key=Shift+T")
+        log_event("PANEL_KEYBIND_UNAVAILABLE", "key=Shift+Y")
         return
     end
 
     local ok, err = pcall(function()
-        RegisterKeyBind(Key.T, { ModifierKey.SHIFT }, function()
+        RegisterKeyBind(Key.Y, { ModifierKey.SHIFT }, function()
             if state.panel_toggle_pending then
                 log_event("PANEL_TOGGLE_IGNORED", "reason=dispatch_pending")
                 return
@@ -2220,7 +2220,7 @@ local function register_panel_keybind()
             local sequence = state.panel_toggle_sequence
             local lifecycle_generation = state.lifecycle_generation
             log_event("PANEL_TOGGLE_REQUESTED", string.format(
-                "sequence=%d key=Shift+T delay_ms=%d",
+                "sequence=%d key=Shift+Y delay_ms=%d",
                 sequence,
                 config.PANEL_TOGGLE_DELAY_MS
             ))
@@ -2262,7 +2262,7 @@ local function register_panel_keybind()
         return
     end
     state.panel_keybind_registered = true
-    log_event("PANEL_KEYBIND_READY", "key=Shift+T")
+    log_event("PANEL_KEYBIND_READY", "key=Shift+Y")
 end
 
 local function register_blueprint_bridge()

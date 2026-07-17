@@ -17,8 +17,8 @@
 | Active UE4SS root | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss` |
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
-| LogicMod pak SHA-256 | `B5690A72AEC77D5E3B7E9E0027E76A61476FB4FCCC6A2664AB11F93B20DA9D6B`; panel checkpoint |
-| `main.lua` SHA-256 | `C16947AB139A563281A5A454F489D407B489ECF4980F24252E6F0470794694F4` |
+| LogicMod pak SHA-256 | `482EDD6320005596429EDEB703943AA53D13047E80C880331ADA96F522FE2FBB`; `UIOnlyEx` panel-input checkpoint |
+| `main.lua` SHA-256 | `30E3437B9CBEFBD54DE6BA8529D95C8B60817633F1338D9BF57D236408FCED4D` |
 | `config.lua` SHA-256 | `3B078826588F742373B1689F1ADB3DC772D3728B363A1BB2F0C5DE01E6EAE548` |
 | Newest recorded crash | `2026-07-17 10:29:04`, `UECC-Windows-80EE4EB444ECE760ECF7CD93A90F3836_0000`; panel-close regression |
 | Runtime baseline backup | `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp_backups/20260716_entity_core_baseline` |
@@ -45,7 +45,7 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-14 | Chunk cancellation | Map pre-load cancels a pending job without committing its stale generation | Pass | Queued stale callback completed without a second `SCAN_DONE` |
 | AT-15 | Frame-time analyzer | PresentMon v2 CSV statistics and same-file A/B comparison are deterministic | Pass | Existing 4,100-frame capture remains analyzable after the extension |
 | AT-16 | Runtime profiles | Off, snapshot, current chunking, and event-first resolve deterministic experiment intervals and preset budgets | Pass | Profile unit suite covers defaults, invalid IDs, fixed intervals, and 32/64/128 display budgets |
-| AT-17 | Panel control plane | Shift+T deferred bridge call, scalar revision polling, runtime-off clearing, capture markers, and stale-job invalidation | Pass | Stubbed runtime verifies two toggles run after, never inside, UE4SS key callbacks |
+| AT-17 | Panel control plane | Shift+Y deferred bridge call, scalar revision polling, runtime-off clearing, capture markers, and stale-job invalidation | Pass | Stubbed runtime verifies two toggles run after, never inside, UE4SS key callbacks |
 | AT-18 | Capture segmentation | Concatenated UE4SS markers and PresentMon absolute timestamps split by mode with a 2-second transition exclusion | Pass | Synthetic parser plus 31-frame end-to-end segmented analysis pass |
 
 ## Performance Investigation
