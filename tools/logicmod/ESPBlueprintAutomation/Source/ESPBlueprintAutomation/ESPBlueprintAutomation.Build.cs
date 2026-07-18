@@ -12,6 +12,7 @@ public class ESPBlueprintAutomation : ModuleRules {
         });
 
         PrivateDependencyModuleNames.AddRange(new string[] {
+            "AssetRegistry",
             "BlueprintGraph",
             "Slate",
             "SlateCore",

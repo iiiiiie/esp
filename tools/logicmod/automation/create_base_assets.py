@@ -70,6 +70,13 @@ create_blueprint(
 )
 create_blueprint(
     asset_tools,
+    "WBP_ESPPassiveTooltip",
+    unreal.WidgetBlueprint,
+    unreal.WidgetBlueprintFactory,
+    unreal.UserWidget,
+)
+create_blueprint(
+    asset_tools,
     "WBP_ESPPassiveEntry",
     unreal.WidgetBlueprint,
     unreal.WidgetBlueprintFactory,

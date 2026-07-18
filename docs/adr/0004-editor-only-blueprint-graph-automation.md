@@ -18,7 +18,9 @@ Add an editor-only `ESPBlueprintAutomation` plugin that constructs and links the
 
 The external PMK is a build workspace, not a source of record. Its `Binaries`, `Intermediate`, `Saved`, cooked assets, and unrelated local compatibility changes are never copied into this repository. The plugin is enabled only while generating/cooking assets and is not included in the packaged LogicMod runtime.
 
-Cross-asset Widget dependencies must remain valid throughout repeated generation. `WBP_ESPPassiveEntry` establishes its public initialization event before `WBP_ESPPanel` is generated. A WidgetTree-only intermediate compile is allowed only on first creation, when the generated control properties do not yet exist; later runs preserve the previous public event until the final replacement graph compiles.
+Cross-asset Widget dependencies must remain valid throughout repeated generation. `WBP_ESPPassiveTooltip` establishes its rich-text initialization event before `WBP_ESPPassiveEntry` is generated, and the entry establishes its public initialization event before `WBP_ESPPanel` is generated. A WidgetTree-only intermediate compile is allowed only on first creation, when the generated control properties do not yet exist; later runs preserve the previous public event until the final replacement graph compiles.
+
+Passive-skill descriptions use a project-owned `DT_ESPRichTextStyle` and a dedicated `WBP_ESPPassiveTooltip`. The tooltip recognizes the confirmed Palworld numeric tags without depending on game UI assets that are absent from the pinned PMK. An unparented tooltip subtree inside `WBP_ESPPassiveEntry` is not supported because UE 5.1 removes it from the generated Widget properties.
 
 ## Options Considered
 
@@ -67,5 +69,5 @@ Negative:
 ## Follow-ups
 
 - [x] Validate the generated bridge events in a Steam single-player smoke test.
-- [x] Keep the editor-only plugin out of the final LogicMod package; the tabbed-filter pak contains exactly twelve asset files and no DLL.
-- [x] Regenerate and cook `WBP_ESPPanel` plus `WBP_ESPPassiveEntry`; retain six canonical source assets in `LogicMod/Content`.
+- [x] Keep the editor-only plugin out of the final LogicMod package; the rich-text/search pak contains exactly sixteen asset files and no DLL.
+- [x] Regenerate and cook `WBP_ESPPanel`, `WBP_ESPPassiveEntry`, `WBP_ESPPassiveTooltip`, and `DT_ESPRichTextStyle`; retain eight canonical source assets in `LogicMod/Content`.

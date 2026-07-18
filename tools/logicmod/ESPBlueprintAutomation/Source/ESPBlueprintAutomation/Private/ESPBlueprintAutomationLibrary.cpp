@@ -3,6 +3,7 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "BlueprintGraph/Classes/K2Node_CallFunction.h"
 #include "BlueprintGraph/Classes/K2Node_CallArrayFunction.h"
 #include "BlueprintGraph/Classes/K2Node_BreakStruct.h"
@@ -23,11 +24,13 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CheckBox.h"
+#include "Components/EditableTextBox.h"
 #include "Components/ExpandableArea.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/ScrollBox.h"
+#include "Components/RichTextBlock.h"
 #include "Components/SizeBox.h"
 #include "Components/Slider.h"
 #include "Components/SpinBox.h"
@@ -42,6 +45,7 @@
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraphSchema_K2.h"
+#include "Engine/DataTable.h"
 #include "FileHelpers.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
@@ -144,10 +148,52 @@ const FName PanelInitializeControlsEventName(TEXT("PalworldResourceESP_Initializ
 const FName PanelInitializeControlsV2EventName(TEXT("PalworldResourceESP_InitializeControlsV2"));
 const FName PanelInitializeLanguageEventName(TEXT("PalworldResourceESP_InitializeLanguage"));
 const FName PanelPopulatePassiveCatalogEventName(TEXT("PalworldResourceESP_PopulatePassiveCatalog"));
+const FName PassiveTooltipInitializeEventName(TEXT("PalworldResourceESP_InitializePassiveTooltip"));
 const FName PassiveEntryInitializeEventName(TEXT("PalworldResourceESP_InitializePassiveEntry"));
 const FName PassiveEntryBridgeVariableName(TEXT("ESP_Bridge"));
 const FName PassiveEntrySkillIdVariableName(TEXT("ESP_SkillId"));
 const FName PassiveEntrySelectedVariableName(TEXT("ESP_Selected"));
+const TCHAR* PassiveRichTextStylePath = TEXT("/Game/Mods/PalworldResourceESP/DT_ESPRichTextStyle.DT_ESPRichTextStyle");
+
+UDataTable* EnsurePassiveRichTextStyleTable(const FSlateFontInfo& SourceFont) {
+    UDataTable* Table = LoadObject<UDataTable>(nullptr, PassiveRichTextStylePath);
+    if (!Table) {
+        UPackage* Package = CreatePackage(TEXT("/Game/Mods/PalworldResourceESP/DT_ESPRichTextStyle"));
+        if (!Package) {
+            return nullptr;
+        }
+        Table = NewObject<UDataTable>(
+            Package,
+            TEXT("DT_ESPRichTextStyle"),
+            RF_Public | RF_Standalone);
+        if (!Table) {
+            return nullptr;
+        }
+        FAssetRegistryModule::AssetCreated(Table);
+    }
+
+    Table->RowStruct = FRichTextStyleRow::StaticStruct();
+    Table->EmptyTable();
+    auto AddStyle = [&](const FName& Name, const FLinearColor& Color) {
+        FRichTextStyleRow Row;
+        FSlateFontInfo Font = SourceFont;
+        Font.Size = 13;
+        Row.TextStyle = FTextBlockStyle::GetDefault();
+        Row.TextStyle
+            .SetFont(Font)
+            .SetColorAndOpacity(FSlateColor(Color))
+            .SetShadowOffset(FVector2D(1.0f, 1.0f))
+            .SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f));
+        Table->AddRow(Name, Row);
+    };
+    AddStyle(TEXT("Default"), FLinearColor(0.95f, 0.955f, 0.96f, 1.0f));
+    AddStyle(TEXT("NumRed_13"), FLinearColor(1.0f, 0.36f, 0.36f, 1.0f));
+    AddStyle(TEXT("NumBlue_13"), FLinearColor(0.36f, 0.72f, 1.0f, 1.0f));
+    AddStyle(TEXT("NumGreen_13"), FLinearColor(0.38f, 0.92f, 0.58f, 1.0f));
+    AddStyle(TEXT("NumYellow_13"), FLinearColor(1.0f, 0.82f, 0.30f, 1.0f));
+    Table->MarkPackageDirty();
+    return Table;
+}
 
 UBlueprint* LoadBlueprint(const TCHAR* Path) {
     return LoadObject<UBlueprint>(nullptr, Path);
@@ -832,6 +878,39 @@ UK2Node_ComponentBoundEvent* AddCheckBoxStateChangedEvent(
         return nullptr;
     }
 
+    UK2Node_ComponentBoundEvent* Node = NewObject<UK2Node_ComponentBoundEvent>(Graph);
+    if (!Node) {
+        return nullptr;
+    }
+    Node->InitializeComponentBoundEventParams(ComponentProperty, DelegateProperty);
+    Node->NodePosX = X;
+    Node->NodePosY = Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->AllocateDefaultPins();
+    return Node;
+}
+
+UK2Node_ComponentBoundEvent* AddEditableTextBoxCommittedEvent(
+    UWidgetBlueprint* Blueprint,
+    UEditableTextBox* TextBox,
+    int32 X,
+    int32 Y) {
+    if (!Blueprint || !TextBox || !Blueprint->SkeletonGeneratedClass) {
+        return nullptr;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    FObjectProperty* ComponentProperty = FindFProperty<FObjectProperty>(
+        Blueprint->SkeletonGeneratedClass,
+        TextBox->GetFName()
+    );
+    FMulticastDelegateProperty* DelegateProperty = FindFProperty<FMulticastDelegateProperty>(
+        UEditableTextBox::StaticClass(),
+        GET_MEMBER_NAME_CHECKED(UEditableTextBox, OnTextCommitted)
+    );
+    if (!Graph || !ComponentProperty || !DelegateProperty) {
+        return nullptr;
+    }
     UK2Node_ComponentBoundEvent* Node = NewObject<UK2Node_ComponentBoundEvent>(Graph);
     if (!Node) {
         return nullptr;
@@ -2508,6 +2587,44 @@ UButton* AddPanelButtonV2(
     return Button;
 }
 
+UEditableTextBox* AddPanelSearchBoxV2(
+    UWidgetBlueprint* Blueprint,
+    UHorizontalBox* Parent,
+    const FName& Name) {
+    if (!Blueprint || !Parent) {
+        return nullptr;
+    }
+    UEditableTextBox* SearchBox = Blueprint->WidgetTree->ConstructWidget<UEditableTextBox>(
+        UEditableTextBox::StaticClass(), Name);
+    if (!SearchBox) {
+        return nullptr;
+    }
+    FEditableTextBoxStyle Style = FEditableTextBoxStyle::GetDefault();
+    FSlateFontInfo Font = Style.TextStyle.Font;
+    Font.Size = 13;
+    FTextBlockStyle TextStyle = Style.TextStyle;
+    TextStyle
+        .SetFont(Font)
+        .SetColorAndOpacity(FSlateColor(PanelV2Style::PrimaryText));
+    Style
+        .SetTextStyle(TextStyle)
+        .SetForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetFocusedForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetBackgroundImageNormal(FSlateRoundedBoxBrush(PanelV2Style::SurfaceRaised, 5.0f, PanelV2Style::Border, 1.0f))
+        .SetBackgroundImageHovered(FSlateRoundedBoxBrush(PanelV2Style::SurfaceHover, 5.0f, PanelV2Style::ToggleOutline, 1.0f))
+        .SetBackgroundImageFocused(FSlateRoundedBoxBrush(PanelV2Style::SurfaceRaised, 5.0f, PanelV2Style::Accent, 1.5f))
+        .SetBackgroundImageReadOnly(FSlateRoundedBoxBrush(PanelV2Style::Disabled, 5.0f, PanelV2Style::Border, 1.0f))
+        .SetPadding(FMargin(10.0f, 6.0f));
+    SearchBox->bIsVariable = true;
+    SearchBox->WidgetStyle = Style;
+    SearchBox->SetText(FText::GetEmpty());
+    SearchBox->SetHintText(FText::FromString(TEXT("输入名称 / Name")));
+    SearchBox->SetMinDesiredWidth(360.0f);
+    Parent->AddChild(SearchBox);
+    SetHorizontalLayout(SearchBox, FMargin(0.0f, 0.0f, 6.0f, 0.0f), ESlateSizeRule::Fill);
+    return SearchBox;
+}
+
 void ConfigurePanelSegmentButtonV2(UButton* Button, bool bSelected) {
     if (!Button) {
         return;
@@ -3473,8 +3590,91 @@ bool AppendExternalIntegerIncrement(
     return true;
 }
 
-bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
-    if (!Blueprint || !Blueprint->WidgetTree || !ModActorClass) {
+bool BuildPassiveTooltip(UWidgetBlueprint* Blueprint) {
+    if (!Blueprint || !Blueprint->WidgetTree) {
+        return false;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    if (!Graph) {
+        return false;
+    }
+    ClearGraph(Graph);
+
+    UBorder* Border = Blueprint->WidgetTree->ConstructWidget<UBorder>(
+        UBorder::StaticClass(), TEXT("ESP_PassiveTooltipBorder"));
+    USizeBox* Size = Blueprint->WidgetTree->ConstructWidget<USizeBox>(
+        USizeBox::StaticClass(), TEXT("ESP_PassiveTooltipSize"));
+    URichTextBlock* RichText = Blueprint->WidgetTree->ConstructWidget<URichTextBlock>(
+        URichTextBlock::StaticClass(), TEXT("ESP_PassiveTooltipText"));
+    UTextBlock* FontSource = NewObject<UTextBlock>(GetTransientPackage());
+    if (!Border || !Size || !RichText || !FontSource) {
+        return false;
+    }
+
+    FSlateFontInfo Font = FontSource->GetFont();
+    Font.Size = 13;
+    UDataTable* RichTextStyle = EnsurePassiveRichTextStyleTable(Font);
+    if (!RichTextStyle) {
+        return false;
+    }
+    FTextBlockStyle DefaultStyle = FTextBlockStyle::GetDefault();
+    DefaultStyle
+        .SetFont(Font)
+        .SetColorAndOpacity(FSlateColor(PanelV2Style::PrimaryText))
+        .SetShadowOffset(FVector2D(1.0f, 1.0f))
+        .SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f));
+    RichText->bIsVariable = true;
+    RichText->SetText(FText::GetEmpty());
+    RichText->SetTextStyleSet(RichTextStyle);
+    RichText->SetDefaultTextStyle(DefaultStyle);
+    RichText->SetAutoWrapText(true);
+    RichText->SetMinDesiredWidth(280.0f);
+    Size->SetMinDesiredWidth(300.0f);
+    Size->SetMaxDesiredWidth(460.0f);
+    Size->AddChild(RichText);
+    Border->SetBrush(FSlateRoundedBoxBrush(PanelV2Style::SurfaceRaised, 5.0f, PanelV2Style::Border, 1.0f));
+    Border->SetBrushColor(FLinearColor::White);
+    Border->SetPadding(FMargin(12.0f, 9.0f));
+    Border->AddChild(Size);
+    Blueprint->WidgetTree->RootWidget = Border;
+
+    const bool bWidgetPropertyExists = Blueprint->GeneratedClass
+        && Blueprint->GeneratedClass->FindPropertyByName(RichText->GetFName());
+    if (!bWidgetPropertyExists) {
+        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+        FKismetEditorUtilities::CompileBlueprint(Blueprint);
+        if (Blueprint->Status == BS_Error) {
+            UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] passive tooltip WidgetTree compile failed"));
+            return false;
+        }
+    }
+
+    UK2Node_CustomEvent* Initialize = AddCustomEvent(
+        Blueprint,
+        Graph,
+        *PassiveTooltipInitializeEventName.ToString(),
+        -800,
+        0,
+        {{FName("Description"), TextPin()}}
+    );
+    UK2Node_VariableGet* RichTextGet = AddVariableGet(Graph, RichText->GetFName(), -520, 160);
+    UK2Node_CallFunction* SetText = AddStaticCall(Graph, URichTextBlock::StaticClass(), TEXT("SetText"), -240, 0);
+    if (!Initialize || !RichTextGet || !SetText
+        || !Link(Initialize, UEdGraphSchema_K2::PN_Then, SetText, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RichTextGet, RichText->GetFName(), SetText, UEdGraphSchema_K2::PN_Self)
+        || !Link(Initialize, TEXT("Description"), SetText, TEXT("InText"))) {
+        return false;
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+    UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildPassiveTooltip compile status=%d nodes=%d"),
+        static_cast<int32>(Blueprint->Status), Graph->Nodes.Num());
+    return Blueprint->Status != BS_Error;
+}
+
+bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClass* PassiveTooltipClass) {
+    if (!Blueprint || !Blueprint->WidgetTree || !ModActorClass || !PassiveTooltipClass) {
         return false;
     }
     UEdGraph* Graph = EventGraph(Blueprint);
@@ -3499,7 +3699,9 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     Toggle->bIsVariable = true;
     Label->bIsVariable = true;
     Label->SetText(FText::FromString(TEXT("Passive")));
-    Label->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 13));
+    FSlateFontInfo LabelFont = Label->GetFont();
+    LabelFont.Size = 13;
+    Label->SetFont(LabelFont);
     Label->SetColorAndOpacity(FSlateColor::UseForeground());
     Label->SetJustification(ETextJustify::Center);
     Label->SetAutoWrapText(true);
@@ -3555,11 +3757,18 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     UK2Node_VariableGet* LabelGet = AddVariableGet(Graph, Label->GetFName(), -760, -400);
     UK2Node_CallFunction* NameToText = AddStaticCall(Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), -480, -400);
     UK2Node_CallFunction* SetLabel = AddStaticCall(Graph, UTextBlock::StaticClass(), TEXT("SetText"), -200, -600);
-    UK2Node_VariableGet* ToggleGet = AddVariableGet(Graph, Toggle->GetFName(), -200, -400);
-    UK2Node_CallFunction* SetTooltip = AddStaticCall(Graph, UWidget::StaticClass(), TEXT("SetToolTipText"), 80, -600);
-    UK2Node_CallFunction* SetChecked = AddStaticCall(Graph, UCheckBox::StaticClass(), TEXT("SetIsChecked"), 360, -600);
+    UK2Node_Self* Self = AddSelfNode(Graph, -200, -280);
+    UK2Node_CallFunction* GetController = AddStaticCall(Graph, UGameplayStatics::StaticClass(), TEXT("GetPlayerController"), 80, -280);
+    UK2Node_CallFunction* CreateTooltip = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("Create"), 80, -600);
+    UK2Node_DynamicCast* CastTooltip = AddDynamicCast(Graph, PassiveTooltipClass, 360, -600);
+    UK2Node_CallFunction* InitializeTooltip = AddStaticCall(
+        Graph, PassiveTooltipClass, *PassiveTooltipInitializeEventName.ToString(), 640, -600);
+    UK2Node_VariableGet* ToggleGet = AddVariableGet(Graph, Toggle->GetFName(), 640, -360);
+    UK2Node_CallFunction* SetTooltip = AddStaticCall(Graph, UWidget::StaticClass(), TEXT("SetToolTip"), 920, -600);
+    UK2Node_CallFunction* SetChecked = AddStaticCall(Graph, UCheckBox::StaticClass(), TEXT("SetIsChecked"), 1200, -600);
     if (!Initialize || !StoreBridge || !StoreSkillId || !StoreSelected || !LabelGet || !NameToText
-        || !SetLabel || !ToggleGet || !SetTooltip || !SetChecked
+        || !SetLabel || !Self || !GetController || !CreateTooltip || !CastTooltip || !InitializeTooltip
+        || !ToggleGet || !SetTooltip || !SetChecked
         || !Link(Initialize, UEdGraphSchema_K2::PN_Then, StoreBridge, UEdGraphSchema_K2::PN_Execute)
         || !Link(Initialize, TEXT("Bridge"), StoreBridge, PassiveEntryBridgeVariableName)
         || !Link(StoreBridge, UEdGraphSchema_K2::PN_Then, StoreSkillId, UEdGraphSchema_K2::PN_Execute)
@@ -3570,9 +3779,19 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         || !Link(Initialize, TEXT("SkillName"), NameToText, TEXT("InString"))
         || !Link(LabelGet, Label->GetFName(), SetLabel, UEdGraphSchema_K2::PN_Self)
         || !Link(NameToText, UEdGraphSchema_K2::PN_ReturnValue, SetLabel, TEXT("InText"))
-        || !Link(SetLabel, UEdGraphSchema_K2::PN_Then, SetTooltip, UEdGraphSchema_K2::PN_Execute)
+        || !Link(Self, UEdGraphSchema_K2::PN_Self, GetController, TEXT("WorldContextObject"))
+        || !SetPinDefault(GetController, TEXT("PlayerIndex"), TEXT("0"))
+        || !SetClassPin(CreateTooltip, TEXT("WidgetType"), PassiveTooltipClass)
+        || !Link(GetController, UEdGraphSchema_K2::PN_ReturnValue, CreateTooltip, TEXT("OwningPlayer"))
+        || !Link(SetLabel, UEdGraphSchema_K2::PN_Then, CreateTooltip, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CreateTooltip, UEdGraphSchema_K2::PN_Then, CastTooltip, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CreateTooltip, UEdGraphSchema_K2::PN_ReturnValue, CastTooltip, UEdGraphSchema_K2::PN_ObjectToCast)
+        || !Link(CastTooltip, UEdGraphSchema_K2::PN_CastSucceeded, InitializeTooltip, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CastTooltip, CastTooltip->GetCastResultPin()->PinName, InitializeTooltip, UEdGraphSchema_K2::PN_Self)
+        || !Link(Initialize, TEXT("Description"), InitializeTooltip, TEXT("Description"))
+        || !Link(InitializeTooltip, UEdGraphSchema_K2::PN_Then, SetTooltip, UEdGraphSchema_K2::PN_Execute)
         || !Link(ToggleGet, Toggle->GetFName(), SetTooltip, UEdGraphSchema_K2::PN_Self)
-        || !Link(Initialize, TEXT("Description"), SetTooltip, TEXT("InToolTipText"))
+        || !Link(CastTooltip, CastTooltip->GetCastResultPin()->PinName, SetTooltip, TEXT("Widget"))
         || !Link(SetTooltip, UEdGraphSchema_K2::PN_Then, SetChecked, UEdGraphSchema_K2::PN_Execute)
         || !Link(ToggleGet, Toggle->GetFName(), SetChecked, UEdGraphSchema_K2::PN_Self)
         || !Link(Initialize, TEXT("Selected"), SetChecked, TEXT("InIsChecked"))) {
@@ -3659,11 +3878,12 @@ bool BuildPanelPassiveCatalog(
     UScriptStruct* PassiveSkillDatabaseRowStruct,
     UClass* MasterDataTablesUtilityClass,
     const TArray<UWrapBox*>& Groups,
+    UEditableTextBox* SearchBox,
     UK2Node_CustomEvent* ExistingEvent,
     int32 Y) {
     if (!Blueprint || !ModActorClass || !PassiveEntryClass || !PalUtilityClass || !PalUIUtilityClass
         || !PassiveSkillManagerClass || !PassiveSkillDatabaseRowStruct || !MasterDataTablesUtilityClass
-        || Groups.Num() != 7 || Groups.Contains(nullptr)) {
+        || Groups.Num() != 7 || Groups.Contains(nullptr) || !SearchBox) {
         return false;
     }
     UEdGraph* Graph = EventGraph(Blueprint);
@@ -3693,6 +3913,21 @@ bool BuildPanelPassiveCatalog(
     UK2Node_CallFunction* GetLocalizedSkillName = AddStaticCall(Graph, PalUIUtilityClass, TEXT("GetPassiveSkillName"), X, Y + 520);
     UK2Node_CallFunction* LocalizedSkillNameToString = AddStaticCall(
         Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), X + 260, Y + 520);
+    UK2Node_CallFunction* SkillIdToString = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_NameToString"), X + 520, Y + 400);
+    UK2Node_CallFunction* SkillIdNotNone = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), X + 780, Y + 400);
+    UK2Node_CallFunction* NameNotEmpty = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), X + 520, Y + 520);
+    UK2Node_CallFunction* NameNotNone = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), X + 780, Y + 520);
+    UK2Node_VariableGet* SearchBoxGet = AddVariableGet(Graph, SearchBox->GetFName(), X + 520, Y + 600);
+    UK2Node_CallFunction* GetSearchText = AddStaticCall(
+        Graph, UEditableTextBox::StaticClass(), TEXT("GetText"), X + 780, Y + 600);
+    UK2Node_CallFunction* SearchTextToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), X + 1040, Y + 600);
+    UK2Node_CallFunction* NameContainsSearch = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Contains"), X + 1300, Y + 520);
     UK2Node_CallFunction* GetPassiveManager = AddStaticCall(Graph, PalUtilityClass, TEXT("GetPassiveSkillManager"), X, Y + 680);
     UK2Node_CallFunction* GetSkillData = AddStaticCall(Graph, PassiveSkillManagerClass, TEXT("GetSkillData"), X + 260, Y + 680);
     UK2Node_BreakStruct* BreakSkillData = NewObject<UK2Node_BreakStruct>(Graph);
@@ -3704,23 +3939,37 @@ bool BuildPanelPassiveCatalog(
         BreakSkillData->CreateNewGuid();
         BreakSkillData->AllocateDefaultPins();
     }
+    UK2Node_CallFunction* NameValid = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), X + 1040, Y + 400);
+    UK2Node_CallFunction* IdAndDataValid = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), X + 1300, Y + 400);
+    UK2Node_CallFunction* NameAndSearchValid = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), X + 1560, Y + 400);
+    UK2Node_CallFunction* CatalogEntryValid = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), X + 1820, Y + 400);
+    UK2Node_IfThenElse* CatalogEntryBranch = AddBranch(Graph, X + 2080, Y);
     UK2Node_CallFunction* DescIdToString = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_NameToString"), X + 780, Y + 840);
     UK2Node_CallFunction* SummaryIdToString = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_NameToString"), X + 780, Y + 960);
     UK2Node_CallFunction* DescIdAvailable = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), X + 1040, Y + 840);
+    UK2Node_CallFunction* SummaryIdAvailable = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), X + 1040, Y + 960);
+    UK2Node_CallFunction* AnyDescriptionId = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), X + 1300, Y + 1020);
     UK2Node_CallFunction* SelectDescriptionId = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 1300, Y + 900);
-    UK2Node_CallFunction* DescriptionStringToName = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_StringToName"), X + 1560, Y + 900);
-    UK2Node_CallFunction* GetLocalizedDescription = AddStaticCall(Graph, MasterDataTablesUtilityClass, TEXT("GetLocalizedText"), X + 1820, Y + 900);
-    UK2Node_CallFunction* DescriptionTextToString = AddStaticCall(Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), X + 2080, Y + 900);
+    UK2Node_CallFunction* SelectAvailableDescriptionId = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 1560, Y + 900);
+    UK2Node_CallFunction* DescriptionStringToName = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_StringToName"), X + 1820, Y + 900);
+    UK2Node_CallFunction* GetLocalizedDescription = AddStaticCall(Graph, MasterDataTablesUtilityClass, TEXT("GetLocalizedText"), X + 2080, Y + 900);
+    UK2Node_CallFunction* DescriptionTextToString = AddStaticCall(Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), X + 2340, Y + 900);
     TArray<UK2Node_CallFunction*> EffectValueToStrings;
     TArray<UK2Node_CallFunction*> ReplaceEffectValues;
     for (int32 Index = 0; Index < 4; ++Index) {
         EffectValueToStrings.Add(AddStaticCall(
-            Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_DoubleToString"), X + 2080 + Index * 260, Y + 1080));
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_DoubleToString"), X + 2340 + Index * 260, Y + 1080));
         ReplaceEffectValues.Add(AddStaticCall(
-            Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), X + 2340 + Index * 260, Y + 900));
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), X + 2600 + Index * 260, Y + 900));
     }
+    UK2Node_CallFunction* SelectFormattedDescription = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 3640, Y + 900);
     UK2Node_CallFunction* FormattedDescriptionToText = AddStaticCall(
-        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), X + 3380, Y + 900);
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), X + 3900, Y + 900);
     UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, X, Y + 1120);
     UK2Node_VariableGet* SelectedIdsGet = AddExternalVariableGet(Graph, PassiveFilterIdsVariableName, ModActorClass, X + 260, Y + 1120);
     UK2Node_CallArrayFunction* IsSelected = AddArrayCall(Graph, TEXT("Array_Contains"), X + 520, Y + 1120);
@@ -3747,10 +3996,15 @@ bool BuildPanelPassiveCatalog(
     for (int32 Index = 0; Index < Groups.Num(); ++Index) {
         AddToGroup.Add(AddStaticCall(Graph, UPanelWidget::StaticClass(), TEXT("AddChild"), X + 2860, Y + Index * 180));
     }
-    if (!Self || !GetSortedSkills || !ForEachSkillId || !GetLocalizedSkillName || !LocalizedSkillNameToString || !GetPassiveManager
-        || !GetSkillData || !BreakSkillData || !DescIdToString || !SummaryIdToString || !DescIdAvailable
-        || !SelectDescriptionId || !DescriptionStringToName || !GetLocalizedDescription || !DescriptionTextToString
-        || EffectValueToStrings.Contains(nullptr) || ReplaceEffectValues.Contains(nullptr) || !FormattedDescriptionToText || !BridgeGet
+    if (!Self || !GetSortedSkills || !ForEachSkillId || !GetLocalizedSkillName || !LocalizedSkillNameToString
+        || !SkillIdToString || !SkillIdNotNone || !NameNotEmpty || !NameNotNone || !SearchBoxGet
+        || !GetSearchText || !SearchTextToString || !NameContainsSearch || !GetPassiveManager
+        || !GetSkillData || !BreakSkillData || !NameValid || !IdAndDataValid || !NameAndSearchValid
+        || !CatalogEntryValid || !CatalogEntryBranch || !DescIdToString || !SummaryIdToString
+        || !DescIdAvailable || !SummaryIdAvailable || !AnyDescriptionId || !SelectDescriptionId
+        || !SelectAvailableDescriptionId || !DescriptionStringToName || !GetLocalizedDescription || !DescriptionTextToString
+        || EffectValueToStrings.Contains(nullptr) || ReplaceEffectValues.Contains(nullptr)
+        || !SelectFormattedDescription || !FormattedDescriptionToText || !BridgeGet
         || !SelectedIdsGet || !IsSelected || !GetController || !CreateEntry || !CastEntry || !InitializeEntry
         || !RankRainbow || !RankPositive || !WeightSpecial || !RankSpecial || !RankNormal
         || !RankNegative1 || !RankNegative2 || !RainbowBranch || !SpecialBranch || !GoldBranch
@@ -3761,18 +4015,48 @@ bool BuildPanelPassiveCatalog(
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetLocalizedSkillName, TEXT("WorldContextObject"))
         || !Link(ForEachSkillId, TEXT("Array Element"), GetLocalizedSkillName, TEXT("PassiveSkillId"))
         || !Link(GetLocalizedSkillName, TEXT("outName"), LocalizedSkillNameToString, TEXT("InText"))
+        || !Link(ForEachSkillId, TEXT("Array Element"), SkillIdToString, TEXT("InName"))
+        || !Link(SkillIdToString, UEdGraphSchema_K2::PN_ReturnValue, SkillIdNotNone, TEXT("A"))
+        || !SetPinDefault(SkillIdNotNone, TEXT("B"), TEXT("None"))
+        || !Link(LocalizedSkillNameToString, UEdGraphSchema_K2::PN_ReturnValue, NameNotEmpty, TEXT("A"))
+        || !SetPinDefault(NameNotEmpty, TEXT("B"), TEXT(""))
+        || !Link(LocalizedSkillNameToString, UEdGraphSchema_K2::PN_ReturnValue, NameNotNone, TEXT("A"))
+        || !SetPinDefault(NameNotNone, TEXT("B"), TEXT("None"))
+        || !Link(SearchBoxGet, SearchBox->GetFName(), GetSearchText, UEdGraphSchema_K2::PN_Self)
+        || !Link(GetSearchText, UEdGraphSchema_K2::PN_ReturnValue, SearchTextToString, TEXT("InText"))
+        || !Link(LocalizedSkillNameToString, UEdGraphSchema_K2::PN_ReturnValue, NameContainsSearch, TEXT("SearchIn"))
+        || !Link(SearchTextToString, UEdGraphSchema_K2::PN_ReturnValue, NameContainsSearch, TEXT("Substring"))
+        || !SetPinDefault(NameContainsSearch, TEXT("bUseCase"), TEXT("false"))
+        || !SetPinDefault(NameContainsSearch, TEXT("bSearchFromEnd"), TEXT("false"))
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetPassiveManager, TEXT("WorldContextObject"))
         || !Link(GetPassiveManager, UEdGraphSchema_K2::PN_ReturnValue, GetSkillData, UEdGraphSchema_K2::PN_Self)
         || !Link(ForEachSkillId, TEXT("Array Element"), GetSkillData, TEXT("SkillName"))
         || !Link(GetSkillData, TEXT("outSkillData"), BreakSkillData, PassiveSkillDatabaseRowStruct->GetFName())
+        || !Link(NameNotEmpty, UEdGraphSchema_K2::PN_ReturnValue, NameValid, TEXT("A"))
+        || !Link(NameNotNone, UEdGraphSchema_K2::PN_ReturnValue, NameValid, TEXT("B"))
+        || !Link(SkillIdNotNone, UEdGraphSchema_K2::PN_ReturnValue, IdAndDataValid, TEXT("A"))
+        || !Link(GetSkillData, UEdGraphSchema_K2::PN_ReturnValue, IdAndDataValid, TEXT("B"))
+        || !Link(NameValid, UEdGraphSchema_K2::PN_ReturnValue, NameAndSearchValid, TEXT("A"))
+        || !Link(NameContainsSearch, UEdGraphSchema_K2::PN_ReturnValue, NameAndSearchValid, TEXT("B"))
+        || !Link(IdAndDataValid, UEdGraphSchema_K2::PN_ReturnValue, CatalogEntryValid, TEXT("A"))
+        || !Link(NameAndSearchValid, UEdGraphSchema_K2::PN_ReturnValue, CatalogEntryValid, TEXT("B"))
+        || !Link(ForEachSkillId, TEXT("LoopBody"), CatalogEntryBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CatalogEntryValid, UEdGraphSchema_K2::PN_ReturnValue, CatalogEntryBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(BreakSkillData, TEXT("OverrideDescMsgID"), DescIdToString, TEXT("InName"))
         || !Link(BreakSkillData, TEXT("OverrideSummaryTextId"), SummaryIdToString, TEXT("InName"))
         || !Link(DescIdToString, UEdGraphSchema_K2::PN_ReturnValue, DescIdAvailable, TEXT("A"))
         || !SetPinDefault(DescIdAvailable, TEXT("B"), TEXT("None"))
+        || !Link(SummaryIdToString, UEdGraphSchema_K2::PN_ReturnValue, SummaryIdAvailable, TEXT("A"))
+        || !SetPinDefault(SummaryIdAvailable, TEXT("B"), TEXT("None"))
+        || !Link(DescIdAvailable, UEdGraphSchema_K2::PN_ReturnValue, AnyDescriptionId, TEXT("A"))
+        || !Link(SummaryIdAvailable, UEdGraphSchema_K2::PN_ReturnValue, AnyDescriptionId, TEXT("B"))
         || !Link(DescIdToString, UEdGraphSchema_K2::PN_ReturnValue, SelectDescriptionId, TEXT("A"))
         || !Link(SummaryIdToString, UEdGraphSchema_K2::PN_ReturnValue, SelectDescriptionId, TEXT("B"))
         || !Link(DescIdAvailable, UEdGraphSchema_K2::PN_ReturnValue, SelectDescriptionId, TEXT("bPickA"))
-        || !Link(SelectDescriptionId, UEdGraphSchema_K2::PN_ReturnValue, DescriptionStringToName, TEXT("InString"))
+        || !Link(SelectDescriptionId, UEdGraphSchema_K2::PN_ReturnValue, SelectAvailableDescriptionId, TEXT("A"))
+        || !SetPinDefault(SelectAvailableDescriptionId, TEXT("B"), TEXT(""))
+        || !Link(AnyDescriptionId, UEdGraphSchema_K2::PN_ReturnValue, SelectAvailableDescriptionId, TEXT("bPickA"))
+        || !Link(SelectAvailableDescriptionId, UEdGraphSchema_K2::PN_ReturnValue, DescriptionStringToName, TEXT("InString"))
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetLocalizedDescription, TEXT("WorldContextObject"))
         || !SetPinDefault(GetLocalizedDescription, TEXT("TextCategory"), TEXT("SkillDesc"))
         || !Link(DescriptionStringToName, UEdGraphSchema_K2::PN_ReturnValue, GetLocalizedDescription, TEXT("TextId"))
@@ -3783,7 +4067,7 @@ bool BuildPanelPassiveCatalog(
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetController, TEXT("WorldContextObject"))
         || !SetPinDefault(GetController, TEXT("PlayerIndex"), TEXT("0"))
         || !SetClassPin(CreateEntry, TEXT("WidgetType"), PassiveEntryClass)
-        || !Link(ForEachSkillId, TEXT("LoopBody"), CreateEntry, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CatalogEntryBranch, UEdGraphSchema_K2::PN_Then, CreateEntry, UEdGraphSchema_K2::PN_Execute)
         || !Link(GetController, UEdGraphSchema_K2::PN_ReturnValue, CreateEntry, TEXT("OwningPlayer"))
         || !Link(CreateEntry, UEdGraphSchema_K2::PN_Then, CastEntry, UEdGraphSchema_K2::PN_Execute)
         || !Link(CreateEntry, UEdGraphSchema_K2::PN_ReturnValue, CastEntry, UEdGraphSchema_K2::PN_ObjectToCast)
@@ -3835,7 +4119,10 @@ bool BuildPanelPassiveCatalog(
         }
         DescriptionSource = ReplaceEffectValues[Index];
     }
-    if (!Link(DescriptionSource, UEdGraphSchema_K2::PN_ReturnValue, FormattedDescriptionToText, TEXT("InString"))) {
+    if (!Link(DescriptionSource, UEdGraphSchema_K2::PN_ReturnValue, SelectFormattedDescription, TEXT("A"))
+        || !SetPinDefault(SelectFormattedDescription, TEXT("B"), TEXT(""))
+        || !Link(AnyDescriptionId, UEdGraphSchema_K2::PN_ReturnValue, SelectFormattedDescription, TEXT("bPickA"))
+        || !Link(SelectFormattedDescription, UEdGraphSchema_K2::PN_ReturnValue, FormattedDescriptionToText, TEXT("InString"))) {
         return false;
     }
 
@@ -3855,6 +4142,48 @@ bool BuildPanelPassiveCatalog(
         }
     }
     return true;
+}
+
+bool BuildPanelPassiveSearchEvents(
+    UWidgetBlueprint* Blueprint,
+    UEditableTextBox* SearchBox,
+    UButton* SearchButton,
+    UButton* ClearSearchButton,
+    int32 Y) {
+    if (!Blueprint || !SearchBox || !SearchButton || !ClearSearchButton) {
+        return false;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    UK2Node_ComponentBoundEvent* Committed = AddEditableTextBoxCommittedEvent(Blueprint, SearchBox, -1600, Y);
+    UK2Node_Self* CommittedSelf = AddSelfNode(Graph, -1360, Y + 160);
+    UK2Node_CallFunction* PopulateFromCommit = AddStaticCall(
+        Graph, Blueprint->GeneratedClass, *PanelPopulatePassiveCatalogEventName.ToString(), -1080, Y);
+
+    UK2Node_ComponentBoundEvent* SearchClicked = AddButtonEvent(Blueprint, SearchButton, -1600, Y + 360);
+    UK2Node_Self* SearchSelf = AddSelfNode(Graph, -1360, Y + 520);
+    UK2Node_CallFunction* PopulateFromButton = AddStaticCall(
+        Graph, Blueprint->GeneratedClass, *PanelPopulatePassiveCatalogEventName.ToString(), -1080, Y + 360);
+
+    UK2Node_ComponentBoundEvent* ClearClicked = AddButtonEvent(Blueprint, ClearSearchButton, -1600, Y + 720);
+    UK2Node_VariableGet* SearchBoxGet = AddVariableGet(Graph, SearchBox->GetFName(), -1360, Y + 880);
+    UK2Node_CallFunction* ClearSearchText = AddStaticCall(
+        Graph, UEditableTextBox::StaticClass(), TEXT("SetText"), -1080, Y + 720);
+    UK2Node_Self* ClearSelf = AddSelfNode(Graph, -820, Y + 880);
+    UK2Node_CallFunction* PopulateAfterClear = AddStaticCall(
+        Graph, Blueprint->GeneratedClass, *PanelPopulatePassiveCatalogEventName.ToString(), -540, Y + 720);
+
+    return Graph && Committed && CommittedSelf && PopulateFromCommit
+        && SearchClicked && SearchSelf && PopulateFromButton
+        && ClearClicked && SearchBoxGet && ClearSearchText && ClearSelf && PopulateAfterClear
+        && Link(Committed, UEdGraphSchema_K2::PN_Then, PopulateFromCommit, UEdGraphSchema_K2::PN_Execute)
+        && Link(CommittedSelf, UEdGraphSchema_K2::PN_Self, PopulateFromCommit, UEdGraphSchema_K2::PN_Self)
+        && Link(SearchClicked, UEdGraphSchema_K2::PN_Then, PopulateFromButton, UEdGraphSchema_K2::PN_Execute)
+        && Link(SearchSelf, UEdGraphSchema_K2::PN_Self, PopulateFromButton, UEdGraphSchema_K2::PN_Self)
+        && Link(ClearClicked, UEdGraphSchema_K2::PN_Then, ClearSearchText, UEdGraphSchema_K2::PN_Execute)
+        && Link(SearchBoxGet, SearchBox->GetFName(), ClearSearchText, UEdGraphSchema_K2::PN_Self)
+        && SetPinDefaultText(ClearSearchText, TEXT("InText"), FText::GetEmpty())
+        && Link(ClearSearchText, UEdGraphSchema_K2::PN_Then, PopulateAfterClear, UEdGraphSchema_K2::PN_Execute)
+        && Link(ClearSelf, UEdGraphSchema_K2::PN_Self, PopulateAfterClear, UEdGraphSchema_K2::PN_Self);
 }
 
 bool BuildPanelClearFiltersEvent(
@@ -4326,6 +4655,25 @@ bool BuildPanel(
     UTextBlock* PassiveHeading = AddPanelTextV2(Blueprint, PassiveColumn, TEXT("ESP_PassiveHeadingText"), TEXT("被动技能"), 16);
     UTextBlock* PassiveSummary = AddPanelTextV2(
         Blueprint, PassiveColumn, TEXT("ESP_PassiveSummaryText"), TEXT("未选择：全部；多选时必须全部命中（AND）"), 12, true);
+    UTextBlock* PassiveSearchLabel = AddPanelTextV2(
+        Blueprint, PassiveColumn, TEXT("ESP_PassiveSearchLabelText"), TEXT("搜索被动技能"), 12, true);
+    UHorizontalBox* PassiveSearchRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(
+        UHorizontalBox::StaticClass(), TEXT("ESP_PassiveSearchRow"));
+    if (PassiveSearchRow) {
+        PassiveColumn->AddChild(PassiveSearchRow);
+        SetVerticalPadding(PassiveSearchRow, FMargin(0.0f, 3.0f, 0.0f, 3.0f));
+    }
+    UEditableTextBox* PassiveSearchBox = PassiveSearchRow
+        ? AddPanelSearchBoxV2(Blueprint, PassiveSearchRow, TEXT("ESP_PassiveSearchBox"))
+        : nullptr;
+    UButton* PassiveSearchButton = PassiveSearchRow
+        ? AddPanelButtonV2(Blueprint, PassiveSearchRow, TEXT("ESP_PassiveSearchButton"), TEXT("ESP_PassiveSearchText"), TEXT("搜索"))
+        : nullptr;
+    UButton* PassiveClearSearchButton = PassiveSearchRow
+        ? AddPanelButtonV2(Blueprint, PassiveSearchRow, TEXT("ESP_PassiveClearSearchButton"), TEXT("ESP_PassiveClearSearchText"), TEXT("清空"))
+        : nullptr;
+    SetHorizontalLayout(PassiveSearchButton, FMargin(0.0f, 0.0f, 6.0f, 0.0f), ESlateSizeRule::Automatic);
+    SetHorizontalLayout(PassiveClearSearchButton, FMargin(0.0f), ESlateSizeRule::Automatic);
     UHorizontalBox* PassiveActions = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_PassiveActions"));
     if (PassiveActions) {
         PassiveColumn->AddChild(PassiveActions);
@@ -4352,7 +4700,9 @@ bool BuildPanel(
         }
         Header->bIsVariable = true;
         Header->SetText(FText::FromString(HeaderText));
-        Header->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 14));
+        FSlateFontInfo HeaderFont = Header->GetFont();
+        HeaderFont.Size = 14;
+        Header->SetFont(HeaderFont);
         Header->SetColorAndOpacity(FSlateColor(PanelV2Style::PrimaryText));
         Wrap->bIsVariable = true;
         Wrap->SetInnerSlotPadding(FVector2D(6.0f, 6.0f));
@@ -4571,7 +4921,9 @@ bool BuildPanel(
     if (!Title || !RuntimeEnabled || !DisplayTab || !FilterTab || !StyleTab || !StylePlaceholder
         || !StyleHeading || !TopGuide || !ShowName || !ShowLevel || !ShowDistance || !ShowIv
         || !ShowPassiveSkills
-        || !PassiveHeading || !PassiveSummary || !PassiveActions || !ClearAllFilters || !ClearPassiveFilters
+        || !PassiveHeading || !PassiveSummary || !PassiveSearchLabel || !PassiveSearchRow
+        || !PassiveSearchBox || !PassiveSearchButton || !PassiveClearSearchButton
+        || !PassiveActions || !ClearAllFilters || !ClearPassiveFilters
         || !PassiveRainbow || !PassiveSpecial || !PassiveGold || !PassiveNormal
         || !PassiveNegative1 || !PassiveNegative2 || !PassiveNegative3
         || !FilterHeading || !DisplayLimit.Slider || !DisplayLimit.SpinBox || !LevelHeading
@@ -4801,16 +5153,18 @@ bool BuildPanel(
         || !BuildPanelPassiveCatalog(
             Blueprint, ModActorClass, PassiveEntryClass, PalUtilityClass, PalUIUtilityClass,
             PassiveSkillManagerClass, PassiveSkillDatabaseRowStruct, MasterDataTablesUtilityClass,
-            PassiveCatalogGroups, PopulatePassiveCatalog, Y + 1080)
+            PassiveCatalogGroups, PassiveSearchBox, PopulatePassiveCatalog, Y + 1080)
+        || !BuildPanelPassiveSearchEvents(
+            Blueprint, PassiveSearchBox, PassiveSearchButton, PassiveClearSearchButton, Y + 1440)
         || !BuildPanelClearFiltersEvent(
             Blueprint, ClearPassiveFilters, ModActorClass, false, {}, ElementToggles,
-            GenderStatus, GenderButtons, LuckyStatus, LuckyButtons, BossStatus, BossButtons, Y + 1440)
+            GenderStatus, GenderButtons, LuckyStatus, LuckyButtons, BossStatus, BossButtons, Y + 2520)
         || !BuildPanelClearFiltersEvent(
             Blueprint, ClearAllFilters, ModActorClass, true, FilterNumericControls, ElementToggles,
-            GenderStatus, GenderButtons, LuckyStatus, LuckyButtons, BossStatus, BossButtons, Y + 1800)) {
+            GenderStatus, GenderButtons, LuckyStatus, LuckyButtons, BossStatus, BossButtons, Y + 2880)) {
         return false;
     }
-    Y += 2520;
+    Y += 3600;
     if (!BuildPanelVisibilityEvent(Blueprint, AdvancedExpand, TEXT("ESP_AdvancedBox"), TEXT("Visible"), Y)
         || !BuildPanelVisibilityEvent(Blueprint, AdvancedCollapse, TEXT("ESP_AdvancedBox"), TEXT("Collapsed"), Y + 360)) {
         return false;
@@ -4833,6 +5187,9 @@ bool BuildPanel(
         {TEXT("ESP_StylePlaceholderText"), TEXT("显示样式将在后续版本提供"), TEXT("Display styles will be added later")},
         {TEXT("ESP_PassiveHeadingText"), TEXT("被动技能"), TEXT("Passive skills")},
         {TEXT("ESP_PassiveSummaryText"), TEXT("未选择：全部；多选时必须全部命中（AND）"), TEXT("None: all; multiple selections use AND")},
+        {TEXT("ESP_PassiveSearchLabelText"), TEXT("搜索被动技能"), TEXT("Search passive skills")},
+        {TEXT("ESP_PassiveSearchText"), TEXT("搜索"), TEXT("Search")},
+        {TEXT("ESP_PassiveClearSearchText"), TEXT("清空"), TEXT("Clear")},
         {TEXT("ESP_ClearAllFiltersText"), TEXT("清空所有筛选"), TEXT("Clear all filters")},
         {TEXT("ESP_ClearPassiveFiltersText"), TEXT("清空词条"), TEXT("Clear passives")},
         {TEXT("ESP_PassiveRainbowHeaderText"), TEXT("彩虹"), TEXT("Rainbow")},
@@ -5487,6 +5844,7 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     UBlueprint* Bridge = LoadBlueprint(TEXT("/Game/Mods/PalworldResourceESP/BP_ESPBridge"));
     UWidgetBlueprint* Overlay = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPOverlay"));
     UWidgetBlueprint* Panel = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPPanel"));
+    UWidgetBlueprint* PassiveTooltip = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPPassiveTooltip"));
     UWidgetBlueprint* PassiveEntry = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPPassiveEntry"));
     UClass* PalMonsterClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalMonsterCharacter"));
     UClass* CharacterParameterComponentClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalCharacterParameterComponent"));
@@ -5501,7 +5859,8 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     UScriptStruct* PassiveSkillDatabaseRowStruct = LoadObject<UScriptStruct>(nullptr, TEXT("/Script/Pal.PalPassiveSkillDatabaseRow"));
     UClass* MasterDataTablesUtilityClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalMasterDataTablesUtility"));
     UClass* OverlayClass = Overlay ? Overlay->GeneratedClass : nullptr;
-    if (!ModActor || !Bridge || !Overlay || !Panel || !PassiveEntry || !PalMonsterClass || !CharacterParameterComponentClass
+    if (!ModActor || !Bridge || !Overlay || !Panel || !PassiveTooltip || !PassiveEntry
+        || !PalMonsterClass || !CharacterParameterComponentClass
         || !IndividualParameterClass || !IndividualSaveParameterStruct || !GenderEnum || !ElementEnum
         || !PalUtilityClass || !PalUIUtilityClass || !DatabaseCharacterParameterClass
         || !PassiveSkillManagerClass || !PassiveSkillDatabaseRowStruct || !MasterDataTablesUtilityClass) {
@@ -5533,8 +5892,18 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
         return false;
     }
     UClass* ModActorClass = ModActor->GeneratedClass;
-    if (!BuildPassiveEntry(PassiveEntry, ModActorClass)) {
+    if (!BuildPassiveTooltip(PassiveTooltip)) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] passive tooltip build failed"));
+        return false;
+    }
+    UClass* PassiveTooltipClass = PassiveTooltip->GeneratedClass;
+    if (!BuildPassiveEntry(PassiveEntry, ModActorClass, PassiveTooltipClass)) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] passive entry build failed"));
+        return false;
+    }
+    UDataTable* PassiveRichTextStyle = LoadObject<UDataTable>(nullptr, PassiveRichTextStylePath);
+    if (!PassiveRichTextStyle) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] passive rich-text style table missing"));
         return false;
     }
     UClass* PassiveEntryClass = PassiveEntry->GeneratedClass;
@@ -5546,9 +5915,12 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     }
     Overlay->MarkPackageDirty();
     Panel->MarkPackageDirty();
+    PassiveTooltip->MarkPackageDirty();
     PassiveEntry->MarkPackageDirty();
+    PassiveRichTextStyle->MarkPackageDirty();
     TArray<UPackage*> WidgetPackages{
-        Overlay->GetOutermost(), Panel->GetOutermost(), PassiveEntry->GetOutermost(),
+        Overlay->GetOutermost(), Panel->GetOutermost(), PassiveTooltip->GetOutermost(), PassiveEntry->GetOutermost(),
+        PassiveRichTextStyle->GetOutermost(),
     };
     if (!UEditorLoadingAndSavingUtils::SavePackages(WidgetPackages, true)) {
         return false;

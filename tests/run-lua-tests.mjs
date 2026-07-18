@@ -140,8 +140,29 @@ if (!generatorSource.includes('TEXT("GetSortedPassiveSkillNameArray")')
 }
 if (!generatorSource.includes('FSlateColor::UseForeground()')
     || !generatorSource.includes('SetCheckedForegroundColor')
-    || !generatorSource.includes('PanelV2Style::AccentText')) {
+    || !generatorSource.includes('PanelV2Style::AccentText')
+    || !generatorSource.includes('Label->GetFont()')
+    || !generatorSource.includes('Header->GetFont()')
+    || generatorSource.includes('FCoreStyle::GetDefaultFont()')) {
   throw new Error("Passive entry labels do not define readable unchecked and checked foreground colors");
+}
+if (!generatorSource.includes('URichTextBlock')
+    || !generatorSource.includes('DT_ESPRichTextStyle')
+    || !generatorSource.includes('WBP_ESPPassiveTooltip')
+    || !generatorSource.includes('PassiveTooltipInitializeEventName')
+    || !generatorSource.includes('TEXT("NumRed_13")')
+    || !generatorSource.includes('TEXT("NumBlue_13")')
+    || !generatorSource.includes('TEXT("SetToolTip")')
+    || generatorSource.includes('TEXT("SetToolTipText")')) {
+  throw new Error("Passive tooltips do not use the project-owned rich-text rendering contract");
+}
+if (!generatorSource.includes('UEditableTextBox')
+    || !generatorSource.includes('TEXT("ESP_PassiveSearchBox")')
+    || !generatorSource.includes('TEXT("Contains")')
+    || !generatorSource.includes('CatalogEntryValid')
+    || !generatorSource.includes('SummaryIdAvailable')
+    || !generatorSource.includes('SetPinDefault(NameNotNone, TEXT("B"), TEXT("None"))')) {
+  throw new Error("Passive search and invalid-entry filtering contract is incomplete");
 }
 if (!generatorSource.includes("ToggleUnchecked")
     || !generatorSource.includes("ToggleOutline")

@@ -17,8 +17,8 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | MSVC | `14.38` installed; UBT selected `14.39.33523` for the current editor-plugin build |
 | Wwise | Not required by the accepted no-Wwise PMK path |
 | Last fully verified LogicMod pak | `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14`; 8 files |
-| Current deployed panel pak | `710FD094FE0B42AC045498EB0FBF0B087F27229F9BFD66982ED6184BE74A95E3`; tabbed filters, dimensional IV thresholds, and capped passive AND-filter checkpoint; runtime regression pending |
-| Current Pak contents | 12 files under `../../../Pal/Content/Mods/PalworldResourceESP/`; no DLL |
+| Current deployed panel pak | `1DF309A397362F597F771FE14A3C227D10BA766966D923D27031ADF27B672CCC`; readable passive catalog, committed search, invalid-row filtering, and project-owned rich-text tooltips; runtime regression pending |
+| Current Pak contents | 16 files under `../../../Pal/Content/Mods/PalworldResourceESP/`; no DLL |
 | Current Lua script hash | `2670C212EAE60D2DA2E9477DE7B9DB69DE09B08F5D5C857AF1345DE8B843C107` |
 | Current Lua config hash | `DA3B598DD1854402D5A3ABE7BC012C2D910A4D77F5427E55948399F58F18EC53` |
 | Current settings module hash | `51F652DB28A4E4A1B64D99CE76104DC2C46E9EC4D04F32FAA8E3E221AC9C8AE2` |
@@ -56,8 +56,9 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | BP-27 | Passive-skill display | Optional passive-skill text uses the game's localized names for already-admitted wild Pals and hides immediately when disabled | Pending | Blueprint calls `GetPassiveSkillList()` and resolves IDs with `PalUIUtility::GetPassiveSkillName()` without sending the source array through Lua; strict `v7` persistence, Blueprint compilation, clean Cook, and package checks pass. |
 | BP-28 | Display checkbox contrast | Every display row has a clearly visible unchecked and checked state and an unambiguous label association | Pending | Generated controls use a fixed 28x24 outlined checkbox with medium-gray unchecked and green checked fills; Steam visual verification remains. |
 | BP-29 | Passive-skill AND filter | Zero to four skills may be selected; every selected game-provided passive ID must be present on a target | Pending | Blueprint-owned capped `TArray<FName>`, delimiter-safe per-target IDs, AND accumulator, clear actions, repeated asset generation, clean Cook, and 12-file/0-DLL Pak checks pass; Steam behavior remains. |
-| BP-30 | Passive catalog and tooltips | Catalog categories come from game rank/lottery data and hover text uses localized `SkillDesc` | Pending | Each catalog ID resolves its localized name directly, the toggle state supplies explicit high-contrast foreground colors, and `{EffectValue1..4}` placeholders are replaced from the current skill row. Seven groups compile, clean Cook and package checks pass; Steam visual verification remains. |
+| BP-30 | Passive catalog and tooltips | Catalog categories come from game rank/lottery data and hover text uses localized `SkillDesc` rich text | Pending | Each valid catalog ID resolves its localized name directly, dynamic labels inherit the cooked font, `{EffectValue1..4}` placeholders are replaced, and confirmed red/blue numeric tags render through `DT_ESPRichTextStyle`. Seven groups compile; 16-file/0-DLL package checks pass. |
 | BP-31 | Tabbed panel layout | 1180x680 panel switches between Display, Filters, and pending Display style without losing input or filter state | Pending | WidgetSwitcher, tab highlighting, two-column filter page, and repeat-generation dependency contract compile; 720p and higher visual verification remains. |
+| BP-32 | Passive catalog search and invalid rows | Enter, focus loss, or Search applies a case-insensitive localized-name query; Clear restores the full valid catalog; empty, `None`, and missing-data rows never render | Pending | Generated graph binds `OnTextCommitted`, performs one catalog rebuild per commit, and gates widget creation on ID, data, localized name, and query validity; Steam interaction verification remains. |
 
 ## Panel Regression Evidence
 
