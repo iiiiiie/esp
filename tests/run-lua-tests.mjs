@@ -123,6 +123,10 @@ if (!generatorSource.includes('TEXT("GetPassiveSkillList")')
 if (!generatorSource.includes('TEXT("GetSortedPassiveSkillNameArray")')
     || !generatorSource.includes('TEXT("GetPassiveSkillManager")')
     || !generatorSource.includes('TEXT("GetSkillData")')
+    || !generatorSource.includes('{FName("SkillName"), StringPin()}')
+    || !generatorSource.includes('TEXT("Conv_DoubleToString")')
+    || !generatorSource.includes('TEXT("Replace")')
+    || !generatorSource.includes('TEXT("{EffectValue%d}")')
     || !generatorSource.includes('TEXT("GetLocalizedText")')
     || !generatorSource.includes('TEXT("SkillDesc")')
     || !generatorSource.includes('TEXT("ESP_PassiveFilterIds")')
@@ -133,6 +137,11 @@ if (!generatorSource.includes('TEXT("GetSortedPassiveSkillNameArray")')
     || !generatorSource.includes("UWidgetSwitcher")
     || !generatorSource.includes('/Game/Mods/PalworldResourceESP/WBP_ESPPassiveEntry')) {
   throw new Error("Blueprint passive AND-filter, tooltip catalog, or tabbed-panel contract is incomplete");
+}
+if (!generatorSource.includes('FSlateColor::UseForeground()')
+    || !generatorSource.includes('SetCheckedForegroundColor')
+    || !generatorSource.includes('PanelV2Style::AccentText')) {
+  throw new Error("Passive entry labels do not define readable unchecked and checked foreground colors");
 }
 if (!generatorSource.includes("ToggleUnchecked")
     || !generatorSource.includes("ToggleOutline")

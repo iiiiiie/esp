@@ -2414,6 +2414,7 @@ const FLinearColor PrimaryText(0.95f, 0.955f, 0.96f, 1.0f);
 const FLinearColor SecondaryText(0.67f, 0.69f, 0.71f, 1.0f);
 const FLinearColor Accent(0.16f, 0.72f, 0.45f, 1.0f);
 const FLinearColor AccentHover(0.20f, 0.82f, 0.52f, 1.0f);
+const FLinearColor AccentText(0.025f, 0.04f, 0.03f, 1.0f);
 const FLinearColor Disabled(0.18f, 0.185f, 0.195f, 0.72f);
 const FLinearColor ToggleUnchecked(0.26f, 0.27f, 0.29f, 1.0f);
 const FLinearColor ToggleUncheckedHover(0.34f, 0.35f, 0.37f, 1.0f);
@@ -3499,7 +3500,7 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     Label->bIsVariable = true;
     Label->SetText(FText::FromString(TEXT("Passive")));
     Label->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 13));
-    Label->SetColorAndOpacity(FSlateColor(PanelV2Style::PrimaryText));
+    Label->SetColorAndOpacity(FSlateColor::UseForeground());
     Label->SetJustification(ETextJustify::Center);
     Label->SetAutoWrapText(true);
     FCheckBoxStyle Style = FCheckBoxStyle::GetDefault();
@@ -3510,6 +3511,12 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         .SetCheckedImage(FSlateRoundedBoxBrush(PanelV2Style::Accent, 5.0f, PanelV2Style::ToggleOutline, 1.0f))
         .SetCheckedHoveredImage(FSlateRoundedBoxBrush(PanelV2Style::AccentHover, 5.0f, PanelV2Style::ToggleOutline, 1.0f))
         .SetCheckedPressedImage(FSlateRoundedBoxBrush(PanelV2Style::Accent, 5.0f, PanelV2Style::ToggleOutline, 1.0f))
+        .SetForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetHoveredForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetPressedForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetCheckedForegroundColor(FSlateColor(PanelV2Style::AccentText))
+        .SetCheckedHoveredForegroundColor(FSlateColor(PanelV2Style::AccentText))
+        .SetCheckedPressedForegroundColor(FSlateColor(PanelV2Style::AccentText))
         .SetPadding(FMargin(10.0f, 6.0f));
     Toggle->SetWidgetStyle(Style);
     Toggle->AddChild(Label);
@@ -3683,7 +3690,9 @@ bool BuildPanelPassiveCatalog(
     UK2Node_Self* Self = AddSelfNode(Graph, -1520, Y + 500);
     UK2Node_CallFunction* GetSortedSkills = AddStaticCall(Graph, PalUIUtilityClass, TEXT("GetSortedPassiveSkillNameArray"), -1260, Y + 500);
     UK2Node_MacroInstance* ForEachSkillId = AddForEachLoop(Graph, X, Y);
-    UK2Node_CallArrayFunction* SkillNameGet = AddArrayCall(Graph, TEXT("Array_Get"), X, Y + 520);
+    UK2Node_CallFunction* GetLocalizedSkillName = AddStaticCall(Graph, PalUIUtilityClass, TEXT("GetPassiveSkillName"), X, Y + 520);
+    UK2Node_CallFunction* LocalizedSkillNameToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), X + 260, Y + 520);
     UK2Node_CallFunction* GetPassiveManager = AddStaticCall(Graph, PalUtilityClass, TEXT("GetPassiveSkillManager"), X, Y + 680);
     UK2Node_CallFunction* GetSkillData = AddStaticCall(Graph, PassiveSkillManagerClass, TEXT("GetSkillData"), X + 260, Y + 680);
     UK2Node_BreakStruct* BreakSkillData = NewObject<UK2Node_BreakStruct>(Graph);
@@ -3701,6 +3710,17 @@ bool BuildPanelPassiveCatalog(
     UK2Node_CallFunction* SelectDescriptionId = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 1300, Y + 900);
     UK2Node_CallFunction* DescriptionStringToName = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_StringToName"), X + 1560, Y + 900);
     UK2Node_CallFunction* GetLocalizedDescription = AddStaticCall(Graph, MasterDataTablesUtilityClass, TEXT("GetLocalizedText"), X + 1820, Y + 900);
+    UK2Node_CallFunction* DescriptionTextToString = AddStaticCall(Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), X + 2080, Y + 900);
+    TArray<UK2Node_CallFunction*> EffectValueToStrings;
+    TArray<UK2Node_CallFunction*> ReplaceEffectValues;
+    for (int32 Index = 0; Index < 4; ++Index) {
+        EffectValueToStrings.Add(AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_DoubleToString"), X + 2080 + Index * 260, Y + 1080));
+        ReplaceEffectValues.Add(AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), X + 2340 + Index * 260, Y + 900));
+    }
+    UK2Node_CallFunction* FormattedDescriptionToText = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), X + 3380, Y + 900);
     UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, X, Y + 1120);
     UK2Node_VariableGet* SelectedIdsGet = AddExternalVariableGet(Graph, PassiveFilterIdsVariableName, ModActorClass, X + 260, Y + 1120);
     UK2Node_CallArrayFunction* IsSelected = AddArrayCall(Graph, TEXT("Array_Contains"), X + 520, Y + 1120);
@@ -3727,9 +3747,10 @@ bool BuildPanelPassiveCatalog(
     for (int32 Index = 0; Index < Groups.Num(); ++Index) {
         AddToGroup.Add(AddStaticCall(Graph, UPanelWidget::StaticClass(), TEXT("AddChild"), X + 2860, Y + Index * 180));
     }
-    if (!Self || !GetSortedSkills || !ForEachSkillId || !SkillNameGet || !GetPassiveManager
+    if (!Self || !GetSortedSkills || !ForEachSkillId || !GetLocalizedSkillName || !LocalizedSkillNameToString || !GetPassiveManager
         || !GetSkillData || !BreakSkillData || !DescIdToString || !SummaryIdToString || !DescIdAvailable
-        || !SelectDescriptionId || !DescriptionStringToName || !GetLocalizedDescription || !BridgeGet
+        || !SelectDescriptionId || !DescriptionStringToName || !GetLocalizedDescription || !DescriptionTextToString
+        || EffectValueToStrings.Contains(nullptr) || ReplaceEffectValues.Contains(nullptr) || !FormattedDescriptionToText || !BridgeGet
         || !SelectedIdsGet || !IsSelected || !GetController || !CreateEntry || !CastEntry || !InitializeEntry
         || !RankRainbow || !RankPositive || !WeightSpecial || !RankSpecial || !RankNormal
         || !RankNegative1 || !RankNegative2 || !RainbowBranch || !SpecialBranch || !GoldBranch
@@ -3737,8 +3758,9 @@ bool BuildPanelPassiveCatalog(
         || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, ForEachSkillId, TEXT("Exec"))
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetSortedSkills, TEXT("WorldContextObject"))
         || !Link(GetSortedSkills, TEXT("OutPassiveIdArray"), ForEachSkillId, TEXT("Array"))
-        || !Link(GetSortedSkills, TEXT("OutPassiveNameArray"), SkillNameGet, TEXT("TargetArray"))
-        || !Link(ForEachSkillId, TEXT("Array Index"), SkillNameGet, TEXT("Index"))
+        || !Link(Self, UEdGraphSchema_K2::PN_Self, GetLocalizedSkillName, TEXT("WorldContextObject"))
+        || !Link(ForEachSkillId, TEXT("Array Element"), GetLocalizedSkillName, TEXT("PassiveSkillId"))
+        || !Link(GetLocalizedSkillName, TEXT("outName"), LocalizedSkillNameToString, TEXT("InText"))
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetPassiveManager, TEXT("WorldContextObject"))
         || !Link(GetPassiveManager, UEdGraphSchema_K2::PN_ReturnValue, GetSkillData, UEdGraphSchema_K2::PN_Self)
         || !Link(ForEachSkillId, TEXT("Array Element"), GetSkillData, TEXT("SkillName"))
@@ -3754,6 +3776,7 @@ bool BuildPanelPassiveCatalog(
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetLocalizedDescription, TEXT("WorldContextObject"))
         || !SetPinDefault(GetLocalizedDescription, TEXT("TextCategory"), TEXT("SkillDesc"))
         || !Link(DescriptionStringToName, UEdGraphSchema_K2::PN_ReturnValue, GetLocalizedDescription, TEXT("TextId"))
+        || !Link(GetLocalizedDescription, UEdGraphSchema_K2::PN_ReturnValue, DescriptionTextToString, TEXT("InText"))
         || !Link(BridgeGet, PanelBridgeVariableName, SelectedIdsGet, UEdGraphSchema_K2::PN_Self)
         || !Link(SelectedIdsGet, PassiveFilterIdsVariableName, IsSelected, TEXT("TargetArray"))
         || !Link(ForEachSkillId, TEXT("Array Element"), IsSelected, TEXT("ItemToFind"))
@@ -3768,8 +3791,8 @@ bool BuildPanelPassiveCatalog(
         || !Link(CastEntry, CastEntry->GetCastResultPin()->PinName, InitializeEntry, UEdGraphSchema_K2::PN_Self)
         || !Link(BridgeGet, PanelBridgeVariableName, InitializeEntry, TEXT("Bridge"))
         || !Link(ForEachSkillId, TEXT("Array Element"), InitializeEntry, TEXT("SkillId"))
-        || !Link(SkillNameGet, TEXT("Item"), InitializeEntry, TEXT("SkillName"))
-        || !Link(GetLocalizedDescription, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Description"))
+        || !Link(LocalizedSkillNameToString, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("SkillName"))
+        || !Link(FormattedDescriptionToText, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Description"))
         || !Link(IsSelected, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Selected"))
         || !Link(InitializeEntry, UEdGraphSchema_K2::PN_Then, RainbowBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(BreakSkillData, TEXT("Rank"), RankRainbow, TEXT("A"))
@@ -3797,6 +3820,22 @@ bool BuildPanelPassiveCatalog(
         || !Link(BreakSkillData, TEXT("Rank"), RankNegative2, TEXT("A"))
         || !SetPinDefault(RankNegative2, TEXT("B"), TEXT("-2"))
         || !Link(RankNegative2, UEdGraphSchema_K2::PN_ReturnValue, Negative2Branch, UEdGraphSchema_K2::PN_Condition)) {
+        return false;
+    }
+
+    UEdGraphNode* DescriptionSource = DescriptionTextToString;
+    for (int32 Index = 0; Index < 4; ++Index) {
+        const FName EffectValuePin(*FString::Printf(TEXT("EffectValue%d"), Index + 1));
+        const FString Placeholder = FString::Printf(TEXT("{EffectValue%d}"), Index + 1);
+        if (!Link(BreakSkillData, EffectValuePin, EffectValueToStrings[Index], TEXT("InDouble"))
+            || !Link(DescriptionSource, UEdGraphSchema_K2::PN_ReturnValue, ReplaceEffectValues[Index], TEXT("SourceString"))
+            || !SetPinDefault(ReplaceEffectValues[Index], TEXT("From"), Placeholder)
+            || !Link(EffectValueToStrings[Index], UEdGraphSchema_K2::PN_ReturnValue, ReplaceEffectValues[Index], TEXT("To"))) {
+            return false;
+        }
+        DescriptionSource = ReplaceEffectValues[Index];
+    }
+    if (!Link(DescriptionSource, UEdGraphSchema_K2::PN_ReturnValue, FormattedDescriptionToText, TEXT("InString"))) {
         return false;
     }
 
