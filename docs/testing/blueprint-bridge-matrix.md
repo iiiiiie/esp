@@ -17,11 +17,11 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | MSVC | `14.38` installed; UBT selected `14.39.33523` for the current editor-plugin build |
 | Wwise | Not required by the accepted no-Wwise PMK path |
 | Last fully verified LogicMod pak | `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14`; 8 files |
-| Current deployed panel pak | `1E0E45FAA65704177C252E6C432EAD966BCAF6E24DCA7D1361FD9A760B07A71A`; `v9` complete panel persistence, collapsed passive groups, reset-default wording, and left-adjacent display checkboxes; Steam verification pending |
+| Current deployed panel pak | `364AF89C38EFE57FF4783EE141A575B0DF55EC0D21C0C6ED504AB6571AE145F6`; `v10` local collection-completion filter with complete panel persistence; Steam verification pending |
 | Current Pak contents | 16 files under `../../../Pal/Content/Mods/PalworldResourceESP/`; no DLL |
-| Current Lua script hash | `379AEDD3D2CB405AEDBDF03C3C84E46F0AEA147FE6708EA65BF9858B0E7CCA30` |
+| Current Lua script hash | `B8A6488DD49626A3D77C67C54B8083A9E34CCF6541A28E142FA4F3BE90B2B5A6` |
 | Current Lua config hash | `DA3B598DD1854402D5A3ABE7BC012C2D910A4D77F5427E55948399F58F18EC53` |
-| Current settings module hash | `5D679064B4EE33CBFFF790E64D79FDF5A630FA455FC24FDF2D0716A5BDD31FF5` |
+| Current settings module hash | `AE36A98D226848889BBC493379B405C9ACA2DB23D1FD48CC4D46D02DB3318D29` |
 
 ## Required Cases
 
@@ -47,7 +47,7 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | BP-18 | Gender selector visual state | Exactly the selected segment is green after a click and after panel recreation | Pass | Maintainer confirmed the rebuilt selector highlight is correct. |
 | BP-19 | Slider commit behavior | Dragging updates only the visible number; releasing applies one filter revision without continuous hitching | Pending | Source and automated contract complete; Steam verification required. |
 | BP-20 | Name label and outline | Name visibility is independent; all name/level/distance text uses a black outline | Pending | Generated Blueprint and Steam verification required. |
-| BP-21 | Settings restoration | Panel reopen, save transition, and restart restore the last stable functional settings, passive selections, category expansion, and language without restoring capture state | Pending | Strict `v9` parser/runtime, FString bridge, array reconstruction, compile, Cook, and package checks pass; full Steam restart verification required. |
+| BP-21 | Settings restoration | Panel reopen, save transition, and restart restore the last stable functional settings, passive selections, category expansion, and language without restoring capture state | Pending | Strict `v10` parser/runtime, legacy migration, FString bridge, array reconstruction, compile, Cook, and package checks pass; maintainer reports persistence appears functional, while a controlled full-restart verification remains. |
 | BP-22 | Lucky filter | All/only Lucky/exclude Lucky filters already-admitted wild Pals; unknown states fail closed in restricted modes | Pending | `IsRarePal()` provider, three-state UI, persistence, Blueprint compilation, and 12-file Pak checks pass; Steam verification requires an ordinary Pal and ideally a Lucky sample. |
 | BP-23 | Boss filter | All/only Boss/exclude Boss filters already-admitted wild Pals; unknown states fail closed in restricted modes | Pending | `GetCharacterID()` + character database `GetIsBoss()` provider, three-state UI, `v3` persistence, Blueprint compilation, and 12-file Pak checks pass; Steam verification requires a fixed-map Boss and ordinary Pal. |
 | BP-24 | Element filter | Nine compact toggles filter already-admitted wild Pals with match-any semantics; no selection means all and unknown masks fail closed | Pending | `HasElementType()` provider, 3x3 UI, scalar mask bridge, strict `v4` persistence, Blueprint compilation, clean Cook, and 12-file/0-DLL Pak checks pass; ordinary Pals are sufficient for Steam verification. |
@@ -60,6 +60,7 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | BP-31 | Tabbed panel layout | 1180x680 panel switches between Display, Filters, and pending Display style without losing input or filter state | Pending | WidgetSwitcher, tab highlighting, two-column filter page, eight persisted expansion states defaulting collapsed, and repeat-generation dependency contract compile; 720p and higher visual verification remains. |
 | BP-32 | Passive catalog search and invalid rows | Enter, focus loss, or Search applies a case-insensitive localized-name query; Clear restores the full valid catalog; empty, `None`, and missing-data rows never render | Pending | Generated graph binds `OnTextCommitted`, performs one catalog rebuild per commit, and gates widget creation on ID, data, localized name, and query validity; Steam interaction verification remains. |
 | BP-33 | Passive right-click exclusion | Right-click toggles an unlimited exclusion, removes the same include, marks the entry `[排除]`, and hides any target carrying that ID; left-click inclusion removes the same exclusion | Pending | Blueprint-owned include/exclude arrays, mutual removal, both clear actions, three Overlay synchronization paths, and pre-projection exclusion compile; the mouse override function has 41 nodes and returns Unhandled on all paths. Steam interaction verification remains. |
+| BP-34 | Local collection-completion filter | All shows every otherwise-matching target; incomplete requires a local species capture count below five; complete requires at least five; unknown counts are hidden in restricted modes | Pending | Blueprint uses the public local record and capture-count APIs only after Lua admission, stores one indexed count per target with `-1` fallback, applies the fixed threshold before projection, exposes a three-state selector, and persists it through strict `v10`; Steam verification remains. |
 
 ## Panel Regression Evidence
 
@@ -85,4 +86,4 @@ Expected result: no matches.
 
 ## Completion Rule
 
-The original Blueprint bridge spike passed BP-01 through BP-11 on Steam single-player. The current panel checkpoint is complete only when BP-12 through BP-31 pass without regressing BP-01 through BP-11 or `candidate_player_count=0`.
+The original Blueprint bridge spike passed BP-01 through BP-11 on Steam single-player. The current panel checkpoint is complete only when BP-12 through BP-34 pass without regressing BP-01 through BP-11 or `candidate_player_count=0`.

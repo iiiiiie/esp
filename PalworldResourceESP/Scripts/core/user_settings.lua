@@ -1,6 +1,6 @@
 local user_settings = {}
 
-local VERSION = "v9"
+local VERSION = "v10"
 
 local v1_fields = {
     { name = "runtime_enabled", kind = "boolean", default = true },
@@ -80,6 +80,12 @@ for _, name in ipairs({
     fields[#fields + 1] = { name = name, kind = "boolean", default = false }
 end
 
+local v9_fields = {}
+for _, field in ipairs(fields) do
+    v9_fields[#v9_fields + 1] = field
+end
+fields[#fields + 1] = { name = "collection", kind = "integer", min = 0, max = 2, default = 0 }
+
 local schemas = {
     v1 = v1_fields,
     v2 = v2_fields,
@@ -89,7 +95,8 @@ local schemas = {
     v6 = v6_fields,
     v7 = v7_fields,
     v8 = v8_fields,
-    v9 = fields,
+    v9 = v9_fields,
+    v10 = fields,
 }
 
 local fields_by_version = {}
@@ -214,10 +221,10 @@ function user_settings.parse_line(line)
     if version == "v1" then
         normalized.lucky = 0
     end
-    if version ~= "v3" and version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" then
+    if version ~= "v3" and version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" then
         normalized.boss = 0
     end
-    if version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" then
+    if version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" then
         normalized.element_normal = false
         normalized.element_fire = false
         normalized.element_water = false
@@ -228,21 +235,21 @@ function user_settings.parse_line(line)
         normalized.element_dark = false
         normalized.element_dragon = false
     end
-    if version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" then
+    if version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" then
         normalized.show_iv = false
     end
-    if version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" then
+    if version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" then
         normalized.iv_min = 0
     end
-    if version ~= "v7" and version ~= "v8" and version ~= "v9" then
+    if version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" then
         normalized.show_passives = false
     end
-    if version ~= "v8" and version ~= "v9" then
+    if version ~= "v8" and version ~= "v9" and version ~= "v10" then
         normalized.iv_hp_min = normalized.iv_min or 0
         normalized.iv_attack_min = normalized.iv_min or 0
         normalized.iv_defense_min = normalized.iv_min or 0
     end
-    if version ~= "v9" then
+    if version ~= "v9" and version ~= "v10" then
         normalized.passive_includes = ""
         normalized.passive_excludes = ""
         normalized.expand_rainbow = false
@@ -253,6 +260,9 @@ function user_settings.parse_line(line)
         normalized.expand_negative1 = false
         normalized.expand_negative2 = false
         normalized.expand_negative3 = false
+    end
+    if version ~= "v10" then
+        normalized.collection = 0
     end
     return normalized, nil, version
 end

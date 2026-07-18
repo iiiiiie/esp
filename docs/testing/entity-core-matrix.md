@@ -2,11 +2,11 @@
 
 ## Status
 
-- Implementation: wrapper-safe snapshots, live target distance, independent metadata visibility, numeric panel ranges, gender, Lucky, Boss, multi-select element filtering, dimensional IV minimum filtering, localized passive display plus AND filtering, tabbed panel, and capture tooling complete; runtime regression pending
+- Implementation: wrapper-safe snapshots, live target distance, independent metadata visibility, numeric panel ranges, gender, Lucky, Boss, local collection completion, multi-select element filtering, dimensional IV minimum filtering, localized passive display plus AND filtering, tabbed panel, and capture tooling complete; runtime regression pending
 - Maintainer-required environment: Steam PC single-player
 - Server environments: community pending and not a Phase 2 gate
 - Human player invariant: every runtime run must report `candidate_player_count=0`
-- Last updated: 2026-07-18
+- Last updated: 2026-07-19
 
 ## Current Fingerprint
 
@@ -17,10 +17,10 @@
 | Active UE4SS root | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss` |
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
-| LogicMod pak SHA-256 | `90D6411303EC0141EE093F09925654DE9F417780B95BA23F1F5AB4F628309F05`; deployed Rank-only passive category checkpoint; Steam category verification pending |
-| `main.lua` SHA-256 | `5BD0B440E7681A31E40D8DE3A8D906D0592B51F4A6DDA081318D77A7DC1F78B3` |
+| LogicMod pak SHA-256 | `364AF89C38EFE57FF4783EE141A575B0DF55EC0D21C0C6ED504AB6571AE145F6`; deployed local collection-completion filter checkpoint; Steam verification pending |
+| `main.lua` SHA-256 | `B8A6488DD49626A3D77C67C54B8083A9E34CCF6541A28E142FA4F3BE90B2B5A6` |
 | `config.lua` SHA-256 | `DA3B598DD1854402D5A3ABE7BC012C2D910A4D77F5427E55948399F58F18EC53` |
-| `user_settings.lua` SHA-256 | `51F652DB28A4E4A1B64D99CE76104DC2C46E9EC4D04F32FAA8E3E221AC9C8AE2` |
+| `user_settings.lua` SHA-256 | `AE36A98D226848889BBC493379B405C9ACA2DB23D1FD48CC4D46D02DB3318D29` |
 | Newest reported termination | `2026-07-18` after `PANEL_TOGGLE_REQUESTED` during synchronous reconciliation; no new dump, so the serialized-toggle fix remains regression-pending |
 | Runtime baseline backup | `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp_backups/20260716_entity_core_baseline` |
 
@@ -50,14 +50,14 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-18 | Capture segmentation | Concatenated UE4SS markers and PresentMon absolute timestamps split by mode with a 2-second transition exclusion | Pass | Synthetic parser plus 31-frame end-to-end segmented analysis pass |
 | AT-19 | Panel range filters | Level endpoints compose with a fixed 0m distance lower bound; unavailable fields remain fail-closed | Pass | Stubbed runtime ignores legacy `ESP_DistanceMin=999`, clamps the maximum to 330m, and validates both 0-0m and 0-330m ranges |
 | AT-20 | Top-guide style control | The panel boolean round-trips through scalar polling without resubmitting snapshot Actors | Pass | Stubbed runtime records both hidden and shown actor-free style transitions |
-| AT-21 | LogicMod package | Generated package contains exactly eight `.uasset` and eight `.uexp` files with no runtime DLL | Pass | Clean Cook produced 16 files with no Cook/Blueprint errors; UnrealPak lists 16 files, 0 DLL, candidate SHA-256 `90D6411303EC0141EE093F09925654DE9F417780B95BA23F1F5AB4F628309F05` |
+| AT-21 | LogicMod package | Generated package contains exactly eight `.uasset` and eight `.uexp` files with no runtime DLL | Pass | Clean Cook produced 411/411 packages with 0 errors; UnrealPak lists 16 project files, 0 DLL, deployed SHA-256 `364AF89C38EFE57FF4783EE141A575B0DF55EC0D21C0C6ED504AB6571AE145F6` |
 | AT-22 | Target display metadata | The exact Entity Core level and rounded snapshot distance accompany each submitted target | Pass | Stubbed bridge receives level 1 and distance 1m for the first synthetic target |
 | AT-23 | Numeric panel controls | Slider plus exact numeric input preserves scalar polling for level endpoints, 0-330m maximum distance, and the 1-100 display limit | Pass | Stubbed runtime reduces five displayed targets to three, clamps an attempted 999-target limit to 100, and restores the configured limit |
 | AT-24 | Metadata visibility | Level and distance booleans round-trip independently through the actor-free style bridge | Pass | Stub records hidden and shown combinations without resubmitting snapshot Actors |
 | AT-25 | Live distance graph | Overlay computes meters from current player and target locations during each paint pass | Pass | Generator links `GetPlayerPawn`, both live Actor locations, `Vector_Distance`, meter conversion, and integer text; final Blueprint statuses are warning-only/up-to-date |
 | AT-26 | Gender filter bridge | Scalar all/male/female control reaches Blueprint without resubmitting Actors; invalid selectors clamp to female | Pass | Stub records `0/1/2`, generator stores one normalized gender code per admitted target, and OnPaint filters before projection |
 | AT-27 | Gender selector visual state | Click and panel initialization set exactly one segment to the green accent and reset the other two | Pass | Generated panel graph uses `SetBackgroundColor` on all three segments in every click path, clamps initialization to `0..2`, and derives colors from `GenderFilterId`; Blueprint compiles with status 3 |
-| AT-28 | Versioned local settings | Only whitelisted bounded scalars and strict passive-ID mirrors round-trip; invalid lines fail closed; the last valid snapshot wins | Pass | Unit suite covers strict `v1` through `v9`, legacy migrations, passive deduplication/caps, eight expansion booleans, append format, path resolution, FString normalization, and coalesced runtime writes |
+| AT-28 | Versioned local settings | Only whitelisted bounded scalars and strict passive-ID mirrors round-trip; invalid lines fail closed; the last valid snapshot wins | Pass | Unit suite covers strict `v1` through `v10`, legacy migrations, passive deduplication/caps, eight expansion booleans, collection selector clamping, append format, path resolution, FString normalization, and coalesced runtime writes |
 | AT-29 | Slider deferred commit | Slider movement only updates the paired SpinBox; mouse/controller release and SpinBox commit each increment once | Pass | Source contract test passes; regenerated panel compiles with status 3 and clean Cook completes with 0 errors |
 | AT-30 | Name and outlined labels | Blueprint nickname remains indexed with each target; name visibility is independent and text has a black outline | Pass | Overlay stores one nickname per target, compiles with status 5, and clean Cook completes with 0 errors; UE 5.1 outline uses four black offset draws plus white foreground |
 | AT-31 | Lucky filter provider | Blueprint reads `IsRarePal()` only after Lua admission; all/only/exclude is scalar-controlled and unknown fails closed | Pass | Unit/static contracts cover old-schema migration, `v3` round-trip, ID clamping, bridge payloads, indexed `-1/0/1` states, and pre-projection filtering; Overlay/Panel/ModActor compile and clean Cook completes 408/408 with 0 errors |
@@ -71,6 +71,7 @@ Record final source hashes and the implementation commit immediately before the 
 | AT-39 | Passive catalog readability, search, and rich text | Dynamic labels inherit the cooked UMG font; committed search filters localized names; invalid/`None` rows fail closed; confirmed numeric tags render through a custom rich-text tooltip | Pass | Tooltip/Entry/Panel compile with statuses 3/3/3; clean Cook produces 16 files and UnrealPak lists the project-owned tooltip plus style table with 0 DLL |
 | AT-40 | Passive fallbacks, Rank categories, and exclusion | Missing/malformed effects use exact-ID bilingual fallbacks; eight Rank-only groups classify every supported nonzero tier; right-click exclusions are mutually exclusive with includes and reject before projection | Pass | Source contracts cover all 27 reported IDs, `>=5/4/3/2/1/-1/-2/-3` branch order, Rank-0 rejection, two distinct Gold groups, both filter arrays, clear actions, and Overlay exclusion. Entry compiles with a 41-node mouse override, Panel status 3 has 1560 nodes, clean Cook completes 411/411, and the candidate Pak has 16 files/0 DLL. |
 | AT-41 | Complete panel persistence | Display/filter scalars, passive include/exclude selections, and eight passive-category expansion states survive panel reconstruction and serialize in one `v9` snapshot | Pass | 33 settings tests plus runtime stub cover `v8` migration, strict ID parsing, FString userdata conversion, Blueprint restore event, coalesced writes, left-adjacent display checkboxes, 411/411 clean Cook, and 16-file/0-DLL Pak SHA-256 `1E0E45FAA65704177C252E6C432EAD966BCAF6E24DCA7D1361FD9A760B07A71A` |
+| AT-42 | Local collection-completion filter | Blueprint reads the local player's species capture count after Lua admission; all/incomplete/complete uses a fixed five-capture boundary and unknown data fails closed in restricted modes | Pass | Public `GetLocalRecordData` -> `PalCaptureCount` -> `GetRecordData_Int(CharacterID)` contract, indexed `-1` fallback, three-state UI, actor-free bridge payload, `v10` persistence, reset-default behavior, Blueprint compile, 411/411 clean Cook, and 16-file/0-DLL package checks pass |
 
 ## Performance Investigation
 
@@ -110,6 +111,7 @@ All three real runs passed capture cleanup, death cleanup, return to Title, norm
 | EC-20 | IV minimum filtering | Each HP/ATK/DEF minimum independently applies; every configured dimension must match | Pending | Automated dimensional thresholds, unknown fail-closed, bridge, Blueprint compile, Cook, and `v8` persistence contracts pass. |
 | EC-21 | Passive-skill display and filtering | Display uses localized names; no selection shows all; multiple left-clicked skills use AND; right-clicked skills are excluded; search narrows names; hover renders readable effects | Pending | All 27 reported missing/malformed effects have exact-ID bilingual fallbacks, `Status_Up` is styled, Legend/Normal category ordering is corrected, and excluded entries show `[排除]`. Blueprint compile, clean Cook, and 16-file/0-DLL package checks pass; Steam visual and behavior verification remains. |
 | EC-22 | Panel safety and display-state clarity | Repeated Shift+Y toggles remain crash-free around scan boundaries; every display checkbox has clearly distinct selected and unselected states | Pending | Serialized runtime-tick implementation and automated regression pass; current Steam package requires runtime and visual verification. |
+| EC-23 | Local collection-completion filtering | All shows both groups; incomplete shows species captured fewer than five times; complete shows species captured at least five times; the fifth capture changes other targets of that species to complete | Pending | Automated SDK-provider, fixed-threshold, fail-closed, bridge, UI, reset, and `v10` persistence contracts pass; Steam behavior requires a species near the five-capture boundary. |
 
 ## Runtime Procedure
 
@@ -122,12 +124,13 @@ All three real runs passed capture cleanup, death cleanup, return to Title, norm
 7. Test elements with ordinary Pals: clear all selections, select one element represented nearby, then select a second element. Confirm no selection shows all and two selections use OR rather than AND. Close/reopen the panel and confirm both selected chips remain checked.
 8. Before changing filters, open and close the panel at least five times, including once near an expected five-second scan boundary. Confirm no crash and normal mouse/camera restoration, then confirm each display checkbox remains visible and clearly distinguishes checked from unchecked.
 9. Enable IV display near ordinary Pals. Confirm each visible label contains plausible `0..100` HP/ATK/DEF values. Change HP, ATK, and DEF minima separately; each threshold must compare only its own dimension, and all three configured conditions must pass.
-10. Enable passive-skill display and confirm localized names appear. In Filters, hover entries to confirm localized effects, select one matching skill, then a second skill. The result must narrow with AND semantics. Clear passives and clear all filters, then close/reopen the panel and confirm visible session state.
-11. Capture one guided Pal and kill another. Confirm both guides disappear and stay absent after at least six seconds.
-12. Change at least three visible settings, wait two seconds, return to Title, and exit. Restart once and confirm the settings restore while capture remains stopped.
-13. Extract `USER_SETTINGS_PATH`, `USER_SETTINGS_SAVED`, `USER_SETTINGS_LOADED`, `ADAPTER_REGISTERED`, `PLAYER_AUDIT`, `ENTITY_SNAPSHOT`, `FILTER_RESULT`, `DISPLAY_BUDGET`, `SCAN_DONE`, `DISPLAY_STYLE`, panel-toggle, bridge, lifecycle, and error rows.
-14. Re-run the privacy/capability scans and compare the crash directory timestamp.
+10. Enable passive-skill display and confirm localized names appear. In Filters, hover entries to confirm localized effects, select one matching skill, then a second skill. The result must narrow with AND semantics. Clear passives and reset all filters to defaults, then close/reopen the panel and confirm visible session state.
+11. Near a species captured fewer than five times, switch collection completion through all, incomplete, and complete. Capture the fifth specimen when practical, then confirm other loaded targets of that species move from incomplete to complete after refresh. Close/reopen the panel and confirm the selected state persists; resetting filters must return it to all.
+12. Capture one guided Pal and kill another. Confirm both guides disappear and stay absent after at least six seconds.
+13. Change at least three visible settings, wait two seconds, return to Title, and exit. Restart once and confirm the settings restore while capture remains stopped.
+14. Extract `USER_SETTINGS_PATH`, `USER_SETTINGS_SAVED`, `USER_SETTINGS_LOADED`, `ADAPTER_REGISTERED`, `PLAYER_AUDIT`, `ENTITY_SNAPSHOT`, `FILTER_RESULT`, `DISPLAY_BUDGET`, `SCAN_DONE`, `DISPLAY_STYLE`, panel-toggle, bridge, lifecycle, and error rows.
+15. Re-run the privacy/capability scans and compare the crash directory timestamp.
 
 ## Completion Rule
 
-ADR-0005 remains `Proposed` until EC-01 through EC-22 pass. After that evidence is recorded, change the ADR to `Accepted`, mark Phase 2 complete in the PRD, update source/deployment hashes, and make the Draft PR ready for review. Multiplayer remains community-pending.
+ADR-0005 remains `Proposed` until EC-01 through EC-23 pass. After that evidence is recorded, change the ADR to `Accepted`, mark Phase 2 complete in the PRD, update source/deployment hashes, and make the Draft PR ready for review. Multiplayer remains community-pending.

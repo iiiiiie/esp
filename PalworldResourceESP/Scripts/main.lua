@@ -167,6 +167,7 @@ local state = {
     gender_filter_id = 0,
     lucky_filter_id = 0,
     boss_filter_id = 0,
+    collection_filter_id = 0,
     element_filter_mask = 0,
     language_id = 0,
     settings_path = nil,
@@ -360,6 +361,7 @@ local SETTINGS_PROPERTIES = {
     { name = "gender", property = "ESP_GenderFilterId" },
     { name = "lucky", property = "ESP_LuckyFilterId" },
     { name = "boss", property = "ESP_BossFilterId" },
+    { name = "collection", property = "ESP_CollectionFilterId" },
     { name = "element_normal", property = "ESP_ElementNormal" },
     { name = "element_fire", property = "ESP_ElementFire" },
     { name = "element_water", property = "ESP_ElementWater" },
@@ -491,7 +493,7 @@ local function schedule_user_settings_save(values)
     end
     local normalized = user_settings.normalize(values)
     state.settings_loaded = normalized
-    state.settings_loaded_version = "v9"
+    state.settings_loaded_version = "v10"
     local serialized = user_settings.serialize(normalized)
     if serialized == state.settings_last_serialized then
         state.settings_pending = nil
@@ -528,7 +530,7 @@ local function flush_user_settings_if_due()
     state.settings_pending = nil
     state.settings_save_due_at = nil
     state.settings_save_error_logged = false
-    debug_event("USER_SETTINGS_SAVED", "version=v9")
+    debug_event("USER_SETTINGS_SAVED", "version=v10")
 end
 
 local function safe_call_no_args(object, method_name)
@@ -2568,6 +2570,13 @@ local function normalize_boss_filter_id(raw_id)
     return math.max(0, math.min(2, math.floor(raw_id)))
 end
 
+local function normalize_collection_filter_id(raw_id)
+    if type(raw_id) ~= "number" or raw_id ~= raw_id or raw_id == math.huge or raw_id == -math.huge then
+        return 0
+    end
+    return math.max(0, math.min(2, math.floor(raw_id)))
+end
+
 local function build_element_filter_mask(
     normal, fire, water, leaf, electricity, ice, earth, dark, dragon
 )
@@ -2597,11 +2606,13 @@ local function apply_display_styles(
     raw_gender_filter_id,
     raw_lucky_filter_id,
     raw_boss_filter_id,
+    raw_collection_filter_id,
     raw_element_filter_mask
 )
     local gender_filter_id = normalize_gender_filter_id(raw_gender_filter_id)
     local lucky_filter_id = normalize_lucky_filter_id(raw_lucky_filter_id)
     local boss_filter_id = normalize_boss_filter_id(raw_boss_filter_id)
+    local collection_filter_id = normalize_collection_filter_id(raw_collection_filter_id)
     local iv_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_min) or 0)))
     local iv_hp_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_hp_min) or iv_min)))
     local iv_attack_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_attack_min) or iv_min)))
@@ -2622,6 +2633,7 @@ local function apply_display_styles(
         and gender_filter_id == state.gender_filter_id
         and lucky_filter_id == state.lucky_filter_id
         and boss_filter_id == state.boss_filter_id
+        and collection_filter_id == state.collection_filter_id
         and element_filter_mask == state.element_filter_mask then
         return false
     end
@@ -2639,6 +2651,7 @@ local function apply_display_styles(
     state.gender_filter_id = gender_filter_id
     state.lucky_filter_id = lucky_filter_id
     state.boss_filter_id = boss_filter_id
+    state.collection_filter_id = collection_filter_id
     state.element_filter_mask = element_filter_mask
     if not safe_set_property(state.bridge_actor, "ESP_ElementFilterMask", element_filter_mask) then
         log_event("ELEMENT_FILTER_BRIDGE_FAILED", string.format("mask=%d", element_filter_mask))
@@ -2659,13 +2672,15 @@ local function apply_display_styles(
         gender_filter_id,
         lucky_filter_id,
         boss_filter_id,
+        collection_filter_id,
         element_filter_mask
     )
     local gender_filter_names = { [0] = "all", [1] = "male", [2] = "female" }
     local lucky_filter_names = { [0] = "all", [1] = "only_lucky", [2] = "exclude_lucky" }
     local boss_filter_names = { [0] = "all", [1] = "only_boss", [2] = "exclude_boss" }
+    local collection_filter_names = { [0] = "all", [1] = "incomplete", [2] = "complete" }
     log_event("DISPLAY_STYLE", string.format(
-        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s show_iv=%s show_passives=%s iv_hp_min=%d iv_attack_min=%d iv_defense_min=%d passive_filter_revision=%d gender_filter=%s lucky_filter=%s boss_filter=%s element_filter_mask=%d",
+        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s show_iv=%s show_passives=%s iv_hp_min=%d iv_attack_min=%d iv_defense_min=%d passive_filter_revision=%d gender_filter=%s lucky_filter=%s boss_filter=%s collection_filter=%s element_filter_mask=%d",
         tostring(show_top_guide_line),
         tostring(show_name),
         tostring(show_level),
@@ -2679,6 +2694,7 @@ local function apply_display_styles(
         gender_filter_names[gender_filter_id],
         lucky_filter_names[lucky_filter_id],
         boss_filter_names[boss_filter_id],
+        collection_filter_names[collection_filter_id],
         element_filter_mask
     ))
     return true
@@ -2752,6 +2768,7 @@ local function poll_panel_controls()
     local gender_filter_id = read_panel_number("ESP_GenderFilterId")
     local lucky_filter_id = read_panel_number("ESP_LuckyFilterId")
     local boss_filter_id = read_panel_number("ESP_BossFilterId")
+    local collection_filter_id = read_panel_number("ESP_CollectionFilterId")
     local element_normal = read_panel_boolean("ESP_ElementNormal")
     local element_fire = read_panel_boolean("ESP_ElementFire")
     local element_water = read_panel_boolean("ESP_ElementWater")
@@ -2775,6 +2792,7 @@ local function poll_panel_controls()
         or expand_normal == nil or expand_negative1 == nil or expand_negative2 == nil or expand_negative3 == nil
         or passive_filter_revision == nil
         or gender_filter_id == nil or lucky_filter_id == nil or boss_filter_id == nil
+        or collection_filter_id == nil
         or element_normal == nil or element_fire == nil or element_water == nil or element_leaf == nil
         or element_electricity == nil or element_ice == nil or element_earth == nil
         or element_dark == nil or element_dragon == nil
@@ -2810,6 +2828,7 @@ local function poll_panel_controls()
         gender_filter_id,
         lucky_filter_id,
         boss_filter_id,
+        collection_filter_id,
         element_filter_mask
     )
     local limit_changed = apply_display_target_limit(display_target_limit)
@@ -2851,6 +2870,7 @@ local function poll_panel_controls()
         gender = gender_filter_id,
         lucky = lucky_filter_id,
         boss = boss_filter_id,
+        collection = collection_filter_id,
         element_normal = element_normal,
         element_fire = element_fire,
         element_water = element_water,

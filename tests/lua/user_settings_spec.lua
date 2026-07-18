@@ -24,6 +24,7 @@ local function complete(overrides)
         gender = 0,
         lucky = 0,
         boss = 0,
+        collection = 0,
         element_normal = false,
         element_fire = false,
         element_water = false,
@@ -51,11 +52,14 @@ local function complete(overrides)
 end
 
 local function legacy_snapshot(values, version)
-    local snapshot = user_settings.serialize(values):gsub("^v9 ", version .. " ")
-        :gsub(" passive_includes=[^ ]+", "")
-        :gsub(" passive_excludes=[^ ]+", "")
-        :gsub(" expand_[%a%d_]+=false", "")
-    if version ~= "v8" then
+    local snapshot = user_settings.serialize(values):gsub("^v10 ", version .. " ")
+        :gsub(" collection=%-?%d+", "")
+    if version ~= "v9" then
+        snapshot = snapshot:gsub(" passive_includes=[^ ]+", "")
+            :gsub(" passive_excludes=[^ ]+", "")
+            :gsub(" expand_[%a%d_]+=[^ ]+", "")
+    end
+    if version ~= "v8" and version ~= "v9" then
         snapshot = snapshot:gsub(" iv_hp_min=%-?%d+", "")
             :gsub(" iv_attack_min=%-?%d+", "")
             :gsub(" iv_defense_min=%-?%d+", "")
@@ -91,6 +95,7 @@ return {
             gender = 2,
             lucky = 1,
             boss = 2,
+            collection = 2,
             element_fire = true,
             element_water = true,
             show_iv = true,
@@ -111,6 +116,7 @@ return {
         helper.equal(parsed.gender, 2)
         helper.equal(parsed.lucky, 1)
         helper.equal(parsed.boss, 2)
+        helper.equal(parsed.collection, 2)
         helper.equal(parsed.element_fire, true)
         helper.equal(parsed.element_water, true)
         helper.equal(parsed.element_normal, false)
@@ -123,6 +129,20 @@ return {
         helper.equal(parsed.passive_excludes, "|PAL_Coward|CraftSpeed_down1|")
         helper.equal(parsed.expand_legend, true)
         helper.equal(parsed.expand_negative1, true)
+    end),
+
+    helper.case("settings v9 snapshots default collection filter to all", function()
+        local v9 = legacy_snapshot(complete({
+            passive_includes = "|Legend|",
+            expand_legend = true,
+            collection = 2,
+        }), "v9")
+        local parsed, parse_error, version = user_settings.parse_line(v9)
+        helper.equal(parse_error, nil)
+        helper.equal(version, "v9")
+        helper.equal(parsed.passive_includes, "|Legend|")
+        helper.equal(parsed.expand_legend, true)
+        helper.equal(parsed.collection, 0)
     end),
 
     helper.case("settings v8 snapshots default passive selections and category expansion", function()
@@ -264,6 +284,7 @@ return {
             gender = 9,
             lucky = -4,
             boss = 99,
+            collection = 99,
             iv_min = 999,
             iv_hp_min = -9,
             iv_attack_min = 47,
@@ -277,6 +298,7 @@ return {
         helper.equal(normalized.gender, 2)
         helper.equal(normalized.lucky, 0)
         helper.equal(normalized.boss, 2)
+        helper.equal(normalized.collection, 2)
         helper.equal(normalized.iv_min, 100)
         helper.equal(normalized.iv_hp_min, 0)
         helper.equal(normalized.iv_attack_min, 47)
@@ -319,9 +341,10 @@ return {
             passive_includes = "|Legend|Rare|",
             passive_excludes = "|PAL_Coward|",
             expand_legend = true,
+            collection = 1,
         }), backend)
         helper.truthy(ok)
-        helper.truthy(written:match("^v9 "))
+        helper.truthy(written:match("^v10 "))
         helper.truthy(written:match("show_name=false"))
         helper.truthy(written:match("lucky=0"))
         helper.truthy(written:match("boss=0"))
@@ -336,6 +359,7 @@ return {
         helper.truthy(written:match("passive_excludes=|PAL_Coward|"))
         helper.truthy(written:match("expand_legend=true"))
         helper.truthy(written:match("expand_rainbow=false"))
+        helper.truthy(written:match("collection=1"))
         helper.truthy(written:match("\n$"))
     end),
 
