@@ -12,6 +12,8 @@
 #include "BlueprintGraph/Classes/K2Node_DynamicCast.h"
 #include "BlueprintGraph/Classes/K2Node_Event.h"
 #include "BlueprintGraph/Classes/K2Node_ExecutionSequence.h"
+#include "BlueprintGraph/Classes/K2Node_FunctionEntry.h"
+#include "BlueprintGraph/Classes/K2Node_FunctionResult.h"
 #include "BlueprintGraph/Classes/K2Node_IfThenElse.h"
 #include "BlueprintGraph/Classes/K2Node_MacroInstance.h"
 #include "BlueprintGraph/Classes/K2Node_Self.h"
@@ -52,6 +54,7 @@
 #include "KismetCompilerModule.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetArrayLibrary.h"
+#include "Kismet/KismetInputLibrary.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Kismet/KismetStringLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -87,6 +90,8 @@ const FName OverlayPassiveBuildTextVariableName(TEXT("ESP_PassiveBuildText"));
 const FName OverlayPassiveIdBuildTextVariableName(TEXT("ESP_PassiveIdBuildText"));
 const FName OverlayPassiveFilterIdsVariableName(TEXT("ESP_PassiveFilterIds"));
 const FName OverlayPassiveFilterMatchVariableName(TEXT("ESP_PassiveFilterMatch"));
+const FName OverlayPassiveExcludeIdsVariableName(TEXT("ESP_PassiveExcludeIds"));
+const FName OverlayPassiveExcludeMatchVariableName(TEXT("ESP_PassiveExcludeMatch"));
 const FName OverlayGenderLoggedVariableName(TEXT("ESP_GenderLogged"));
 const FName OverlayGenderDiagnosticVariableName(TEXT("ESP_GenderDiagnostic"));
 const FName OverlayGenderDiagnosticCodeVariableName(TEXT("ESP_GenderDiagnosticCode"));
@@ -130,6 +135,7 @@ const FName IvHpMinVariableName(TEXT("ESP_IvHpMin"));
 const FName IvAttackMinVariableName(TEXT("ESP_IvAttackMin"));
 const FName IvDefenseMinVariableName(TEXT("ESP_IvDefenseMin"));
 const FName PassiveFilterIdsVariableName(TEXT("ESP_PassiveFilterIds"));
+const FName PassiveExcludeIdsVariableName(TEXT("ESP_PassiveExcludeIds"));
 const FName PassiveFilterRevisionVariableName(TEXT("ESP_PassiveFilterRevision"));
 const FName GenderFilterIdVariableName(TEXT("ESP_GenderFilterId"));
 const FName LuckyFilterIdVariableName(TEXT("ESP_LuckyFilterId"));
@@ -152,8 +158,44 @@ const FName PassiveTooltipInitializeEventName(TEXT("PalworldResourceESP_Initiali
 const FName PassiveEntryInitializeEventName(TEXT("PalworldResourceESP_InitializePassiveEntry"));
 const FName PassiveEntryBridgeVariableName(TEXT("ESP_Bridge"));
 const FName PassiveEntrySkillIdVariableName(TEXT("ESP_SkillId"));
+const FName PassiveEntrySkillNameVariableName(TEXT("ESP_SkillName"));
 const FName PassiveEntrySelectedVariableName(TEXT("ESP_Selected"));
+const FName PassiveEntryExcludedVariableName(TEXT("ESP_Excluded"));
 const TCHAR* PassiveRichTextStylePath = TEXT("/Game/Mods/PalworldResourceESP/DT_ESPRichTextStyle.DT_ESPRichTextStyle");
+
+struct FPassiveDescriptionFallback {
+    const TCHAR* SkillId;
+    const TCHAR* Chinese;
+    const TCHAR* English;
+};
+
+const TArray<FPassiveDescriptionFallback> PassiveDescriptionFallbacks = {
+    {TEXT("Deffence_down2"), TEXT("防御 -20%"), TEXT("Defense -20%")},
+    {TEXT("CraftSpeed_down2"), TEXT("工作速度 -30%"), TEXT("Work Speed -30%")},
+    {TEXT("PAL_ALLAttack_down2"), TEXT("攻击 -20%"), TEXT("Attack -20%")},
+    {TEXT("CraftSpeed_down1"), TEXT("工作速度 -10%"), TEXT("Work Speed -10%")},
+    {TEXT("PAL_ALLAttack_down1"), TEXT("攻击 -10%"), TEXT("Attack -10%")},
+    {TEXT("Deffence_down1"), TEXT("防御 -10%"), TEXT("Defense -10%")},
+    {TEXT("PAL_CorporateSlave"), TEXT("工作速度 +30%，攻击 -30%"), TEXT("Work Speed +30%, Attack -30%")},
+    {TEXT("PAL_masochist"), TEXT("防御 +15%，攻击 -15%"), TEXT("Defense +15%, Attack -15%")},
+    {TEXT("PAL_ALLAttack_up2"), TEXT("攻击 +20%"), TEXT("Attack +20%")},
+    {TEXT("PAL_ALLAttack_up1"), TEXT("攻击 +10%"), TEXT("Attack +10%")},
+    {TEXT("PAL_conceited"), TEXT("工作速度 +10%，防御 -10%"), TEXT("Work Speed +10%, Defense -10%")},
+    {TEXT("PAL_sadist"), TEXT("攻击 +15%，防御 -15%"), TEXT("Attack +15%, Defense -15%")},
+    {TEXT("PAL_oraora"), TEXT("攻击 +10%，防御 -10%"), TEXT("Attack +10%, Defense -10%")},
+    {TEXT("CraftSpeed_up1"), TEXT("工作速度 +20%"), TEXT("Work Speed +20%")},
+    {TEXT("Deffence_up1"), TEXT("防御 +10%"), TEXT("Defense +10%")},
+    {TEXT("CraftSpeed_up2"), TEXT("工作速度 +50%"), TEXT("Work Speed +50%")},
+    {TEXT("PAL_rude"), TEXT("攻击 +15%，工作速度 -10%"), TEXT("Attack +15%, Work Speed -10%")},
+    {TEXT("CraftSpeed_up3"), TEXT("工作速度 +75%"), TEXT("Work Speed +75%")},
+    {TEXT("PAL_ALLAttack_up3"), TEXT("攻击 +30%，防御 +5%"), TEXT("Attack +30%, Defense +5%")},
+    {TEXT("Rare"), TEXT("攻击 +15%，工作速度 +15%"), TEXT("Attack +15%, Work Speed +15%")},
+    {TEXT("MutationPal_ExplosionResist"), TEXT("免疫爆破伤害"), TEXT("Immune to explosion damage")},
+    {TEXT("WorkSuitabilityAddRank_MonsterFarm_2"), TEXT("牧场工作适应性 +2"), TEXT("Farming work suitability +2")},
+    {TEXT("WorkSuitabilityAddRank_MonsterFarm_1"), TEXT("牧场工作适应性 +1"), TEXT("Farming work suitability +1")},
+    {TEXT("Vampire"), TEXT("吸收造成伤害的一部分恢复自身 HP；夜晚也不会睡眠，可持续工作"), TEXT("Restores HP from part of damage dealt; remains awake and working at night")},
+    {TEXT("MutationPal_Mutant"), TEXT("帕鲁和玩家生命值自然恢复量 +50%，防御 +25%，免疫中毒与灼烧伤害"), TEXT("Pal and player auto HP recovery +50%, Defense +25%, immune to poison and burn damage")},
+};
 
 UDataTable* EnsurePassiveRichTextStyleTable(const FSlateFontInfo& SourceFont) {
     UDataTable* Table = LoadObject<UDataTable>(nullptr, PassiveRichTextStylePath);
@@ -191,6 +233,7 @@ UDataTable* EnsurePassiveRichTextStyleTable(const FSlateFontInfo& SourceFont) {
     AddStyle(TEXT("NumBlue_13"), FLinearColor(0.36f, 0.72f, 1.0f, 1.0f));
     AddStyle(TEXT("NumGreen_13"), FLinearColor(0.38f, 0.92f, 0.58f, 1.0f));
     AddStyle(TEXT("NumYellow_13"), FLinearColor(1.0f, 0.82f, 0.30f, 1.0f));
+    AddStyle(TEXT("Status_Up"), FLinearColor(0.38f, 0.92f, 0.58f, 1.0f));
     Table->MarkPackageDirty();
     return Table;
 }
@@ -332,6 +375,86 @@ UK2Node_Event* AddOverrideEvent(
     Node->AllocateDefaultPins();
     UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] AddOverrideEvent done function=%s pins=%d"), FunctionName, Node->Pins.Num());
     return Node;
+}
+
+bool PrepareOverrideFunctionGraph(
+    UWidgetBlueprint* Blueprint,
+    UClass* OwnerClass,
+    const FName& FunctionName,
+    UEdGraph*& OutGraph,
+    UK2Node_FunctionEntry*& OutEntry,
+    UK2Node_FunctionResult*& OutResult) {
+    OutGraph = nullptr;
+    OutEntry = nullptr;
+    OutResult = nullptr;
+    if (!Blueprint || !OwnerClass || !OwnerClass->FindFunctionByName(FunctionName)) {
+        return false;
+    }
+
+    for (UEdGraph* ExistingGraph : Blueprint->FunctionGraphs) {
+        if (ExistingGraph && ExistingGraph->GetFName() == FunctionName) {
+            OutGraph = ExistingGraph;
+            break;
+        }
+    }
+    if (!OutGraph) {
+        OutGraph = FBlueprintEditorUtils::CreateNewGraph(
+            Blueprint,
+            FunctionName,
+            UEdGraph::StaticClass(),
+            UEdGraphSchema_K2::StaticClass());
+        if (!OutGraph) {
+            return false;
+        }
+        FBlueprintEditorUtils::AddFunctionGraph<UClass>(Blueprint, OutGraph, false, OwnerClass);
+    } else {
+        ClearGraph(OutGraph);
+        OutGraph->GetSchema()->CreateDefaultNodesForGraph(*OutGraph);
+        const UEdGraphSchema_K2* K2Schema = Cast<const UEdGraphSchema_K2>(OutGraph->GetSchema());
+        if (!K2Schema) {
+            return false;
+        }
+        K2Schema->CreateFunctionGraphTerminators(*OutGraph, OwnerClass);
+    }
+
+    TArray<UK2Node_FunctionEntry*> Entries;
+    TArray<UK2Node_FunctionResult*> Results;
+    OutGraph->GetNodesOfClass(Entries);
+    OutGraph->GetNodesOfClass(Results);
+    if (Entries.Num() != 1 || Results.Num() != 1) {
+        return false;
+    }
+    OutEntry = Entries[0];
+    OutResult = Results[0];
+    OutEntry->NodePosX = -1600;
+    OutEntry->NodePosY = 1120;
+    OutResult->NodePosX = 3320;
+    OutResult->NodePosY = 1120;
+    if (UEdGraphPin* EntryExec = OutEntry->FindPin(UEdGraphSchema_K2::PN_Then)) {
+        EntryExec->BreakAllPinLinks();
+    }
+    return true;
+}
+
+UK2Node_FunctionResult* AddFunctionResultNode(
+    UEdGraph* Graph,
+    UK2Node_FunctionEntry* Entry,
+    int32 X,
+    int32 Y) {
+    if (!Graph || !Entry) {
+        return nullptr;
+    }
+    UK2Node_FunctionResult* Result = NewObject<UK2Node_FunctionResult>(Graph);
+    if (!Result) {
+        return nullptr;
+    }
+    Result->FunctionReference = Entry->FunctionReference;
+    Result->NodePosX = X;
+    Result->NodePosY = Y;
+    Graph->AddNode(Result, true, false);
+    Result->CreateNewGuid();
+    Result->AllocateDefaultPins();
+    return Result;
 }
 
 UK2Node_CallFunction* AddSelfCall(
@@ -1191,6 +1314,15 @@ bool BuildOverlay(
         Blueprint->NewVariables[ExistingPassiveFilterIdsIndex].VarType = NameArrayPin();
     }
 
+    const int32 ExistingPassiveExcludeIdsIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayPassiveExcludeIdsVariableName);
+    if (ExistingPassiveExcludeIdsIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayPassiveExcludeIdsVariableName, NameArrayPin())) {
+            return false;
+        }
+    } else {
+        Blueprint->NewVariables[ExistingPassiveExcludeIdsIndex].VarType = NameArrayPin();
+    }
+
     int32 ExistingPassiveFilterMatchIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayPassiveFilterMatchVariableName);
     if (ExistingPassiveFilterMatchIndex == INDEX_NONE) {
         if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayPassiveFilterMatchVariableName, BoolPin())) {
@@ -1203,6 +1335,19 @@ bool BuildOverlay(
     }
     Blueprint->NewVariables[ExistingPassiveFilterMatchIndex].VarType = BoolPin();
     Blueprint->NewVariables[ExistingPassiveFilterMatchIndex].DefaultValue = TEXT("true");
+
+    int32 ExistingPassiveExcludeMatchIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayPassiveExcludeMatchVariableName);
+    if (ExistingPassiveExcludeMatchIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayPassiveExcludeMatchVariableName, BoolPin())) {
+            return false;
+        }
+        ExistingPassiveExcludeMatchIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayPassiveExcludeMatchVariableName);
+    }
+    if (ExistingPassiveExcludeMatchIndex == INDEX_NONE) {
+        return false;
+    }
+    Blueprint->NewVariables[ExistingPassiveExcludeMatchIndex].VarType = BoolPin();
+    Blueprint->NewVariables[ExistingPassiveExcludeMatchIndex].DefaultValue = TEXT("true");
 
     const int32 ExistingGenderLoggedIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayGenderLoggedVariableName);
     if (ExistingGenderLoggedIndex == INDEX_NONE) {
@@ -1928,6 +2073,19 @@ bool BuildOverlay(
     UK2Node_VariableSet* StorePassiveFilterMatch = AddVariableSet(Graph, OverlayPassiveFilterMatchVariableName, 3080, 80);
     UK2Node_VariableGet* FinalPassiveFilterMatch = AddVariableGet(Graph, OverlayPassiveFilterMatchVariableName, 1780, 560);
     UK2Node_IfThenElse* PassiveFilterBranch = AddBranch(Graph, 2040, 80);
+    UK2Node_VariableSet* ResetPassiveExcludeMatch = AddVariableSet(Graph, OverlayPassiveExcludeMatchVariableName, 3340, 80);
+    UK2Node_VariableGet* PassiveExcludeIdsGet = AddVariableGet(Graph, OverlayPassiveExcludeIdsVariableName, 3340, 240);
+    UK2Node_MacroInstance* ForEachPassiveExcludeId = AddForEachLoop(Graph, 3600, 80);
+    UK2Node_VariableGet* PassiveExcludeMatchGet = AddVariableGet(Graph, OverlayPassiveExcludeMatchVariableName, 3880, 240);
+    UK2Node_CallFunction* PassiveExcludeIdToString = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_NameToString"), 3880, 400);
+    UK2Node_CallFunction* PassiveExcludeIdWithPrefix = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 4140, 400);
+    UK2Node_CallFunction* PassiveExcludeIdWrapped = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 4400, 400);
+    UK2Node_CallFunction* TargetContainsExcludedPassiveId = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Contains"), 4660, 320);
+    UK2Node_CallFunction* TargetDoesNotContainExcludedPassiveId = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), 4920, 320);
+    UK2Node_CallFunction* PassiveExcludeMatchAnd = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), 5180, 240);
+    UK2Node_VariableSet* StorePassiveExcludeMatch = AddVariableSet(Graph, OverlayPassiveExcludeMatchVariableName, 5440, 80);
+    UK2Node_VariableGet* FinalPassiveExcludeMatch = AddVariableGet(Graph, OverlayPassiveExcludeMatchVariableName, 3880, 560);
+    UK2Node_IfThenElse* PassiveExcludeBranch = AddBranch(Graph, 4140, 80);
     // __DEPRECATED_20260717__ [reason: displayed distance now follows live player and target positions]
     // UK2Node_VariableGet* TargetDistancesGet = AddVariableGet(Graph, OverlayTargetDistancesVariableName, -1000, 1200);
     // UK2Node_CallArrayFunction* TargetDistanceGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1200);
@@ -2044,6 +2202,11 @@ bool BuildOverlay(
         || !PassiveFilterIdToString || !PassiveFilterIdWithPrefix || !PassiveFilterIdWrapped
         || !TargetContainsPassiveId || !PassiveFilterMatchAnd || !StorePassiveFilterMatch
         || !FinalPassiveFilterMatch || !PassiveFilterBranch
+        || !ResetPassiveExcludeMatch || !PassiveExcludeIdsGet || !ForEachPassiveExcludeId
+        || !PassiveExcludeMatchGet || !PassiveExcludeIdToString || !PassiveExcludeIdWithPrefix
+        || !PassiveExcludeIdWrapped || !TargetContainsExcludedPassiveId
+        || !TargetDoesNotContainExcludedPassiveId || !PassiveExcludeMatchAnd
+        || !StorePassiveExcludeMatch || !FinalPassiveExcludeMatch || !PassiveExcludeBranch
         || !BuildLevelText || !PlayerPawn || !PlayerLocation
         || !LiveDistance || !DistanceMeters || !RoundDistance || !BuildDistanceText || !LevelWithSpacing
         || !LevelAndDistance || !SelectWithLevel || !SelectWithoutLevel || !SelectLabel
@@ -2206,6 +2369,23 @@ bool BuildOverlay(
         || !Link(TargetContainsPassiveId, UEdGraphSchema_K2::PN_ReturnValue, PassiveFilterMatchAnd, TEXT("B"))
         || !Link(PassiveFilterMatchAnd, UEdGraphSchema_K2::PN_ReturnValue, StorePassiveFilterMatch, OverlayPassiveFilterMatchVariableName)
         || !Link(FinalPassiveFilterMatch, OverlayPassiveFilterMatchVariableName, PassiveFilterBranch, UEdGraphSchema_K2::PN_Condition)
+        || !SetPinDefault(ResetPassiveExcludeMatch, OverlayPassiveExcludeMatchVariableName, TEXT("true"))
+        || !Link(PassiveExcludeIdsGet, OverlayPassiveExcludeIdsVariableName, ForEachPassiveExcludeId, TEXT("Array"))
+        || !Link(ForEachPassiveExcludeId, TEXT("LoopBody"), StorePassiveExcludeMatch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(PassiveExcludeMatchGet, OverlayPassiveExcludeMatchVariableName, PassiveExcludeMatchAnd, TEXT("A"))
+        || !Link(ForEachPassiveExcludeId, TEXT("Array Element"), PassiveExcludeIdToString, TEXT("InName"))
+        || !SetPinDefault(PassiveExcludeIdWithPrefix, TEXT("A"), TEXT("|"))
+        || !Link(PassiveExcludeIdToString, UEdGraphSchema_K2::PN_ReturnValue, PassiveExcludeIdWithPrefix, TEXT("B"))
+        || !Link(PassiveExcludeIdWithPrefix, UEdGraphSchema_K2::PN_ReturnValue, PassiveExcludeIdWrapped, TEXT("A"))
+        || !SetPinDefault(PassiveExcludeIdWrapped, TEXT("B"), TEXT("|"))
+        || !Link(TargetPassiveIdTextGet, TEXT("Item"), TargetContainsExcludedPassiveId, TEXT("SearchIn"))
+        || !Link(PassiveExcludeIdWrapped, UEdGraphSchema_K2::PN_ReturnValue, TargetContainsExcludedPassiveId, TEXT("Substring"))
+        || !SetPinDefault(TargetContainsExcludedPassiveId, TEXT("bUseCase"), TEXT("true"))
+        || !SetPinDefault(TargetContainsExcludedPassiveId, TEXT("bSearchFromEnd"), TEXT("false"))
+        || !Link(TargetContainsExcludedPassiveId, UEdGraphSchema_K2::PN_ReturnValue, TargetDoesNotContainExcludedPassiveId, TEXT("A"))
+        || !Link(TargetDoesNotContainExcludedPassiveId, UEdGraphSchema_K2::PN_ReturnValue, PassiveExcludeMatchAnd, TEXT("B"))
+        || !Link(PassiveExcludeMatchAnd, UEdGraphSchema_K2::PN_ReturnValue, StorePassiveExcludeMatch, OverlayPassiveExcludeMatchVariableName)
+        || !Link(FinalPassiveExcludeMatch, OverlayPassiveExcludeMatchVariableName, PassiveExcludeBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(Self, UEdGraphSchema_K2::PN_Self, PlayerPawn, TEXT("WorldContextObject"))
         || !Link(PlayerPawn, UEdGraphSchema_K2::PN_ReturnValue, PlayerLocation, UEdGraphSchema_K2::PN_Self)
         || !Link(ActorLocation, UEdGraphSchema_K2::PN_ReturnValue, LiveDistance, TEXT("V1"))
@@ -2279,7 +2459,12 @@ bool BuildOverlay(
         || !Link(IvMinimumBranch, UEdGraphSchema_K2::PN_Then, ResetPassiveFilterMatch, UEdGraphSchema_K2::PN_Execute)
         || !Link(ResetPassiveFilterMatch, UEdGraphSchema_K2::PN_Then, ForEachPassiveFilterId, TEXT("Exec"))
         || !Link(ForEachPassiveFilterId, TEXT("Completed"), PassiveFilterBranch, UEdGraphSchema_K2::PN_Execute)
-        || !Link(PassiveFilterBranch, UEdGraphSchema_K2::PN_Then, ProjectBranch, UEdGraphSchema_K2::PN_Execute)
+        // __DEPRECATED_20260718__ [reason: exclusion filters now run after include-AND filters]
+        // || !Link(PassiveFilterBranch, UEdGraphSchema_K2::PN_Then, ProjectBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(PassiveFilterBranch, UEdGraphSchema_K2::PN_Then, ResetPassiveExcludeMatch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ResetPassiveExcludeMatch, UEdGraphSchema_K2::PN_Then, ForEachPassiveExcludeId, TEXT("Exec"))
+        || !Link(ForEachPassiveExcludeId, TEXT("Completed"), PassiveExcludeBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(PassiveExcludeBranch, UEdGraphSchema_K2::PN_Then, ProjectBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(ForEachTarget, TEXT("Array Element"), ActorLocation, UEdGraphSchema_K2::PN_Self)
         || !Link(Self, UEdGraphSchema_K2::PN_Self, PlayerController, TEXT("WorldContextObject"))
         || !Link(PlayerController, UEdGraphSchema_K2::PN_ReturnValue, Project, TEXT("PlayerController"))
@@ -2388,6 +2573,7 @@ bool PrepareModActorControls(UBlueprint* Blueprint) {
         || !EnsureMemberVariable(Blueprint, IvAttackMinVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, IvDefenseMinVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, PassiveFilterIdsVariableName, NameArrayPin())
+        || !EnsureMemberVariable(Blueprint, PassiveExcludeIdsVariableName, NameArrayPin())
         || !EnsureMemberVariable(Blueprint, PassiveFilterRevisionVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, GenderFilterIdVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, LuckyFilterIdVariableName, IntPin(), TEXT("0"))
@@ -3684,7 +3870,9 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClas
     ClearGraph(Graph);
     if (!EnsureMemberVariable(Blueprint, PassiveEntryBridgeVariableName, ObjectPin(ModActorClass))
         || !EnsureMemberVariable(Blueprint, PassiveEntrySkillIdVariableName, NamePin())
-        || !EnsureMemberVariable(Blueprint, PassiveEntrySelectedVariableName, BoolPin(), TEXT("false"))) {
+        || !EnsureMemberVariable(Blueprint, PassiveEntrySkillNameVariableName, StringPin())
+        || !EnsureMemberVariable(Blueprint, PassiveEntrySelectedVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PassiveEntryExcludedVariableName, BoolPin(), TEXT("false"))) {
         return false;
     }
 
@@ -3749,14 +3937,19 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClas
             {FName("SkillName"), StringPin()},
             {FName("Description"), TextPin()},
             {FName("Selected"), BoolPin()},
+            {FName("Excluded"), BoolPin()},
         }
     );
     UK2Node_VariableSet* StoreBridge = AddVariableSet(Graph, PassiveEntryBridgeVariableName, -1320, -600);
     UK2Node_VariableSet* StoreSkillId = AddVariableSet(Graph, PassiveEntrySkillIdVariableName, -1040, -600);
-    UK2Node_VariableSet* StoreSelected = AddVariableSet(Graph, PassiveEntrySelectedVariableName, -760, -600);
-    UK2Node_VariableGet* LabelGet = AddVariableGet(Graph, Label->GetFName(), -760, -400);
-    UK2Node_CallFunction* NameToText = AddStaticCall(Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), -480, -400);
-    UK2Node_CallFunction* SetLabel = AddStaticCall(Graph, UTextBlock::StaticClass(), TEXT("SetText"), -200, -600);
+    UK2Node_VariableSet* StoreSkillName = AddVariableSet(Graph, PassiveEntrySkillNameVariableName, -760, -600);
+    UK2Node_VariableSet* StoreSelected = AddVariableSet(Graph, PassiveEntrySelectedVariableName, -480, -600);
+    UK2Node_VariableSet* StoreExcluded = AddVariableSet(Graph, PassiveEntryExcludedVariableName, -200, -600);
+    UK2Node_CallFunction* InitialExcludedPrefix = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), -760, -400);
+    UK2Node_CallFunction* InitialDisplayName = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), -480, -400);
+    UK2Node_VariableGet* LabelGet = AddVariableGet(Graph, Label->GetFName(), -200, -400);
+    UK2Node_CallFunction* NameToText = AddStaticCall(Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), 80, -400);
+    UK2Node_CallFunction* SetLabel = AddStaticCall(Graph, UTextBlock::StaticClass(), TEXT("SetText"), 360, -600);
     UK2Node_Self* Self = AddSelfNode(Graph, -200, -280);
     UK2Node_CallFunction* GetController = AddStaticCall(Graph, UGameplayStatics::StaticClass(), TEXT("GetPlayerController"), 80, -280);
     UK2Node_CallFunction* CreateTooltip = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("Create"), 80, -600);
@@ -3766,17 +3959,27 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClas
     UK2Node_VariableGet* ToggleGet = AddVariableGet(Graph, Toggle->GetFName(), 640, -360);
     UK2Node_CallFunction* SetTooltip = AddStaticCall(Graph, UWidget::StaticClass(), TEXT("SetToolTip"), 920, -600);
     UK2Node_CallFunction* SetChecked = AddStaticCall(Graph, UCheckBox::StaticClass(), TEXT("SetIsChecked"), 1200, -600);
-    if (!Initialize || !StoreBridge || !StoreSkillId || !StoreSelected || !LabelGet || !NameToText
+    if (!Initialize || !StoreBridge || !StoreSkillId || !StoreSkillName || !StoreSelected || !StoreExcluded
+        || !InitialExcludedPrefix || !InitialDisplayName || !LabelGet || !NameToText
         || !SetLabel || !Self || !GetController || !CreateTooltip || !CastTooltip || !InitializeTooltip
         || !ToggleGet || !SetTooltip || !SetChecked
         || !Link(Initialize, UEdGraphSchema_K2::PN_Then, StoreBridge, UEdGraphSchema_K2::PN_Execute)
         || !Link(Initialize, TEXT("Bridge"), StoreBridge, PassiveEntryBridgeVariableName)
         || !Link(StoreBridge, UEdGraphSchema_K2::PN_Then, StoreSkillId, UEdGraphSchema_K2::PN_Execute)
         || !Link(Initialize, TEXT("SkillId"), StoreSkillId, PassiveEntrySkillIdVariableName)
-        || !Link(StoreSkillId, UEdGraphSchema_K2::PN_Then, StoreSelected, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreSkillId, UEdGraphSchema_K2::PN_Then, StoreSkillName, UEdGraphSchema_K2::PN_Execute)
+        || !Link(Initialize, TEXT("SkillName"), StoreSkillName, PassiveEntrySkillNameVariableName)
+        || !Link(StoreSkillName, UEdGraphSchema_K2::PN_Then, StoreSelected, UEdGraphSchema_K2::PN_Execute)
         || !Link(Initialize, TEXT("Selected"), StoreSelected, PassiveEntrySelectedVariableName)
-        || !Link(StoreSelected, UEdGraphSchema_K2::PN_Then, SetLabel, UEdGraphSchema_K2::PN_Execute)
-        || !Link(Initialize, TEXT("SkillName"), NameToText, TEXT("InString"))
+        || !Link(StoreSelected, UEdGraphSchema_K2::PN_Then, StoreExcluded, UEdGraphSchema_K2::PN_Execute)
+        || !Link(Initialize, TEXT("Excluded"), StoreExcluded, PassiveEntryExcludedVariableName)
+        || !Link(StoreExcluded, UEdGraphSchema_K2::PN_Then, SetLabel, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(InitialExcludedPrefix, TEXT("A"), TEXT("[排除] "))
+        || !SetPinDefault(InitialExcludedPrefix, TEXT("B"), TEXT(""))
+        || !Link(Initialize, TEXT("Excluded"), InitialExcludedPrefix, TEXT("bPickA"))
+        || !Link(InitialExcludedPrefix, UEdGraphSchema_K2::PN_ReturnValue, InitialDisplayName, TEXT("A"))
+        || !Link(Initialize, TEXT("SkillName"), InitialDisplayName, TEXT("B"))
+        || !Link(InitialDisplayName, UEdGraphSchema_K2::PN_ReturnValue, NameToText, TEXT("InString"))
         || !Link(LabelGet, Label->GetFName(), SetLabel, UEdGraphSchema_K2::PN_Self)
         || !Link(NameToText, UEdGraphSchema_K2::PN_ReturnValue, SetLabel, TEXT("InText"))
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetController, TEXT("WorldContextObject"))
@@ -3811,8 +4014,17 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClas
     UK2Node_IfThenElse* ChangedBranch = AddBranch(Graph, -1040, 200);
     UK2Node_VariableGet* CapacityToggleGet = AddVariableGet(Graph, Toggle->GetFName(), -480, 360);
     UK2Node_CallFunction* RejectFifthSelection = AddStaticCall(Graph, UCheckBox::StaticClass(), TEXT("SetIsChecked"), -200, 280);
+    UK2Node_VariableGet* ExcludeIdsGetForInclude = AddExternalVariableGet(Graph, PassiveExcludeIdsVariableName, ModActorClass, -760, -360);
+    UK2Node_CallArrayFunction* RemoveExclusionForInclude = AddArrayCall(Graph, TEXT("Array_RemoveItem"), -480, -360);
+    UK2Node_VariableSet* StoreNotExcludedForInclude = AddVariableSet(Graph, PassiveEntryExcludedVariableName, -200, -360);
+    UK2Node_VariableGet* IncludeSkillNameGet = AddVariableGet(Graph, PassiveEntrySkillNameVariableName, 80, -200);
+    UK2Node_CallFunction* IncludeSkillNameToText = AddStaticCall(Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), 360, -200);
+    UK2Node_VariableGet* IncludeLabelGet = AddVariableGet(Graph, Label->GetFName(), 360, -80);
+    UK2Node_CallFunction* SetIncludeLabel = AddStaticCall(Graph, UTextBlock::StaticClass(), TEXT("SetText"), 640, 80);
     if (!Changed || !BridgeGet || !SkillIdGet || !FilterIdsGetAdd || !FilterCount || !HasCapacity
         || !CapacityBranch || !AddUnique || !CapacityToggleGet || !RejectFifthSelection
+        || !ExcludeIdsGetForInclude || !RemoveExclusionForInclude || !StoreNotExcludedForInclude
+        || !IncludeSkillNameGet || !IncludeSkillNameToText || !IncludeLabelGet || !SetIncludeLabel
         || !FilterIdsGetRemove || !RemoveItem || !ChangedBranch
         || !Link(Changed, UEdGraphSchema_K2::PN_Then, ChangedBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(Changed, TEXT("bIsChecked"), ChangedBranch, UEdGraphSchema_K2::PN_Condition)
@@ -3822,9 +4034,21 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClas
         || !Link(FilterCount, UEdGraphSchema_K2::PN_ReturnValue, HasCapacity, TEXT("A"))
         || !SetPinDefault(HasCapacity, TEXT("B"), TEXT("4"))
         || !Link(HasCapacity, UEdGraphSchema_K2::PN_ReturnValue, CapacityBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(CapacityBranch, UEdGraphSchema_K2::PN_Then, AddUnique, UEdGraphSchema_K2::PN_Execute)
+        // __DEPRECATED_20260718__ [reason: selecting a passive first removes the mutually-exclusive exclusion]
+        // || !Link(CapacityBranch, UEdGraphSchema_K2::PN_Then, AddUnique, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CapacityBranch, UEdGraphSchema_K2::PN_Then, RemoveExclusionForInclude, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BridgeGet, PassiveEntryBridgeVariableName, ExcludeIdsGetForInclude, UEdGraphSchema_K2::PN_Self)
+        || !Link(ExcludeIdsGetForInclude, PassiveExcludeIdsVariableName, RemoveExclusionForInclude, TEXT("TargetArray"))
+        || !Link(SkillIdGet, PassiveEntrySkillIdVariableName, RemoveExclusionForInclude, TEXT("Item"))
+        || !Link(RemoveExclusionForInclude, UEdGraphSchema_K2::PN_Then, StoreNotExcludedForInclude, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(StoreNotExcludedForInclude, PassiveEntryExcludedVariableName, TEXT("false"))
+        || !Link(StoreNotExcludedForInclude, UEdGraphSchema_K2::PN_Then, AddUnique, UEdGraphSchema_K2::PN_Execute)
         || !Link(FilterIdsGetAdd, PassiveFilterIdsVariableName, AddUnique, TEXT("TargetArray"))
         || !Link(SkillIdGet, PassiveEntrySkillIdVariableName, AddUnique, TEXT("NewItem"))
+        || !Link(AddUnique, UEdGraphSchema_K2::PN_Then, SetIncludeLabel, UEdGraphSchema_K2::PN_Execute)
+        || !Link(IncludeSkillNameGet, PassiveEntrySkillNameVariableName, IncludeSkillNameToText, TEXT("InString"))
+        || !Link(IncludeLabelGet, Label->GetFName(), SetIncludeLabel, UEdGraphSchema_K2::PN_Self)
+        || !Link(IncludeSkillNameToText, UEdGraphSchema_K2::PN_ReturnValue, SetIncludeLabel, TEXT("InText"))
         || !Link(CapacityBranch, UEdGraphSchema_K2::PN_Else, RejectFifthSelection, UEdGraphSchema_K2::PN_Execute)
         || !Link(CapacityToggleGet, Toggle->GetFName(), RejectFifthSelection, UEdGraphSchema_K2::PN_Self)
         || !SetPinDefault(RejectFifthSelection, TEXT("InIsChecked"), TEXT("false"))
@@ -3834,7 +4058,7 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClas
         || !Link(SkillIdGet, PassiveEntrySkillIdVariableName, RemoveItem, TEXT("Item"))) {
         return false;
     }
-    UEdGraphNode* AddTail = AddUnique;
+    UEdGraphNode* AddTail = SetIncludeLabel;
     UEdGraphNode* RemoveTail = RemoveItem;
     if (!AppendExternalIntegerIncrement(Graph, ModActorClass, BridgeGet, PassiveFilterRevisionVariableName, AddTail, -480, 80)
         || !AppendExternalIntegerIncrement(Graph, ModActorClass, BridgeGet, ControlRevisionVariableName, AddTail, 320, 80)
@@ -3843,9 +4067,130 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClas
         return false;
     }
 
+    // __DEPRECATED_20260718__ [reason: OnMouseButtonDown must be an override function graph in UE 5.1]
+    // UK2Node_Event* MouseButtonDown = AddOverrideEvent(
+    //     Blueprint, Graph, UUserWidget::StaticClass(), TEXT("OnMouseButtonDown"), -1600, 1120);
+    UEdGraph* MouseGraph = nullptr;
+    UK2Node_FunctionEntry* MouseButtonDown = nullptr;
+    UK2Node_FunctionResult* MouseUnhandledResult = nullptr;
+    if (!PrepareOverrideFunctionGraph(
+            Blueprint,
+            UUserWidget::StaticClass(),
+            TEXT("OnMouseButtonDown"),
+            MouseGraph,
+            MouseButtonDown,
+            MouseUnhandledResult)) {
+        return false;
+    }
+    UK2Node_FunctionResult* MouseExcludedResult = AddFunctionResultNode(MouseGraph, MouseButtonDown, 3320, 1520);
+    UK2Node_FunctionResult* MouseUnexcludedResult = AddFunctionResultNode(MouseGraph, MouseButtonDown, 3320, 1040);
+    UK2Node_CallFunction* IsRightMouseButton = AddStaticCall(
+        MouseGraph, UKismetInputLibrary::StaticClass(), TEXT("PointerEvent_IsMouseButtonDown"), -1320, 1280);
+    UK2Node_IfThenElse* RightMouseBranch = AddBranch(MouseGraph, -1040, 1120);
+    UK2Node_CallFunction* UnhandledReply = AddStaticCall(
+        MouseGraph, UWidgetBlueprintLibrary::StaticClass(), TEXT("Unhandled"), -1320, 1440);
+    UK2Node_VariableGet* RightExcludedGet = AddVariableGet(MouseGraph, PassiveEntryExcludedVariableName, -760, 1280);
+    UK2Node_IfThenElse* RightExcludedBranch = AddBranch(MouseGraph, -760, 1120);
+    UK2Node_VariableGet* RightBridgeGet = AddVariableGet(MouseGraph, PassiveEntryBridgeVariableName, -760, 1440);
+    UK2Node_VariableGet* RightSkillIdGet = AddVariableGet(MouseGraph, PassiveEntrySkillIdVariableName, -760, 1560);
+    UK2Node_VariableGet* RightSkillNameGet = AddVariableGet(MouseGraph, PassiveEntrySkillNameVariableName, -760, 1680);
+
+    UK2Node_VariableGet* ExcludeIdsGetForRemove = AddExternalVariableGet(
+        MouseGraph, PassiveExcludeIdsVariableName, ModActorClass, -480, 1040);
+    UK2Node_CallArrayFunction* RemoveRightExclusion = AddArrayCall(MouseGraph, TEXT("Array_RemoveItem"), -200, 1040);
+    UK2Node_VariableSet* StoreRightNotExcluded = AddVariableSet(MouseGraph, PassiveEntryExcludedVariableName, 80, 1040);
+    UK2Node_CallFunction* RightUnexcludedNameToText = AddStaticCall(
+        MouseGraph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), 360, 1200);
+    UK2Node_VariableGet* RightUnexcludedLabelGet = AddVariableGet(MouseGraph, Label->GetFName(), 360, 1320);
+    UK2Node_CallFunction* SetRightUnexcludedLabel = AddStaticCall(
+        MouseGraph, UTextBlock::StaticClass(), TEXT("SetText"), 640, 1040);
+
+    UK2Node_VariableGet* ExcludeIdsGetForAdd = AddExternalVariableGet(
+        MouseGraph, PassiveExcludeIdsVariableName, ModActorClass, -480, 1520);
+    UK2Node_CallArrayFunction* AddRightExclusion = AddArrayCall(MouseGraph, TEXT("Array_AddUnique"), -200, 1520);
+    UK2Node_VariableGet* IncludeIdsGetForExclude = AddExternalVariableGet(
+        MouseGraph, PassiveFilterIdsVariableName, ModActorClass, 80, 1680);
+    UK2Node_CallArrayFunction* RemoveRightInclusion = AddArrayCall(MouseGraph, TEXT("Array_RemoveItem"), 80, 1520);
+    UK2Node_VariableSet* StoreRightExcluded = AddVariableSet(MouseGraph, PassiveEntryExcludedVariableName, 360, 1520);
+    UK2Node_VariableGet* RightToggleGet = AddVariableGet(MouseGraph, Toggle->GetFName(), 360, 1680);
+    UK2Node_CallFunction* UncheckRightExcluded = AddStaticCall(
+        MouseGraph, UCheckBox::StaticClass(), TEXT("SetIsChecked"), 640, 1520);
+    UK2Node_CallFunction* RightExcludedPrefix = AddStaticCall(
+        MouseGraph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 640, 1760);
+    UK2Node_CallFunction* RightExcludedNameToText = AddStaticCall(
+        MouseGraph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), 920, 1760);
+    UK2Node_VariableGet* RightExcludedLabelGet = AddVariableGet(MouseGraph, Label->GetFName(), 920, 1880);
+    UK2Node_CallFunction* SetRightExcludedLabel = AddStaticCall(
+        MouseGraph, UTextBlock::StaticClass(), TEXT("SetText"), 1200, 1520);
+
+    if (!MouseGraph || !MouseButtonDown || !MouseUnhandledResult || !MouseExcludedResult || !MouseUnexcludedResult
+        || !IsRightMouseButton || !RightMouseBranch || !UnhandledReply
+        || !RightExcludedGet || !RightExcludedBranch || !RightBridgeGet || !RightSkillIdGet || !RightSkillNameGet
+        || !ExcludeIdsGetForRemove || !RemoveRightExclusion || !StoreRightNotExcluded
+        || !RightUnexcludedNameToText || !RightUnexcludedLabelGet || !SetRightUnexcludedLabel
+        || !ExcludeIdsGetForAdd || !AddRightExclusion || !IncludeIdsGetForExclude || !RemoveRightInclusion
+        || !StoreRightExcluded || !RightToggleGet || !UncheckRightExcluded
+        || !RightExcludedPrefix || !RightExcludedNameToText || !RightExcludedLabelGet || !SetRightExcludedLabel
+        || !Link(MouseButtonDown, TEXT("MouseEvent"), IsRightMouseButton, TEXT("Input"))
+        || !SetPinDefault(IsRightMouseButton, TEXT("MouseButton"), TEXT("RightMouseButton"))
+        || !Link(MouseButtonDown, UEdGraphSchema_K2::PN_Then, RightMouseBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(IsRightMouseButton, UEdGraphSchema_K2::PN_ReturnValue, RightMouseBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(UnhandledReply, UEdGraphSchema_K2::PN_ReturnValue, MouseUnhandledResult, UEdGraphSchema_K2::PN_ReturnValue)
+        || !Link(UnhandledReply, UEdGraphSchema_K2::PN_ReturnValue, MouseExcludedResult, UEdGraphSchema_K2::PN_ReturnValue)
+        || !Link(UnhandledReply, UEdGraphSchema_K2::PN_ReturnValue, MouseUnexcludedResult, UEdGraphSchema_K2::PN_ReturnValue)
+        || !Link(RightMouseBranch, UEdGraphSchema_K2::PN_Else, MouseUnhandledResult, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RightMouseBranch, UEdGraphSchema_K2::PN_Then, RightExcludedBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RightExcludedGet, PassiveEntryExcludedVariableName, RightExcludedBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(RightBridgeGet, PassiveEntryBridgeVariableName, ExcludeIdsGetForRemove, UEdGraphSchema_K2::PN_Self)
+        || !Link(ExcludeIdsGetForRemove, PassiveExcludeIdsVariableName, RemoveRightExclusion, TEXT("TargetArray"))
+        || !Link(RightSkillIdGet, PassiveEntrySkillIdVariableName, RemoveRightExclusion, TEXT("Item"))
+        || !Link(RightExcludedBranch, UEdGraphSchema_K2::PN_Then, RemoveRightExclusion, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RemoveRightExclusion, UEdGraphSchema_K2::PN_Then, StoreRightNotExcluded, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(StoreRightNotExcluded, PassiveEntryExcludedVariableName, TEXT("false"))
+        || !Link(StoreRightNotExcluded, UEdGraphSchema_K2::PN_Then, SetRightUnexcludedLabel, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RightSkillNameGet, PassiveEntrySkillNameVariableName, RightUnexcludedNameToText, TEXT("InString"))
+        || !Link(RightUnexcludedLabelGet, Label->GetFName(), SetRightUnexcludedLabel, UEdGraphSchema_K2::PN_Self)
+        || !Link(RightUnexcludedNameToText, UEdGraphSchema_K2::PN_ReturnValue, SetRightUnexcludedLabel, TEXT("InText"))
+        || !Link(RightBridgeGet, PassiveEntryBridgeVariableName, ExcludeIdsGetForAdd, UEdGraphSchema_K2::PN_Self)
+        || !Link(ExcludeIdsGetForAdd, PassiveExcludeIdsVariableName, AddRightExclusion, TEXT("TargetArray"))
+        || !Link(RightSkillIdGet, PassiveEntrySkillIdVariableName, AddRightExclusion, TEXT("NewItem"))
+        || !Link(RightExcludedBranch, UEdGraphSchema_K2::PN_Else, AddRightExclusion, UEdGraphSchema_K2::PN_Execute)
+        || !Link(AddRightExclusion, UEdGraphSchema_K2::PN_Then, RemoveRightInclusion, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RightBridgeGet, PassiveEntryBridgeVariableName, IncludeIdsGetForExclude, UEdGraphSchema_K2::PN_Self)
+        || !Link(IncludeIdsGetForExclude, PassiveFilterIdsVariableName, RemoveRightInclusion, TEXT("TargetArray"))
+        || !Link(RightSkillIdGet, PassiveEntrySkillIdVariableName, RemoveRightInclusion, TEXT("Item"))
+        || !Link(RemoveRightInclusion, UEdGraphSchema_K2::PN_Then, StoreRightExcluded, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(StoreRightExcluded, PassiveEntryExcludedVariableName, TEXT("true"))
+        || !Link(StoreRightExcluded, UEdGraphSchema_K2::PN_Then, UncheckRightExcluded, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RightToggleGet, Toggle->GetFName(), UncheckRightExcluded, UEdGraphSchema_K2::PN_Self)
+        || !SetPinDefault(UncheckRightExcluded, TEXT("InIsChecked"), TEXT("false"))
+        || !Link(UncheckRightExcluded, UEdGraphSchema_K2::PN_Then, SetRightExcludedLabel, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(RightExcludedPrefix, TEXT("A"), TEXT("[排除] "))
+        || !Link(RightSkillNameGet, PassiveEntrySkillNameVariableName, RightExcludedPrefix, TEXT("B"))
+        || !Link(RightExcludedPrefix, UEdGraphSchema_K2::PN_ReturnValue, RightExcludedNameToText, TEXT("InString"))
+        || !Link(RightExcludedLabelGet, Label->GetFName(), SetRightExcludedLabel, UEdGraphSchema_K2::PN_Self)
+        || !Link(RightExcludedNameToText, UEdGraphSchema_K2::PN_ReturnValue, SetRightExcludedLabel, TEXT("InText"))) {
+        return false;
+    }
+    UEdGraphNode* RightExcludeAddTail = SetRightExcludedLabel;
+    UEdGraphNode* RightExcludeRemoveTail = SetRightUnexcludedLabel;
+    if (!AppendExternalIntegerIncrement(
+            MouseGraph, ModActorClass, RightBridgeGet, PassiveFilterRevisionVariableName, RightExcludeAddTail, 1480, 1520)
+        || !AppendExternalIntegerIncrement(
+            MouseGraph, ModActorClass, RightBridgeGet, ControlRevisionVariableName, RightExcludeAddTail, 2280, 1520)
+        || !AppendExternalIntegerIncrement(
+            MouseGraph, ModActorClass, RightBridgeGet, PassiveFilterRevisionVariableName, RightExcludeRemoveTail, 920, 1040)
+        || !AppendExternalIntegerIncrement(
+            MouseGraph, ModActorClass, RightBridgeGet, ControlRevisionVariableName, RightExcludeRemoveTail, 1720, 1040)
+        || !Link(RightExcludeAddTail, UEdGraphSchema_K2::PN_Then, MouseExcludedResult, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RightExcludeRemoveTail, UEdGraphSchema_K2::PN_Then, MouseUnexcludedResult, UEdGraphSchema_K2::PN_Execute)) {
+        return false;
+    }
+
     FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
     FKismetEditorUtilities::CompileBlueprint(Blueprint);
-    UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildPassiveEntry compile status=%d nodes=%d"), static_cast<int32>(Blueprint->Status), Graph->Nodes.Num());
+    UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildPassiveEntry compile status=%d event_nodes=%d mouse_nodes=%d"),
+        static_cast<int32>(Blueprint->Status), Graph->Nodes.Num(), MouseGraph->Nodes.Num());
     return Blueprint->Status != BS_Error;
 }
 
@@ -3975,8 +4320,13 @@ bool BuildPanelPassiveCatalog(
     UK2Node_CallFunction* FormattedDescriptionToText = AddStaticCall(
         Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), X + 3900, Y + 900);
     UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, X, Y + 1120);
+    UK2Node_VariableGet* LanguageIdGet = AddExternalVariableGet(Graph, LanguageIdVariableName, ModActorClass, X + 260, Y + 1040);
+    UK2Node_CallFunction* LanguageIsEnglish = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 520, Y + 1040);
     UK2Node_VariableGet* SelectedIdsGet = AddExternalVariableGet(Graph, PassiveFilterIdsVariableName, ModActorClass, X + 260, Y + 1120);
     UK2Node_CallArrayFunction* IsSelected = AddArrayCall(Graph, TEXT("Array_Contains"), X + 520, Y + 1120);
+    UK2Node_VariableGet* ExcludedIdsGet = AddExternalVariableGet(Graph, PassiveExcludeIdsVariableName, ModActorClass, X + 260, Y + 1200);
+    UK2Node_CallArrayFunction* IsExcluded = AddArrayCall(Graph, TEXT("Array_Contains"), X + 520, Y + 1200);
     UK2Node_CallFunction* GetController = AddStaticCall(Graph, UGameplayStatics::StaticClass(), TEXT("GetPlayerController"), X, Y + 1280);
     UK2Node_CallFunction* CreateEntry = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("Create"), X + 260, Y);
     UK2Node_DynamicCast* CastEntry = AddDynamicCast(Graph, PassiveEntryClass, X + 520, Y);
@@ -3986,7 +4336,10 @@ bool BuildPanelPassiveCatalog(
     UK2Node_CallFunction* RankPositive = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Greater_IntInt"), X + 1040, Y + 1240);
     UK2Node_CallFunction* WeightSpecial = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("LessEqual_IntInt"), X + 1040, Y + 1360);
     UK2Node_CallFunction* RankSpecial = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), X + 1300, Y + 1300);
-    UK2Node_CallFunction* RankNormal = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1480);
+    UK2Node_CallFunction* RankGold = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("GreaterEqual_IntInt"), X + 1040, Y + 1420);
+    // __DEPRECATED_20260718__ [reason: ordinary passives use both rank 0 and rank 1]
+    // UK2Node_CallFunction* RankNormal = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1480);
+    UK2Node_CallFunction* RankNormal = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("GreaterEqual_IntInt"), X + 1040, Y + 1480);
     UK2Node_CallFunction* RankNegative1 = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1600);
     UK2Node_CallFunction* RankNegative2 = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1720);
     UK2Node_IfThenElse* RainbowBranch = AddBranch(Graph, X + 1040, Y);
@@ -4000,6 +4353,43 @@ bool BuildPanelPassiveCatalog(
     for (int32 Index = 0; Index < Groups.Num(); ++Index) {
         AddToGroup.Add(AddStaticCall(Graph, UPanelWidget::StaticClass(), TEXT("AddChild"), X + 2860, Y + Index * 180));
     }
+
+    UEdGraphNode* FallbackDescriptionSource = nullptr;
+    int32 FallbackX = X + 4160;
+    for (int32 Index = 0; Index < PassiveDescriptionFallbacks.Num(); ++Index) {
+        const FPassiveDescriptionFallback& Fallback = PassiveDescriptionFallbacks[Index];
+        UK2Node_CallFunction* IdMatches = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("EqualEqual_StrStr"), FallbackX, Y + 1040);
+        UK2Node_CallFunction* LocalizedFallback = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), FallbackX + 260, Y + 1120);
+        UK2Node_CallFunction* SelectFallback = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), FallbackX + 520, Y + 1040);
+        if (!IdMatches || !LocalizedFallback || !SelectFallback
+            || !Link(SkillIdToString, UEdGraphSchema_K2::PN_ReturnValue, IdMatches, TEXT("A"))
+            || !SetPinDefault(IdMatches, TEXT("B"), Fallback.SkillId)
+            || !SetPinDefault(LocalizedFallback, TEXT("A"), Fallback.English)
+            || !SetPinDefault(LocalizedFallback, TEXT("B"), Fallback.Chinese)
+            || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, LocalizedFallback, TEXT("bPickA"))
+            || !Link(LocalizedFallback, UEdGraphSchema_K2::PN_ReturnValue, SelectFallback, TEXT("A"))
+            || !Link(IdMatches, UEdGraphSchema_K2::PN_ReturnValue, SelectFallback, TEXT("bPickA"))) {
+            return false;
+        }
+        if (FallbackDescriptionSource) {
+            if (!Link(FallbackDescriptionSource, UEdGraphSchema_K2::PN_ReturnValue, SelectFallback, TEXT("B"))) {
+                return false;
+            }
+        } else if (!SetPinDefault(SelectFallback, TEXT("B"), TEXT(""))) {
+            return false;
+        }
+        FallbackDescriptionSource = SelectFallback;
+        FallbackX += 780;
+    }
+    UK2Node_CallFunction* FallbackDescriptionNotEmpty = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), FallbackX, Y + 1040);
+    UK2Node_CallFunction* SelectResolvedDescription = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), FallbackX + 260, Y + 1040);
+    UK2Node_CallFunction* ResolvedDescriptionToText = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), FallbackX + 520, Y + 1040);
     if (!Self || !GetSortedSkills || !ForEachSkillId || !GetLocalizedSkillName || !LocalizedSkillNameToString
         || !SkillIdToString || !SkillIdNotNone || !NameNotEmpty || !NameNotNone || !SearchBoxGet
         || !GetSearchText || !SearchTextToString || !SearchTextIsEmpty || !NameContainsSearch
@@ -4010,8 +4400,10 @@ bool BuildPanelPassiveCatalog(
         || !SelectAvailableDescriptionId || !DescriptionStringToName || !GetLocalizedDescription || !DescriptionTextToString
         || EffectValueToStrings.Contains(nullptr) || ReplaceEffectValues.Contains(nullptr)
         || !SelectFormattedDescription || !FormattedDescriptionToText || !BridgeGet
-        || !SelectedIdsGet || !IsSelected || !GetController || !CreateEntry || !CastEntry || !InitializeEntry
-        || !RankRainbow || !RankPositive || !WeightSpecial || !RankSpecial || !RankNormal
+        || !LanguageIdGet || !LanguageIsEnglish || !SelectedIdsGet || !IsSelected || !ExcludedIdsGet || !IsExcluded
+        || !FallbackDescriptionSource || !FallbackDescriptionNotEmpty || !SelectResolvedDescription || !ResolvedDescriptionToText
+        || !GetController || !CreateEntry || !CastEntry || !InitializeEntry
+        || !RankRainbow || !RankPositive || !WeightSpecial || !RankSpecial || !RankGold || !RankNormal
         || !RankNegative1 || !RankNegative2 || !RainbowBranch || !SpecialBranch || !GoldBranch
         || !NormalBranch || !Negative1Branch || !Negative2Branch || AddToGroup.Contains(nullptr)
         || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, ForEachSkillId, TEXT("Exec"))
@@ -4069,9 +4461,15 @@ bool BuildPanelPassiveCatalog(
         || !SetPinDefault(GetLocalizedDescription, TEXT("TextCategory"), TEXT("SkillDesc"))
         || !Link(DescriptionStringToName, UEdGraphSchema_K2::PN_ReturnValue, GetLocalizedDescription, TEXT("TextId"))
         || !Link(GetLocalizedDescription, UEdGraphSchema_K2::PN_ReturnValue, DescriptionTextToString, TEXT("InText"))
+        || !Link(BridgeGet, PanelBridgeVariableName, LanguageIdGet, UEdGraphSchema_K2::PN_Self)
+        || !Link(LanguageIdGet, LanguageIdVariableName, LanguageIsEnglish, TEXT("A"))
+        || !SetPinDefault(LanguageIsEnglish, TEXT("B"), TEXT("1"))
         || !Link(BridgeGet, PanelBridgeVariableName, SelectedIdsGet, UEdGraphSchema_K2::PN_Self)
         || !Link(SelectedIdsGet, PassiveFilterIdsVariableName, IsSelected, TEXT("TargetArray"))
         || !Link(ForEachSkillId, TEXT("Array Element"), IsSelected, TEXT("ItemToFind"))
+        || !Link(BridgeGet, PanelBridgeVariableName, ExcludedIdsGet, UEdGraphSchema_K2::PN_Self)
+        || !Link(ExcludedIdsGet, PassiveExcludeIdsVariableName, IsExcluded, TEXT("TargetArray"))
+        || !Link(ForEachSkillId, TEXT("Array Element"), IsExcluded, TEXT("ItemToFind"))
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetController, TEXT("WorldContextObject"))
         || !SetPinDefault(GetController, TEXT("PlayerIndex"), TEXT("0"))
         || !SetClassPin(CreateEntry, TEXT("WidgetType"), PassiveEntryClass)
@@ -4084,13 +4482,17 @@ bool BuildPanelPassiveCatalog(
         || !Link(BridgeGet, PanelBridgeVariableName, InitializeEntry, TEXT("Bridge"))
         || !Link(ForEachSkillId, TEXT("Array Element"), InitializeEntry, TEXT("SkillId"))
         || !Link(LocalizedSkillNameToString, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("SkillName"))
-        || !Link(FormattedDescriptionToText, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Description"))
+        // __DEPRECATED_20260718__ [reason: selected internal IDs can override empty or malformed game descriptions]
+        // || !Link(FormattedDescriptionToText, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Description"))
+        || !Link(ResolvedDescriptionToText, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Description"))
         || !Link(IsSelected, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Selected"))
-        || !Link(InitializeEntry, UEdGraphSchema_K2::PN_Then, RainbowBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(IsExcluded, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Excluded"))
+        // __DEPRECATED_20260718__ [reason: zero-weight positive skills must reach Legend / exclusive before rank-4 Rainbow]
+        // || !Link(InitializeEntry, UEdGraphSchema_K2::PN_Then, RainbowBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(InitializeEntry, UEdGraphSchema_K2::PN_Then, SpecialBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(BreakSkillData, TEXT("Rank"), RankRainbow, TEXT("A"))
         || !SetPinDefault(RankRainbow, TEXT("B"), TEXT("4"))
         || !Link(RankRainbow, UEdGraphSchema_K2::PN_ReturnValue, RainbowBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(RainbowBranch, UEdGraphSchema_K2::PN_Else, SpecialBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(BreakSkillData, TEXT("Rank"), RankPositive, TEXT("A"))
         || !SetPinDefault(RankPositive, TEXT("B"), TEXT("0"))
         || !Link(BreakSkillData, TEXT("LotteryWeight"), WeightSpecial, TEXT("A"))
@@ -4098,8 +4500,13 @@ bool BuildPanelPassiveCatalog(
         || !Link(RankPositive, UEdGraphSchema_K2::PN_ReturnValue, RankSpecial, TEXT("A"))
         || !Link(WeightSpecial, UEdGraphSchema_K2::PN_ReturnValue, RankSpecial, TEXT("B"))
         || !Link(RankSpecial, UEdGraphSchema_K2::PN_ReturnValue, SpecialBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(SpecialBranch, UEdGraphSchema_K2::PN_Else, GoldBranch, UEdGraphSchema_K2::PN_Execute)
-        || !Link(RankPositive, UEdGraphSchema_K2::PN_ReturnValue, GoldBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(SpecialBranch, UEdGraphSchema_K2::PN_Else, RainbowBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RainbowBranch, UEdGraphSchema_K2::PN_Else, GoldBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BreakSkillData, TEXT("Rank"), RankGold, TEXT("A"))
+        || !SetPinDefault(RankGold, TEXT("B"), TEXT("2"))
+        // __DEPRECATED_20260718__ [reason: rank-1 ordinary passives do not belong in Gold]
+        // || !Link(RankPositive, UEdGraphSchema_K2::PN_ReturnValue, GoldBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(RankGold, UEdGraphSchema_K2::PN_ReturnValue, GoldBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(GoldBranch, UEdGraphSchema_K2::PN_Else, NormalBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(BreakSkillData, TEXT("Rank"), RankNormal, TEXT("A"))
         || !SetPinDefault(RankNormal, TEXT("B"), TEXT("0"))
@@ -4130,7 +4537,13 @@ bool BuildPanelPassiveCatalog(
     if (!Link(DescriptionSource, UEdGraphSchema_K2::PN_ReturnValue, SelectFormattedDescription, TEXT("A"))
         || !SetPinDefault(SelectFormattedDescription, TEXT("B"), TEXT(""))
         || !Link(AnyDescriptionId, UEdGraphSchema_K2::PN_ReturnValue, SelectFormattedDescription, TEXT("bPickA"))
-        || !Link(SelectFormattedDescription, UEdGraphSchema_K2::PN_ReturnValue, FormattedDescriptionToText, TEXT("InString"))) {
+        || !Link(SelectFormattedDescription, UEdGraphSchema_K2::PN_ReturnValue, FormattedDescriptionToText, TEXT("InString"))
+        || !Link(FallbackDescriptionSource, UEdGraphSchema_K2::PN_ReturnValue, FallbackDescriptionNotEmpty, TEXT("A"))
+        || !SetPinDefault(FallbackDescriptionNotEmpty, TEXT("B"), TEXT(""))
+        || !Link(FallbackDescriptionSource, UEdGraphSchema_K2::PN_ReturnValue, SelectResolvedDescription, TEXT("A"))
+        || !Link(SelectFormattedDescription, UEdGraphSchema_K2::PN_ReturnValue, SelectResolvedDescription, TEXT("B"))
+        || !Link(FallbackDescriptionNotEmpty, UEdGraphSchema_K2::PN_ReturnValue, SelectResolvedDescription, TEXT("bPickA"))
+        || !Link(SelectResolvedDescription, UEdGraphSchema_K2::PN_ReturnValue, ResolvedDescriptionToText, TEXT("InString"))) {
         return false;
     }
 
@@ -4218,15 +4631,21 @@ bool BuildPanelClearFiltersEvent(
     UK2Node_VariableGet* FilterIdsGet = AddExternalVariableGet(
         Graph, PassiveFilterIdsVariableName, ModActorClass, -1080, Y + 160);
     UK2Node_CallArrayFunction* ClearFilterIds = AddArrayCall(Graph, TEXT("Array_Clear"), -800, Y);
-    if (!Graph || !Event || !BridgeGet || !FilterIdsGet || !ClearFilterIds
+    UK2Node_VariableGet* ExcludeIdsGet = AddExternalVariableGet(
+        Graph, PassiveExcludeIdsVariableName, ModActorClass, -800, Y + 160);
+    UK2Node_CallArrayFunction* ClearExcludeIds = AddArrayCall(Graph, TEXT("Array_Clear"), -520, Y);
+    if (!Graph || !Event || !BridgeGet || !FilterIdsGet || !ClearFilterIds || !ExcludeIdsGet || !ClearExcludeIds
         || !Link(Event, UEdGraphSchema_K2::PN_Then, ClearFilterIds, UEdGraphSchema_K2::PN_Execute)
         || !Link(BridgeGet, PanelBridgeVariableName, FilterIdsGet, UEdGraphSchema_K2::PN_Self)
-        || !Link(FilterIdsGet, PassiveFilterIdsVariableName, ClearFilterIds, TEXT("TargetArray"))) {
+        || !Link(FilterIdsGet, PassiveFilterIdsVariableName, ClearFilterIds, TEXT("TargetArray"))
+        || !Link(ClearFilterIds, UEdGraphSchema_K2::PN_Then, ClearExcludeIds, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BridgeGet, PanelBridgeVariableName, ExcludeIdsGet, UEdGraphSchema_K2::PN_Self)
+        || !Link(ExcludeIdsGet, PassiveExcludeIdsVariableName, ClearExcludeIds, TEXT("TargetArray"))) {
         return false;
     }
 
-    UEdGraphNode* ExecTail = ClearFilterIds;
-    int32 X = -520;
+    UEdGraphNode* ExecTail = ClearExcludeIds;
+    int32 X = -240;
     if (bClearAll) {
         const TArray<FPanelControlAssignment> Assignments = {
             {LevelMinVariableName, TEXT("0")},
@@ -4662,7 +5081,7 @@ bool BuildPanel(
 
     UTextBlock* PassiveHeading = AddPanelTextV2(Blueprint, PassiveColumn, TEXT("ESP_PassiveHeadingText"), TEXT("被动技能"), 16);
     UTextBlock* PassiveSummary = AddPanelTextV2(
-        Blueprint, PassiveColumn, TEXT("ESP_PassiveSummaryText"), TEXT("未选择：全部；多选时必须全部命中（AND）"), 12, true);
+        Blueprint, PassiveColumn, TEXT("ESP_PassiveSummaryText"), TEXT("左键：必须包含（最多 4 个，AND）；右键：排除"), 12, true);
     UTextBlock* PassiveSearchLabel = AddPanelTextV2(
         Blueprint, PassiveColumn, TEXT("ESP_PassiveSearchLabelText"), TEXT("搜索被动技能"), 12, true);
     UHorizontalBox* PassiveSearchRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(
@@ -5194,7 +5613,7 @@ bool BuildPanel(
         {TEXT("ESP_StyleTabText"), TEXT("显示样式（开发中）"), TEXT("Style (coming later)")},
         {TEXT("ESP_StylePlaceholderText"), TEXT("显示样式将在后续版本提供"), TEXT("Display styles will be added later")},
         {TEXT("ESP_PassiveHeadingText"), TEXT("被动技能"), TEXT("Passive skills")},
-        {TEXT("ESP_PassiveSummaryText"), TEXT("未选择：全部；多选时必须全部命中（AND）"), TEXT("None: all; multiple selections use AND")},
+        {TEXT("ESP_PassiveSummaryText"), TEXT("左键：必须包含（最多 4 个，AND）；右键：排除"), TEXT("Left: must include (max 4, AND); right: exclude")},
         {TEXT("ESP_PassiveSearchLabelText"), TEXT("搜索被动技能"), TEXT("Search passive skills")},
         {TEXT("ESP_PassiveSearchText"), TEXT("搜索"), TEXT("Search")},
         {TEXT("ESP_PassiveClearSearchText"), TEXT("清空"), TEXT("Clear")},
@@ -5530,6 +5949,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreExistingIvDefenseMin = AddExternalVariableSet(Graph, OverlayIvDefenseMinVariableName, OverlayClass, 2660, -120);
     UK2Node_VariableGet* ExistingPassiveFilterIds = AddVariableGet(Graph, PassiveFilterIdsVariableName, 2660, -200);
     UK2Node_VariableSet* StoreExistingPassiveFilterIds = AddExternalVariableSet(Graph, OverlayPassiveFilterIdsVariableName, OverlayClass, 2940, -200);
+    UK2Node_VariableGet* ExistingPassiveExcludeIds = AddVariableGet(Graph, PassiveExcludeIdsVariableName, 2940, -280);
+    UK2Node_VariableSet* StoreExistingPassiveExcludeIds = AddExternalVariableSet(Graph, OverlayPassiveExcludeIdsVariableName, OverlayClass, 3220, -280);
     UK2Node_VariableGet* ExistingGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 1260, 280);
     UK2Node_VariableSet* StoreExistingGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 1540, 360);
     UK2Node_VariableGet* ExistingLuckyFilter = AddVariableGet(Graph, LuckyFilterIdVariableName, 1540, 280);
@@ -5564,6 +5985,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreNewIvDefenseMin = AddExternalVariableSet(Graph, OverlayIvDefenseMinVariableName, OverlayClass, 3780, 80);
     UK2Node_VariableGet* NewPassiveFilterIds = AddVariableGet(Graph, PassiveFilterIdsVariableName, 3780, 0);
     UK2Node_VariableSet* StoreNewPassiveFilterIds = AddExternalVariableSet(Graph, OverlayPassiveFilterIdsVariableName, OverlayClass, 4060, 0);
+    UK2Node_VariableGet* NewPassiveExcludeIds = AddVariableGet(Graph, PassiveExcludeIdsVariableName, 4060, -80);
+    UK2Node_VariableSet* StoreNewPassiveExcludeIds = AddExternalVariableSet(Graph, OverlayPassiveExcludeIdsVariableName, OverlayClass, 4340, -80);
     UK2Node_VariableGet* NewGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 2380, 480);
     UK2Node_VariableSet* StoreNewGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 2660, 560);
     UK2Node_VariableGet* NewLuckyFilter = AddVariableGet(Graph, LuckyFilterIdVariableName, 2660, 480);
@@ -5585,6 +6008,7 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !ExistingIvHpMin || !StoreExistingIvHpMin || !ExistingIvAttackMin || !StoreExistingIvAttackMin
         || !ExistingIvDefenseMin || !StoreExistingIvDefenseMin
         || !ExistingPassiveFilterIds || !StoreExistingPassiveFilterIds
+        || !ExistingPassiveExcludeIds || !StoreExistingPassiveExcludeIds
         || !ExistingGenderFilter || !StoreExistingGenderFilter || !ExistingLuckyFilter || !StoreExistingLuckyFilter
         || !ExistingBossFilter || !StoreExistingBossFilter
         || !ExistingElementFilter || !StoreExistingElementFilter
@@ -5596,6 +6020,7 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !NewShowPassiveSkills || !StoreNewShowPassiveSkills || !NewIvMin || !StoreNewIvMin
         || !NewIvHpMin || !StoreNewIvHpMin || !NewIvAttackMin || !StoreNewIvAttackMin
         || !NewIvDefenseMin || !StoreNewIvDefenseMin || !NewPassiveFilterIds || !StoreNewPassiveFilterIds
+        || !NewPassiveExcludeIds || !StoreNewPassiveExcludeIds
         || !NewGenderFilter || !StoreNewGenderFilter
         || !NewLuckyFilter || !StoreNewLuckyFilter || !NewBossFilter || !StoreNewBossFilter
         || !NewElementFilter || !StoreNewElementFilter
@@ -5655,7 +6080,12 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StoreExistingIvDefenseMin, UEdGraphSchema_K2::PN_Then, StoreExistingPassiveFilterIds, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingPassiveFilterIds, PassiveFilterIdsVariableName, StoreExistingPassiveFilterIds, OverlayPassiveFilterIdsVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingPassiveFilterIds, UEdGraphSchema_K2::PN_Self)
-        || !Link(StoreExistingPassiveFilterIds, UEdGraphSchema_K2::PN_Then, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        // __DEPRECATED_20260718__ [reason: exclusion IDs must reach an existing Overlay before scalar filters]
+        // || !Link(StoreExistingPassiveFilterIds, UEdGraphSchema_K2::PN_Then, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreExistingPassiveFilterIds, UEdGraphSchema_K2::PN_Then, StoreExistingPassiveExcludeIds, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ExistingPassiveExcludeIds, PassiveExcludeIdsVariableName, StoreExistingPassiveExcludeIds, OverlayPassiveExcludeIdsVariableName)
+        || !Link(OverlayGet, OverlayVariableName, StoreExistingPassiveExcludeIds, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreExistingPassiveExcludeIds, UEdGraphSchema_K2::PN_Then, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingGenderFilter, GenderFilterIdVariableName, StoreExistingGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Self)
         || !Link(StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Then, StoreExistingLuckyFilter, UEdGraphSchema_K2::PN_Execute)
@@ -5706,7 +6136,12 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StoreNewIvDefenseMin, UEdGraphSchema_K2::PN_Then, StoreNewPassiveFilterIds, UEdGraphSchema_K2::PN_Execute)
         || !Link(NewPassiveFilterIds, PassiveFilterIdsVariableName, StoreNewPassiveFilterIds, OverlayPassiveFilterIdsVariableName)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewPassiveFilterIds, UEdGraphSchema_K2::PN_Self)
-        || !Link(StoreNewPassiveFilterIds, UEdGraphSchema_K2::PN_Then, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        // __DEPRECATED_20260718__ [reason: exclusion IDs must reach a newly-created Overlay before scalar filters]
+        // || !Link(StoreNewPassiveFilterIds, UEdGraphSchema_K2::PN_Then, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreNewPassiveFilterIds, UEdGraphSchema_K2::PN_Then, StoreNewPassiveExcludeIds, UEdGraphSchema_K2::PN_Execute)
+        || !Link(NewPassiveExcludeIds, PassiveExcludeIdsVariableName, StoreNewPassiveExcludeIds, OverlayPassiveExcludeIdsVariableName)
+        || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewPassiveExcludeIds, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreNewPassiveExcludeIds, UEdGraphSchema_K2::PN_Then, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(NewGenderFilter, GenderFilterIdVariableName, StoreNewGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Self)
         || !Link(StoreNewGenderFilter, UEdGraphSchema_K2::PN_Then, StoreNewLuckyFilter, UEdGraphSchema_K2::PN_Execute)
@@ -5743,13 +6178,15 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StyleIvDefenseMin = AddExternalVariableSet(Graph, OverlayIvDefenseMinVariableName, OverlayClass, 2240, 2160);
     UK2Node_VariableGet* StylePassiveFilterIdsGet = AddVariableGet(Graph, PassiveFilterIdsVariableName, 2520, 2080);
     UK2Node_VariableSet* StylePassiveFilterIds = AddExternalVariableSet(Graph, OverlayPassiveFilterIdsVariableName, OverlayClass, 2520, 2160);
+    UK2Node_VariableGet* StylePassiveExcludeIdsGet = AddVariableGet(Graph, PassiveExcludeIdsVariableName, 2800, 2080);
+    UK2Node_VariableSet* StylePassiveExcludeIds = AddExternalVariableSet(Graph, OverlayPassiveExcludeIdsVariableName, OverlayClass, 2800, 2160);
     UK2Node_VariableSet* StyleGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 1540, 2320);
     UK2Node_VariableSet* StyleLuckyFilter = AddExternalVariableSet(Graph, OverlayLuckyFilterIdVariableName, OverlayClass, 1820, 2320);
     UK2Node_VariableSet* StyleBossFilter = AddExternalVariableSet(Graph, OverlayBossFilterIdVariableName, OverlayClass, 2100, 2320);
     UK2Node_VariableSet* StyleElementFilter = AddExternalVariableSet(Graph, OverlayElementFilterMaskVariableName, OverlayClass, 2380, 2320);
     if (!StyleOverlayGet || !StyleOverlayValid || !StyleOverlayBranch || !StyleTopGuide || !StyleName || !StyleLevel || !StyleDistance
         || !StyleIv || !StylePassiveSkills || !StyleIvMin || !StyleIvHpMin || !StyleIvAttackMin || !StyleIvDefenseMin
-        || !StylePassiveFilterIdsGet || !StylePassiveFilterIds
+        || !StylePassiveFilterIdsGet || !StylePassiveFilterIds || !StylePassiveExcludeIdsGet || !StylePassiveExcludeIds
         || !StyleGenderFilter || !StyleLuckyFilter || !StyleBossFilter || !StyleElementFilter
         || !Link(SetDisplayStyle, UEdGraphSchema_K2::PN_Then, StyleOverlayBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleOverlayValid, TEXT("Object"))
@@ -5787,7 +6224,12 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StyleIvDefenseMin, UEdGraphSchema_K2::PN_Then, StylePassiveFilterIds, UEdGraphSchema_K2::PN_Execute)
         || !Link(StylePassiveFilterIdsGet, PassiveFilterIdsVariableName, StylePassiveFilterIds, OverlayPassiveFilterIdsVariableName)
         || !Link(StyleOverlayGet, OverlayVariableName, StylePassiveFilterIds, UEdGraphSchema_K2::PN_Self)
-        || !Link(StylePassiveFilterIds, UEdGraphSchema_K2::PN_Then, StyleGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        // __DEPRECATED_20260718__ [reason: actor-free style synchronization also carries exclusion IDs]
+        // || !Link(StylePassiveFilterIds, UEdGraphSchema_K2::PN_Then, StyleGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StylePassiveFilterIds, UEdGraphSchema_K2::PN_Then, StylePassiveExcludeIds, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StylePassiveExcludeIdsGet, PassiveExcludeIdsVariableName, StylePassiveExcludeIds, OverlayPassiveExcludeIdsVariableName)
+        || !Link(StyleOverlayGet, OverlayVariableName, StylePassiveExcludeIds, UEdGraphSchema_K2::PN_Self)
+        || !Link(StylePassiveExcludeIds, UEdGraphSchema_K2::PN_Then, StyleGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(SetDisplayStyle, TEXT("GenderFilterId"), StyleGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleGenderFilter, UEdGraphSchema_K2::PN_Self)
         || !Link(StyleGenderFilter, UEdGraphSchema_K2::PN_Then, StyleLuckyFilter, UEdGraphSchema_K2::PN_Execute)

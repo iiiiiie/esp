@@ -156,6 +156,59 @@ if (!generatorSource.includes('URichTextBlock')
     || generatorSource.includes('TEXT("SetToolTipText")')) {
   throw new Error("Passive tooltips do not use the project-owned rich-text rendering contract");
 }
+const passiveDescriptionFallbackIds = [
+  "Deffence_down2",
+  "CraftSpeed_down2",
+  "PAL_ALLAttack_down2",
+  "CraftSpeed_down1",
+  "PAL_ALLAttack_down1",
+  "Deffence_down1",
+  "PAL_CorporateSlave",
+  "PAL_masochist",
+  "PAL_ALLAttack_up2",
+  "PAL_ALLAttack_up1",
+  "PAL_conceited",
+  "PAL_sadist",
+  "PAL_oraora",
+  "CraftSpeed_up1",
+  "Deffence_up1",
+  "CraftSpeed_up2",
+  "PAL_rude",
+  "CraftSpeed_up3",
+  "PAL_ALLAttack_up3",
+  "Rare",
+  "MutationPal_ExplosionResist",
+  "WorkSuitabilityAddRank_MonsterFarm_2",
+  "WorkSuitabilityAddRank_MonsterFarm_1",
+  "Vampire",
+  "MutationPal_Mutant",
+];
+if (passiveDescriptionFallbackIds.some((id) => !generatorSource.includes(`TEXT("${id}")`))
+    || !generatorSource.includes('TEXT("Status_Up")')
+    || !generatorSource.includes("FallbackDescriptionNotEmpty")
+    || !generatorSource.includes("ResolvedDescriptionToText")) {
+  throw new Error("Passive description fallback or rich-text status contract is incomplete");
+}
+if (!generatorSource.includes("RankGold")
+    || !generatorSource.includes('SetPinDefault(RankGold, TEXT("B"), TEXT("2"))')
+    || !generatorSource.includes('TEXT("GreaterEqual_IntInt"), X + 1040, Y + 1480')
+    || !generatorSource.includes("InitializeEntry, UEdGraphSchema_K2::PN_Then, SpecialBranch")
+    || !generatorSource.includes("SpecialBranch, UEdGraphSchema_K2::PN_Else, RainbowBranch")
+    || !generatorSource.includes("RainbowBranch, UEdGraphSchema_K2::PN_Else, GoldBranch")) {
+  throw new Error("Passive Legend/Rainbow/Gold/Normal category ordering is incomplete");
+}
+if (!generatorSource.includes('TEXT("ESP_PassiveExcludeIds")')
+    || !generatorSource.includes('TEXT("ESP_PassiveExcludeMatch")')
+    || !generatorSource.includes('TEXT("OnMouseButtonDown")')
+    || !generatorSource.includes('TEXT("PointerEvent_IsMouseButtonDown")')
+    || !generatorSource.includes('TEXT("RightMouseButton")')
+    || !generatorSource.includes("RemoveExclusionForInclude")
+    || !generatorSource.includes("RemoveRightInclusion")
+    || !generatorSource.includes("ClearExcludeIds")
+    || !generatorSource.includes("PassiveExcludeMatchAnd")
+    || !generatorSource.includes("PassiveExcludeBranch")) {
+  throw new Error("Passive right-click exclusion, mutual exclusion, clear, or Overlay rejection contract is incomplete");
+}
 if (!generatorSource.includes('UEditableTextBox')
     || !generatorSource.includes('TEXT("ESP_PassiveSearchBox")')
     || !generatorSource.includes('TEXT("Contains")')

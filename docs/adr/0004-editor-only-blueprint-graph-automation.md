@@ -20,7 +20,11 @@ The external PMK is a build workspace, not a source of record. Its `Binaries`, `
 
 Cross-asset Widget dependencies must remain valid throughout repeated generation. `WBP_ESPPassiveTooltip` establishes its rich-text initialization event before `WBP_ESPPassiveEntry` is generated, and the entry establishes its public initialization event before `WBP_ESPPanel` is generated. A WidgetTree-only intermediate compile is allowed only on first creation, when the generated control properties do not yet exist; later runs preserve the previous public event until the final replacement graph compiles.
 
-Passive-skill descriptions use a project-owned `DT_ESPRichTextStyle` and a dedicated `WBP_ESPPassiveTooltip`. The tooltip recognizes the confirmed Palworld numeric tags without depending on game UI assets that are absent from the pinned PMK. An unparented tooltip subtree inside `WBP_ESPPassiveEntry` is not supported because UE 5.1 removes it from the generated Widget properties.
+Passive-skill descriptions use a project-owned `DT_ESPRichTextStyle` and a dedicated `WBP_ESPPassiveTooltip`. The tooltip recognizes the confirmed Palworld numeric and status tags without depending on game UI assets that are absent from the pinned PMK. An unparented tooltip subtree inside `WBP_ESPPassiveEntry` is not supported because UE 5.1 removes it from the generated Widget properties.
+
+The generated catalog prefers the current game's localized `SkillDesc` row and substitutes all `{EffectValue1..4}` placeholders. Some standard Pal passives intentionally have neither `OverrideDescMsgID` nor `OverrideSummaryTextId`, while a small set of current localized descriptions contains tags that the pinned PMK cannot faithfully reproduce. For confirmed stable internal IDs, the canonical generator therefore embeds a narrowly-scoped Chinese/English fallback description. A fallback overrides the live description only for its exact internal ID; every other passive continues to use current game localization. The fallback list is source-controlled and must be revalidated when the pinned Palworld data fingerprint changes.
+
+Catalog rarity groups use data fields rather than localized names: positive skills with `LotteryWeight <= 0` are Legend / exclusive; remaining rank 4 or higher skills are Rainbow; ranks 2 and 3 are Gold; ranks 0 and 1 are Normal; negative ranks remain split into the three negative groups. This ordering prevents zero-weight rank-4 exclusives from being consumed by Rainbow and rank-1 ordinary passives from being consumed by Gold.
 
 ## Options Considered
 
@@ -60,10 +64,12 @@ Positive:
 - Community contributors can inspect and rebuild the generator without receiving the maintainer's PMK workspace.
 - No manual editor operation is required.
 - Runtime remains client-only and asset-based.
+- Standard passives without a description ID still expose readable bilingual effects.
 
 Negative:
 - The experimental PMK editor target must be rebuilt once after adding the plugin.
 - Generated assets should be regenerated when the graph contract changes.
+- The exact-ID fallback list and rank/weight grouping rules require review after game data updates.
 - The sync step must verify the external PMK destination before replacing the build-workspace copy.
 
 ## Follow-ups
