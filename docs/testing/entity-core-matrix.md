@@ -17,7 +17,7 @@
 | Active UE4SS root | `E:/Steam/steamapps/common/Palworld/Pal/Binaries/Win64/ue4ss` |
 | Deployment | Junction from the active Mod directory to repository `PalworldResourceESP` |
 | Implementation branch | `codex/entity-core`; use `git log -1` for the current checkpoint commit |
-| LogicMod pak SHA-256 | `26F84258914998E3DE556DDC6BE72B247E358F4FE65D4C3FCCBB40AD277404A8`; currently loaded game package; Rank-only category candidate `90D6411303EC0141EE093F09925654DE9F417780B95BA23F1F5AB4F628309F05` awaits deployment after game exit |
+| LogicMod pak SHA-256 | `90D6411303EC0141EE093F09925654DE9F417780B95BA23F1F5AB4F628309F05`; deployed Rank-only passive category checkpoint; Steam category verification pending |
 | `main.lua` SHA-256 | `5BD0B440E7681A31E40D8DE3A8D906D0592B51F4A6DDA081318D77A7DC1F78B3` |
 | `config.lua` SHA-256 | `DA3B598DD1854402D5A3ABE7BC012C2D910A4D77F5427E55948399F58F18EC53` |
 | `user_settings.lua` SHA-256 | `51F652DB28A4E4A1B64D99CE76104DC2C46E9EC4D04F32FAA8E3E221AC9C8AE2` |
