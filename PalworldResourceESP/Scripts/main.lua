@@ -347,6 +347,16 @@ local SETTINGS_PROPERTIES = {
     { name = "iv_hp_min", property = "ESP_IvHpMin" },
     { name = "iv_attack_min", property = "ESP_IvAttackMin" },
     { name = "iv_defense_min", property = "ESP_IvDefenseMin" },
+    { name = "passive_includes", property = "ESP_PassiveIncludeText" },
+    { name = "passive_excludes", property = "ESP_PassiveExcludeText" },
+    { name = "expand_rainbow", property = "ESP_PassiveRainbowExpanded" },
+    { name = "expand_legend", property = "ESP_PassiveLegendExpanded" },
+    { name = "expand_gold3", property = "ESP_PassiveGold3Expanded" },
+    { name = "expand_gold2", property = "ESP_PassiveGold2Expanded" },
+    { name = "expand_normal", property = "ESP_PassiveNormalExpanded" },
+    { name = "expand_negative1", property = "ESP_PassiveNegative1Expanded" },
+    { name = "expand_negative2", property = "ESP_PassiveNegative2Expanded" },
+    { name = "expand_negative3", property = "ESP_PassiveNegative3Expanded" },
     { name = "gender", property = "ESP_GenderFilterId" },
     { name = "lucky", property = "ESP_LuckyFilterId" },
     { name = "boss", property = "ESP_BossFilterId" },
@@ -447,6 +457,20 @@ local function apply_loaded_settings_to_bridge()
         end
         applied[#applied + 1] = mapping.property
     end
+    local passive_restore_ok = pcall(function()
+        local restore = state.bridge_actor.PalworldResourceESP_ApplyPersistedPanelState
+        if restore == nil then
+            error("restore_event_unavailable")
+        end
+        restore(state.bridge_actor)
+    end)
+    if not passive_restore_ok then
+        for _, property_name in ipairs(applied) do
+            safe_set_property(state.bridge_actor, property_name, previous[property_name])
+        end
+        log_event("USER_SETTINGS_APPLY_FAILED", "event=PalworldResourceESP_ApplyPersistedPanelState")
+        return false
+    end
     if not safe_set_property(state.bridge_actor, "ESP_ControlRevision", math.floor(revision) + 1) then
         for _, property_name in ipairs(applied) do
             safe_set_property(state.bridge_actor, property_name, previous[property_name])
@@ -466,6 +490,8 @@ local function schedule_user_settings_save(values)
         return
     end
     local normalized = user_settings.normalize(values)
+    state.settings_loaded = normalized
+    state.settings_loaded_version = "v9"
     local serialized = user_settings.serialize(normalized)
     if serialized == state.settings_last_serialized then
         state.settings_pending = nil
@@ -502,7 +528,7 @@ local function flush_user_settings_if_due()
     state.settings_pending = nil
     state.settings_save_due_at = nil
     state.settings_save_error_logged = false
-    debug_event("USER_SETTINGS_SAVED", "version=v8")
+    debug_event("USER_SETTINGS_SAVED", "version=v9")
 end
 
 local function safe_call_no_args(object, method_name)
@@ -2403,6 +2429,34 @@ local function read_panel_boolean(property_name)
     return value
 end
 
+local function read_panel_string(property_name)
+    local ok, value = safe_get_property(state.bridge_actor, property_name)
+    value = unwrap(value)
+    if not ok then
+        return nil
+    end
+    if type(value) == "string" then
+        return value
+    end
+    if type(value) ~= "userdata" and type(value) ~= "table" then
+        return nil
+    end
+
+    local type_ok, reflected_type = pcall(function()
+        return value:type()
+    end)
+    if not type_ok or reflected_type ~= "FString" then
+        return nil
+    end
+    local string_ok, result = pcall(function()
+        return value:ToString()
+    end)
+    if not string_ok or type(result) ~= "string" then
+        return nil
+    end
+    return result
+end
+
 local function normalize_panel_filter_bound(value, minimum, maximum)
     if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
         return nil
@@ -2684,6 +2738,16 @@ local function poll_panel_controls()
     local iv_hp_min = read_panel_number("ESP_IvHpMin")
     local iv_attack_min = read_panel_number("ESP_IvAttackMin")
     local iv_defense_min = read_panel_number("ESP_IvDefenseMin")
+    local passive_includes = read_panel_string("ESP_PassiveIncludeText")
+    local passive_excludes = read_panel_string("ESP_PassiveExcludeText")
+    local expand_rainbow = read_panel_boolean("ESP_PassiveRainbowExpanded")
+    local expand_legend = read_panel_boolean("ESP_PassiveLegendExpanded")
+    local expand_gold3 = read_panel_boolean("ESP_PassiveGold3Expanded")
+    local expand_gold2 = read_panel_boolean("ESP_PassiveGold2Expanded")
+    local expand_normal = read_panel_boolean("ESP_PassiveNormalExpanded")
+    local expand_negative1 = read_panel_boolean("ESP_PassiveNegative1Expanded")
+    local expand_negative2 = read_panel_boolean("ESP_PassiveNegative2Expanded")
+    local expand_negative3 = read_panel_boolean("ESP_PassiveNegative3Expanded")
     local passive_filter_revision = read_panel_number("ESP_PassiveFilterRevision")
     local gender_filter_id = read_panel_number("ESP_GenderFilterId")
     local lucky_filter_id = read_panel_number("ESP_LuckyFilterId")
@@ -2706,6 +2770,9 @@ local function poll_panel_controls()
         or show_top_guide_line == nil or show_name == nil or show_level == nil or show_distance == nil
         or show_iv == nil or show_passive_skills == nil or iv_min == nil
         or iv_hp_min == nil or iv_attack_min == nil or iv_defense_min == nil
+        or passive_includes == nil or passive_excludes == nil
+        or expand_rainbow == nil or expand_legend == nil or expand_gold3 == nil or expand_gold2 == nil
+        or expand_normal == nil or expand_negative1 == nil or expand_negative2 == nil or expand_negative3 == nil
         or passive_filter_revision == nil
         or gender_filter_id == nil or lucky_filter_id == nil or boss_filter_id == nil
         or element_normal == nil or element_fire == nil or element_water == nil or element_leaf == nil
@@ -2771,6 +2838,16 @@ local function poll_panel_controls()
         iv_hp_min = iv_hp_min,
         iv_attack_min = iv_attack_min,
         iv_defense_min = iv_defense_min,
+        passive_includes = passive_includes,
+        passive_excludes = passive_excludes,
+        expand_rainbow = expand_rainbow,
+        expand_legend = expand_legend,
+        expand_gold3 = expand_gold3,
+        expand_gold2 = expand_gold2,
+        expand_normal = expand_normal,
+        expand_negative1 = expand_negative1,
+        expand_negative2 = expand_negative2,
+        expand_negative3 = expand_negative3,
         gender = gender_filter_id,
         lucky = lucky_filter_id,
         boss = boss_filter_id,

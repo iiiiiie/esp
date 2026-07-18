@@ -220,6 +220,30 @@ if (!generatorSource.includes('TEXT("ESP_PassiveExcludeIds")')
     || !generatorSource.includes("PassiveExcludeBranch")) {
   throw new Error("Passive right-click exclusion, mutual exclusion, clear, or Overlay rejection contract is incomplete");
 }
+if (!generatorSource.includes('TEXT("ESP_PassiveIncludeText")')
+    || !generatorSource.includes('TEXT("ESP_PassiveExcludeText")')
+    || !generatorSource.includes('TEXT("PalworldResourceESP_ApplyPersistedPanelState")')
+    || !generatorSource.includes('TEXT("ParseIntoArray")')
+    || !generatorSource.includes("AppendPassiveTokenMutation")
+    || !generatorSource.includes('TEXT("ESP_PassiveRainbowExpanded")')
+    || !generatorSource.includes('TEXT("ESP_PassiveNegative3Expanded")')
+    || !generatorSource.includes("AddExpandableAreaExpansionChangedEvent")
+    || !generatorSource.includes('TEXT("筛选设置为默认")')
+    || !generatorSource.includes('TEXT("Reset filters to defaults")')) {
+  throw new Error("Passive selection, expansion, restore, or reset-default persistence contract is incomplete");
+}
+const panelToggleStart = generatorSource.indexOf("UCheckBox* AddPanelToggleV2(");
+const panelToggleEnd = generatorSource.indexOf("UCheckBox* AddPanelFilterChipV2(", panelToggleStart);
+const panelToggleSource = generatorSource.slice(panelToggleStart, panelToggleEnd);
+if (panelToggleStart < 0 || panelToggleEnd < 0
+    || panelToggleSource.indexOf("Row->AddChild(Toggle)") > panelToggleSource.indexOf("Row->AddChild(Label)")
+    || !panelToggleSource.includes("ESlateSizeRule::Automatic, HAlign_Left")) {
+  throw new Error("Display toggles are not left-aligned immediately before their labels");
+}
+if (!generatorSource.includes('TEXT("ESP_PassiveRainbowWrap"), TEXT("彩虹"), false')
+    || !generatorSource.includes('TEXT("ESP_PassiveSpecialWrap"), TEXT("传说"), false')) {
+  throw new Error("Passive categories do not default to collapsed");
+}
 if (!generatorSource.includes('UEditableTextBox')
     || !generatorSource.includes('TEXT("ESP_PassiveSearchBox")')
     || !generatorSource.includes('TEXT("Contains")')
@@ -438,6 +462,16 @@ local bridge_actor = {
     ESP_IvHpMin = 0,
     ESP_IvAttackMin = 0,
     ESP_IvDefenseMin = 0,
+    ESP_PassiveIncludeText = "",
+    ESP_PassiveExcludeText = "",
+    ESP_PassiveRainbowExpanded = false,
+    ESP_PassiveLegendExpanded = false,
+    ESP_PassiveGold3Expanded = false,
+    ESP_PassiveGold2Expanded = false,
+    ESP_PassiveNormalExpanded = false,
+    ESP_PassiveNegative1Expanded = false,
+    ESP_PassiveNegative2Expanded = false,
+    ESP_PassiveNegative3Expanded = false,
     ESP_PassiveFilterRevision = 0,
     ESP_GenderFilterId = 0,
     ESP_LuckyFilterId = 0,
@@ -470,6 +504,11 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
     }
 end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
+local persisted_panel_restore_count = 0
+function bridge_actor:PalworldResourceESP_ApplyPersistedPanelState()
+    persisted_panel_restore_count = persisted_panel_restore_count + 1
+    self.ESP_PassiveFilterRevision = self.ESP_PassiveFilterRevision + 1
+end
 function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, show_iv, show_passives, iv_min, iv_hp_min, iv_attack_min, iv_defense_min, passive_filter_revision, gender_filter_id, lucky_filter_id, boss_filter_id, element_filter_mask)
     bridge_style_payloads[#bridge_style_payloads + 1] = {
         show_top = show_top,
@@ -540,6 +579,7 @@ assert(panel_key == Key.Y, "panel keybind did not use Y")
 assert(panel_modifiers[1] == ModifierKey.SHIFT, "panel keybind did not require Shift")
 bridge_begin_play_hook(bridge_actor)
 assert(bridge_actor.ESP_ControlRevision == 1, "saved settings were not applied to the bridge")
+assert(persisted_panel_restore_count == 1, "saved passive panel state was not rebuilt on the bridge")
 assert(#bridge_target_payloads == 4, "bridge did not receive all initial display payloads")
 assert(bridge_target_payloads[1].level == 1, "bridge level metadata did not match the snapshot")
 assert(bridge_target_payloads[1].distance_meters == 1, "bridge distance metadata did not match the snapshot")
@@ -709,6 +749,16 @@ bridge_actor.ESP_ShowPassiveSkills = true
 bridge_actor.ESP_IvHpMin = 75
 bridge_actor.ESP_IvAttackMin = 76
 bridge_actor.ESP_IvDefenseMin = 77
+local function fstring_proxy(value)
+    return {
+        type = function() return "FString" end,
+        ToString = function() return value end,
+    }
+end
+bridge_actor.ESP_PassiveIncludeText = fstring_proxy("|Legend|Rare|")
+bridge_actor.ESP_PassiveExcludeText = fstring_proxy("|PAL_Coward|")
+bridge_actor.ESP_PassiveLegendExpanded = true
+bridge_actor.ESP_PassiveNegative1Expanded = true
 bridge_actor.ESP_PassiveFilterRevision = 1
 bridge_actor.ESP_ControlRevision = 521
 reconcile_loop()
@@ -831,7 +881,7 @@ for _, message in ipairs(runtime_logs) do
 end
 reconcile_loop()
 assert(#runtime_settings_writes == 1, "stable settings changes were not coalesced into one append")
-assert(runtime_settings_writes[1]:match("^v8 "), "saved settings did not use the current versioned format")
+assert(runtime_settings_writes[1]:match("^v9 "), "saved settings did not use the current versioned format")
 assert(runtime_settings_writes[1]:match("show_name=true"), "saved settings omitted the name toggle")
 assert(runtime_settings_writes[1]:match("lucky=2"), "saved settings omitted the Lucky filter")
 assert(runtime_settings_writes[1]:match("boss=2"), "saved settings omitted the Boss filter")
@@ -843,6 +893,38 @@ assert(runtime_settings_writes[1]:match("iv_hp_min=75"), "saved settings omitted
 assert(runtime_settings_writes[1]:match("iv_attack_min=76"), "saved settings omitted the attack IV minimum")
 assert(runtime_settings_writes[1]:match("iv_defense_min=77"), "saved settings omitted the defense IV minimum")
 assert(runtime_settings_writes[1]:match("show_passives=true"), "saved settings omitted the passive-skill toggle")
+assert(runtime_settings_writes[1]:match("passive_includes=|Legend|Rare|"), "saved settings omitted included passives")
+assert(runtime_settings_writes[1]:match("passive_excludes=|PAL_Coward|"), "saved settings omitted excluded passives")
+assert(runtime_settings_writes[1]:match("expand_legend=true"), "saved settings omitted Legend expansion")
+assert(runtime_settings_writes[1]:match("expand_negative1=true"), "saved settings omitted negative-I expansion")
+local persisted_panel_restore_count_before_transition = persisted_panel_restore_count
+load_map_pre_hook()
+bridge_actor.ESP_ProfileId = 0
+bridge_actor.ESP_ShowName = false
+bridge_actor.ESP_ShowIV = false
+bridge_actor.ESP_ShowPassiveSkills = false
+bridge_actor.ESP_IvHpMin = 0
+bridge_actor.ESP_IvAttackMin = 0
+bridge_actor.ESP_IvDefenseMin = 0
+bridge_actor.ESP_PassiveIncludeText = ""
+bridge_actor.ESP_PassiveExcludeText = ""
+bridge_actor.ESP_PassiveLegendExpanded = false
+bridge_actor.ESP_PassiveNegative1Expanded = false
+bridge_actor.ESP_ControlRevision = 0
+bridge_begin_play_hook(bridge_actor)
+assert(bridge_actor.ESP_ProfileId == 2, "save transition restored the startup profile instead of the latest profile")
+assert(bridge_actor.ESP_ShowName == true, "save transition did not restore the latest name toggle")
+assert(bridge_actor.ESP_ShowIV == true, "save transition did not restore the latest IV toggle")
+assert(bridge_actor.ESP_ShowPassiveSkills == true, "save transition did not restore the latest passive toggle")
+assert(bridge_actor.ESP_IvHpMin == 75, "save transition did not restore the latest HP IV minimum")
+assert(bridge_actor.ESP_IvAttackMin == 76, "save transition did not restore the latest attack IV minimum")
+assert(bridge_actor.ESP_IvDefenseMin == 77, "save transition did not restore the latest defense IV minimum")
+assert(bridge_actor.ESP_PassiveIncludeText == "|Legend|Rare|", "save transition did not restore included passives")
+assert(bridge_actor.ESP_PassiveExcludeText == "|PAL_Coward|", "save transition did not restore excluded passives")
+assert(bridge_actor.ESP_PassiveLegendExpanded == true, "save transition did not restore Legend expansion")
+assert(bridge_actor.ESP_PassiveNegative1Expanded == true, "save transition did not restore negative-I expansion")
+assert(persisted_panel_restore_count == persisted_panel_restore_count_before_transition + 1, "save transition did not rebuild passive panel state")
+print("Latest in-memory settings survive save transitions")
 assert(#delayed_callbacks == 0, "periodic reconcile retained actors in delayed callbacks")
 local scan_done_count_after = 0
 for _, message in ipairs(runtime_logs) do
@@ -851,7 +933,6 @@ for _, message in ipairs(runtime_logs) do
     end
 end
 assert(scan_done_count_after == scan_done_count_before + 1, "periodic safe reconcile did not complete inline")
-load_map_pre_hook()
 assert(#delayed_callbacks == 0, "map teardown left a stale actor callback")
 print("Wrapper-safe map teardown passed")
 `;

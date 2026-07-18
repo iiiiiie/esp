@@ -1,6 +1,6 @@
 local user_settings = {}
 
-local VERSION = "v8"
+local VERSION = "v9"
 
 local v1_fields = {
     { name = "runtime_enabled", kind = "boolean", default = true },
@@ -59,13 +59,26 @@ for _, field in ipairs(v6_fields) do
 end
 v7_fields[#v7_fields + 1] = { name = "show_passives", kind = "boolean", default = false }
 
-local fields = {}
+local v8_fields = {}
 for _, field in ipairs(v7_fields) do
+    v8_fields[#v8_fields + 1] = field
+end
+v8_fields[#v8_fields + 1] = { name = "iv_hp_min", kind = "integer", min = 0, max = 100, default = 0 }
+v8_fields[#v8_fields + 1] = { name = "iv_attack_min", kind = "integer", min = 0, max = 100, default = 0 }
+v8_fields[#v8_fields + 1] = { name = "iv_defense_min", kind = "integer", min = 0, max = 100, default = 0 }
+
+local fields = {}
+for _, field in ipairs(v8_fields) do
     fields[#fields + 1] = field
 end
-fields[#fields + 1] = { name = "iv_hp_min", kind = "integer", min = 0, max = 100, default = 0 }
-fields[#fields + 1] = { name = "iv_attack_min", kind = "integer", min = 0, max = 100, default = 0 }
-fields[#fields + 1] = { name = "iv_defense_min", kind = "integer", min = 0, max = 100, default = 0 }
+fields[#fields + 1] = { name = "passive_includes", kind = "passive_ids", max_count = 4, default = "" }
+fields[#fields + 1] = { name = "passive_excludes", kind = "passive_ids", max_count = 256, default = "" }
+for _, name in ipairs({
+    "expand_rainbow", "expand_legend", "expand_gold3", "expand_gold2",
+    "expand_normal", "expand_negative1", "expand_negative2", "expand_negative3",
+}) do
+    fields[#fields + 1] = { name = name, kind = "boolean", default = false }
+end
 
 local schemas = {
     v1 = v1_fields,
@@ -75,7 +88,8 @@ local schemas = {
     v5 = v5_fields,
     v6 = v6_fields,
     v7 = v7_fields,
-    v8 = fields,
+    v8 = v8_fields,
+    v9 = fields,
 }
 
 local fields_by_version = {}
@@ -87,12 +101,49 @@ for version, schema_fields in pairs(schemas) do
     fields_by_version[version] = by_name
 end
 
+local function normalize_passive_ids(value, max_count, strict)
+    if value == nil or value == "" or value == "-" then
+        return ""
+    end
+    if type(value) ~= "string" or value:sub(1, 1) ~= "|" or value:sub(-1) ~= "|" then
+        if strict then
+            return nil
+        end
+        return ""
+    end
+
+    local ids = {}
+    local seen = {}
+    for id in value:gmatch("[^|]+") do
+        if not id:match("^[A-Za-z0-9_]+$") then
+            if strict then
+                return nil
+            end
+            return ""
+        end
+        if not seen[id] and #ids < max_count then
+            seen[id] = true
+            ids[#ids + 1] = id
+        end
+    end
+    if #ids == 0 then
+        if strict then
+            return nil
+        end
+        return ""
+    end
+    return "|" .. table.concat(ids, "|") .. "|"
+end
+
 local function normalize_value(field, value)
     if field.kind == "boolean" then
         if type(value) == "boolean" then
             return value
         end
         return field.default
+    end
+    if field.kind == "passive_ids" then
+        return normalize_passive_ids(value, field.max_count, false)
     end
 
     value = tonumber(value)
@@ -139,11 +190,16 @@ function user_settings.parse_line(line)
             else
                 return nil, "invalid_boolean"
             end
-        else
+        elseif field.kind == "integer" then
             if not raw_value:match("^%-?%d+$") then
                 return nil, "invalid_integer"
             end
             parsed[name] = tonumber(raw_value)
+        else
+            parsed[name] = normalize_passive_ids(raw_value, field.max_count, true)
+            if parsed[name] == nil then
+                return nil, "invalid_passive_ids"
+            end
         end
         count = count + 1
     end
@@ -158,10 +214,10 @@ function user_settings.parse_line(line)
     if version == "v1" then
         normalized.lucky = 0
     end
-    if version ~= "v3" and version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" then
+    if version ~= "v3" and version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" then
         normalized.boss = 0
     end
-    if version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" then
+    if version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" then
         normalized.element_normal = false
         normalized.element_fire = false
         normalized.element_water = false
@@ -172,19 +228,31 @@ function user_settings.parse_line(line)
         normalized.element_dark = false
         normalized.element_dragon = false
     end
-    if version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" then
+    if version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" then
         normalized.show_iv = false
     end
-    if version ~= "v6" and version ~= "v7" and version ~= "v8" then
+    if version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" then
         normalized.iv_min = 0
     end
-    if version ~= "v7" and version ~= "v8" then
+    if version ~= "v7" and version ~= "v8" and version ~= "v9" then
         normalized.show_passives = false
     end
-    if version ~= "v8" then
+    if version ~= "v8" and version ~= "v9" then
         normalized.iv_hp_min = normalized.iv_min or 0
         normalized.iv_attack_min = normalized.iv_min or 0
         normalized.iv_defense_min = normalized.iv_min or 0
+    end
+    if version ~= "v9" then
+        normalized.passive_includes = ""
+        normalized.passive_excludes = ""
+        normalized.expand_rainbow = false
+        normalized.expand_legend = false
+        normalized.expand_gold3 = false
+        normalized.expand_gold2 = false
+        normalized.expand_normal = false
+        normalized.expand_negative1 = false
+        normalized.expand_negative2 = false
+        normalized.expand_negative3 = false
     end
     return normalized, nil, version
 end
@@ -193,7 +261,11 @@ function user_settings.serialize(values)
     local normalized = user_settings.normalize(values)
     local tokens = { VERSION }
     for _, field in ipairs(fields) do
-        tokens[#tokens + 1] = string.format("%s=%s", field.name, tostring(normalized[field.name]))
+        local value = normalized[field.name]
+        if field.kind == "passive_ids" and value == "" then
+            value = "-"
+        end
+        tokens[#tokens + 1] = string.format("%s=%s", field.name, tostring(value))
     end
     return table.concat(tokens, " ")
 end

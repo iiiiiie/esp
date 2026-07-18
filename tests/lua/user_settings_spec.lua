@@ -33,6 +33,16 @@ local function complete(overrides)
         element_earth = false,
         element_dark = false,
         element_dragon = false,
+        passive_includes = "",
+        passive_excludes = "",
+        expand_rainbow = false,
+        expand_legend = false,
+        expand_gold3 = false,
+        expand_gold2 = false,
+        expand_normal = false,
+        expand_negative1 = false,
+        expand_negative2 = false,
+        expand_negative3 = false,
     }
     for name, value in pairs(overrides or {}) do
         values[name] = value
@@ -41,10 +51,16 @@ local function complete(overrides)
 end
 
 local function legacy_snapshot(values, version)
-    return user_settings.serialize(values):gsub("^v8 ", version .. " ")
-        :gsub(" iv_hp_min=%-?%d+", "")
-        :gsub(" iv_attack_min=%-?%d+", "")
-        :gsub(" iv_defense_min=%-?%d+", "")
+    local snapshot = user_settings.serialize(values):gsub("^v9 ", version .. " ")
+        :gsub(" passive_includes=[^ ]+", "")
+        :gsub(" passive_excludes=[^ ]+", "")
+        :gsub(" expand_[%a%d_]+=false", "")
+    if version ~= "v8" then
+        snapshot = snapshot:gsub(" iv_hp_min=%-?%d+", "")
+            :gsub(" iv_attack_min=%-?%d+", "")
+            :gsub(" iv_defense_min=%-?%d+", "")
+    end
+    return snapshot
 end
 
 local function read_backend(lines)
@@ -82,6 +98,10 @@ return {
             iv_attack_min = 64,
             iv_defense_min = 88,
             show_passives = true,
+            passive_includes = "|Legend|Rare|",
+            passive_excludes = "|PAL_Coward|CraftSpeed_down1|",
+            expand_legend = true,
+            expand_negative1 = true,
         })
         local parsed = assert(user_settings.parse_line(user_settings.serialize(input)))
         helper.equal(parsed.runtime_enabled, false)
@@ -99,6 +119,30 @@ return {
         helper.equal(parsed.iv_attack_min, 64)
         helper.equal(parsed.iv_defense_min, 88)
         helper.equal(parsed.show_passives, true)
+        helper.equal(parsed.passive_includes, "|Legend|Rare|")
+        helper.equal(parsed.passive_excludes, "|PAL_Coward|CraftSpeed_down1|")
+        helper.equal(parsed.expand_legend, true)
+        helper.equal(parsed.expand_negative1, true)
+    end),
+
+    helper.case("settings v8 snapshots default passive selections and category expansion", function()
+        local v8 = legacy_snapshot(complete({ iv_hp_min = 61, iv_attack_min = 62, iv_defense_min = 63 }), "v8")
+        local parsed, parse_error, version = user_settings.parse_line(v8)
+        helper.equal(parse_error, nil)
+        helper.equal(version, "v8")
+        helper.equal(parsed.passive_includes, "")
+        helper.equal(parsed.passive_excludes, "")
+        helper.equal(parsed.expand_rainbow, false)
+        helper.equal(parsed.expand_negative3, false)
+    end),
+
+    helper.case("passive ID normalization is delimiter-safe, unique, and bounded", function()
+        local normalized = user_settings.normalize(complete({
+            passive_includes = "|Legend|Rare|Legend|PAL_FastRunner|PAL_CraftSpeed1|Fifth|",
+            passive_excludes = "|PAL_Coward|CraftSpeed_down1|PAL_Coward|",
+        }))
+        helper.equal(normalized.passive_includes, "|Legend|Rare|PAL_FastRunner|PAL_CraftSpeed1|")
+        helper.equal(normalized.passive_excludes, "|PAL_Coward|CraftSpeed_down1|")
     end),
 
     helper.case("settings v1 snapshots remain readable with Lucky defaulted to all", function()
@@ -206,6 +250,8 @@ return {
         helper.equal(user_settings.parse_line(serialized .. " player_name=test"), nil)
         helper.equal(user_settings.parse_line("v1 runtime_enabled=true"), nil)
         helper.equal(user_settings.parse_line(serialized:gsub("show_name=true", "show_name=maybe")), nil)
+        helper.equal(user_settings.parse_line(serialized:gsub("passive_includes=%-", "passive_includes=|Legend|bad-id|")), nil)
+        helper.equal(user_settings.parse_line(serialized:gsub("passive_excludes=%-", "passive_excludes=Legend")), nil)
     end),
 
     helper.case("settings normalization clamps numeric bounds", function()
@@ -270,9 +316,12 @@ return {
             iv_attack_min = 68,
             iv_defense_min = 69,
             show_passives = true,
+            passive_includes = "|Legend|Rare|",
+            passive_excludes = "|PAL_Coward|",
+            expand_legend = true,
         }), backend)
         helper.truthy(ok)
-        helper.truthy(written:match("^v8 "))
+        helper.truthy(written:match("^v9 "))
         helper.truthy(written:match("show_name=false"))
         helper.truthy(written:match("lucky=0"))
         helper.truthy(written:match("boss=0"))
@@ -283,6 +332,10 @@ return {
         helper.truthy(written:match("iv_attack_min=68"))
         helper.truthy(written:match("iv_defense_min=69"))
         helper.truthy(written:match("show_passives=true"))
+        helper.truthy(written:match("passive_includes=|Legend|Rare|"))
+        helper.truthy(written:match("passive_excludes=|PAL_Coward|"))
+        helper.truthy(written:match("expand_legend=true"))
+        helper.truthy(written:match("expand_rainbow=false"))
         helper.truthy(written:match("\n$"))
     end),
 

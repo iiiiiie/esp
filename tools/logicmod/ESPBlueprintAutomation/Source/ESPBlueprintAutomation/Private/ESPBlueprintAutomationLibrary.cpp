@@ -136,7 +136,17 @@ const FName IvAttackMinVariableName(TEXT("ESP_IvAttackMin"));
 const FName IvDefenseMinVariableName(TEXT("ESP_IvDefenseMin"));
 const FName PassiveFilterIdsVariableName(TEXT("ESP_PassiveFilterIds"));
 const FName PassiveExcludeIdsVariableName(TEXT("ESP_PassiveExcludeIds"));
+const FName PassiveIncludeTextVariableName(TEXT("ESP_PassiveIncludeText"));
+const FName PassiveExcludeTextVariableName(TEXT("ESP_PassiveExcludeText"));
 const FName PassiveFilterRevisionVariableName(TEXT("ESP_PassiveFilterRevision"));
+const FName PassiveRainbowExpandedVariableName(TEXT("ESP_PassiveRainbowExpanded"));
+const FName PassiveLegendExpandedVariableName(TEXT("ESP_PassiveLegendExpanded"));
+const FName PassiveGold3ExpandedVariableName(TEXT("ESP_PassiveGold3Expanded"));
+const FName PassiveGold2ExpandedVariableName(TEXT("ESP_PassiveGold2Expanded"));
+const FName PassiveNormalExpandedVariableName(TEXT("ESP_PassiveNormalExpanded"));
+const FName PassiveNegative1ExpandedVariableName(TEXT("ESP_PassiveNegative1Expanded"));
+const FName PassiveNegative2ExpandedVariableName(TEXT("ESP_PassiveNegative2Expanded"));
+const FName PassiveNegative3ExpandedVariableName(TEXT("ESP_PassiveNegative3Expanded"));
 const FName GenderFilterIdVariableName(TEXT("ESP_GenderFilterId"));
 const FName LuckyFilterIdVariableName(TEXT("ESP_LuckyFilterId"));
 const FName BossFilterIdVariableName(TEXT("ESP_BossFilterId"));
@@ -154,6 +164,7 @@ const FName PanelInitializeControlsEventName(TEXT("PalworldResourceESP_Initializ
 const FName PanelInitializeControlsV2EventName(TEXT("PalworldResourceESP_InitializeControlsV2"));
 const FName PanelInitializeLanguageEventName(TEXT("PalworldResourceESP_InitializeLanguage"));
 const FName PanelPopulatePassiveCatalogEventName(TEXT("PalworldResourceESP_PopulatePassiveCatalog"));
+const FName ApplyPersistedPanelStateEventName(TEXT("PalworldResourceESP_ApplyPersistedPanelState"));
 const FName PassiveTooltipInitializeEventName(TEXT("PalworldResourceESP_InitializePassiveTooltip"));
 const FName PassiveEntryInitializeEventName(TEXT("PalworldResourceESP_InitializePassiveEntry"));
 const FName PassiveEntryBridgeVariableName(TEXT("ESP_Bridge"));
@@ -1000,6 +1011,41 @@ UK2Node_ComponentBoundEvent* AddCheckBoxStateChangedEvent(
     );
     if (!Graph || !ComponentProperty || !DelegateProperty) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] AddCheckBoxEvent missing graph/property checkbox=%s"), *GetNameSafe(CheckBox));
+        return nullptr;
+    }
+
+    UK2Node_ComponentBoundEvent* Node = NewObject<UK2Node_ComponentBoundEvent>(Graph);
+    if (!Node) {
+        return nullptr;
+    }
+    Node->InitializeComponentBoundEventParams(ComponentProperty, DelegateProperty);
+    Node->NodePosX = X;
+    Node->NodePosY = Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->AllocateDefaultPins();
+    return Node;
+}
+
+UK2Node_ComponentBoundEvent* AddExpandableAreaExpansionChangedEvent(
+    UWidgetBlueprint* Blueprint,
+    UExpandableArea* Area,
+    int32 X,
+    int32 Y) {
+    if (!Blueprint || !Area || !Blueprint->SkeletonGeneratedClass) {
+        return nullptr;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    FObjectProperty* ComponentProperty = FindFProperty<FObjectProperty>(
+        Blueprint->SkeletonGeneratedClass,
+        Area->GetFName()
+    );
+    FMulticastDelegateProperty* DelegateProperty = FindFProperty<FMulticastDelegateProperty>(
+        UExpandableArea::StaticClass(),
+        GET_MEMBER_NAME_CHECKED(UExpandableArea, OnExpansionChanged)
+    );
+    if (!Graph || !ComponentProperty || !DelegateProperty) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] AddExpansionEvent missing graph/property area=%s"), *GetNameSafe(Area));
         return nullptr;
     }
 
@@ -2576,7 +2622,17 @@ bool PrepareModActorControls(UBlueprint* Blueprint) {
         || !EnsureMemberVariable(Blueprint, IvDefenseMinVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, PassiveFilterIdsVariableName, NameArrayPin())
         || !EnsureMemberVariable(Blueprint, PassiveExcludeIdsVariableName, NameArrayPin())
+        || !EnsureMemberVariable(Blueprint, PassiveIncludeTextVariableName, StringPin())
+        || !EnsureMemberVariable(Blueprint, PassiveExcludeTextVariableName, StringPin())
         || !EnsureMemberVariable(Blueprint, PassiveFilterRevisionVariableName, IntPin(), TEXT("0"))
+        || !EnsureMemberVariable(Blueprint, PassiveRainbowExpandedVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PassiveLegendExpandedVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PassiveGold3ExpandedVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PassiveGold2ExpandedVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PassiveNormalExpandedVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PassiveNegative1ExpandedVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PassiveNegative2ExpandedVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PassiveNegative3ExpandedVariableName, BoolPin(), TEXT("false"))
         || !EnsureMemberVariable(Blueprint, GenderFilterIdVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, LuckyFilterIdVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, BossFilterIdVariableName, IntPin(), TEXT("0"))
@@ -2844,7 +2900,7 @@ UCheckBox* AddPanelToggleV2(
     }
     Parent->AddChild(Row);
     SetVerticalPadding(Row, FMargin(0.0f, 2.0f));
-    UTextBlock* Label = AddPanelTextV2(Blueprint, Row, TextName, Text, 14);
+    UTextBlock* Label = Blueprint->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TextName);
     UCheckBox* Toggle = Blueprint->WidgetTree->ConstructWidget<UCheckBox>(UCheckBox::StaticClass(), ToggleName);
     if (!Label || !Toggle) {
         return nullptr;
@@ -2862,8 +2918,16 @@ UCheckBox* AddPanelToggleV2(
     Toggle->SetWidgetStyle(Style);
     Toggle->SetIsChecked(bInitialValue);
     Row->AddChild(Toggle);
-    SetHorizontalLayout(Label, FMargin(0.0f, 0.0f, 12.0f, 0.0f), ESlateSizeRule::Fill);
-    SetHorizontalLayout(Toggle, FMargin(0.0f), ESlateSizeRule::Automatic, HAlign_Right);
+    Label->bIsVariable = true;
+    Label->SetText(FText::FromString(Text));
+    Label->SetColorAndOpacity(FSlateColor(PanelV2Style::PrimaryText));
+    FSlateFontInfo LabelFont = Label->Font;
+    LabelFont.Size = 14;
+    Label->SetFont(LabelFont);
+    Label->SetAutoWrapText(true);
+    Row->AddChild(Label);
+    SetHorizontalLayout(Toggle, FMargin(0.0f, 0.0f, 8.0f, 0.0f), ESlateSizeRule::Automatic, HAlign_Left);
+    SetHorizontalLayout(Label, FMargin(0.0f), ESlateSizeRule::Automatic, HAlign_Left);
     return Toggle;
 }
 
@@ -3249,6 +3313,26 @@ bool BuildPanelBooleanEvent(
     return AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, ExecTail, -460, Y);
 }
 
+bool BuildPanelExpansionEvent(
+    UWidgetBlueprint* Blueprint,
+    UExpandableArea* Area,
+    UClass* ModActorClass,
+    const FName& VariableName,
+    int32 Y) {
+    UEdGraph* Graph = EventGraph(Blueprint);
+    UK2Node_ComponentBoundEvent* Event = AddExpandableAreaExpansionChangedEvent(Blueprint, Area, -1300, Y);
+    UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1040, Y + 120);
+    UK2Node_VariableSet* Store = AddExternalVariableSet(Graph, VariableName, ModActorClass, -760, Y);
+    UEdGraphNode* ExecTail = Store;
+    if (!Graph || !Event || !BridgeGet || !Store
+        || !Link(Event, TEXT("bIsExpanded"), Store, VariableName)
+        || !Link(Event, UEdGraphSchema_K2::PN_Then, Store, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BridgeGet, PanelBridgeVariableName, Store, UEdGraphSchema_K2::PN_Self)) {
+        return false;
+    }
+    return AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, ExecTail, -460, Y);
+}
+
 bool BuildPanelInitializeControls(
     UWidgetBlueprint* Blueprint,
     USpinBox* DisplayLimit,
@@ -3406,6 +3490,7 @@ bool BuildPanelInitializeControlsV2(
     const TArray<UButton*>& LuckyButtons,
     UTextBlock* BossStatus,
     const TArray<UButton*>& BossButtons,
+    const TArray<UExpandableArea*>& PassiveAreas,
     int32 Y,
     UK2Node_CustomEvent* ExistingEvent = nullptr) {
     UEdGraph* Graph = EventGraph(Blueprint);
@@ -3438,10 +3523,18 @@ bool BuildPanelInitializeControlsV2(
             TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("LuckyFilterId"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("BossFilterId"), IntPin()),
-            TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin())
+            TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandRainbow"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandLegend"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandGold3"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandGold2"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandNormal"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandNegative1"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandNegative2"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandNegative3"), BoolPin())
         });
     }
-    if (!Graph || !Event || ElementToggles.Num() != 9) {
+    if (!Graph || !Event || ElementToggles.Num() != 9 || PassiveAreas.Num() != 8 || PassiveAreas.Contains(nullptr)) {
         return false;
     }
 
@@ -3512,6 +3605,24 @@ bool BuildPanelInitializeControlsV2(
             return false;
         }
         ExecTail = SetChecked;
+        X += 560;
+    }
+
+    const TArray<FName> ExpansionInputs = {
+        TEXT("ExpandRainbow"), TEXT("ExpandLegend"), TEXT("ExpandGold3"), TEXT("ExpandGold2"),
+        TEXT("ExpandNormal"), TEXT("ExpandNegative1"), TEXT("ExpandNegative2"), TEXT("ExpandNegative3"),
+    };
+    for (int32 Index = 0; Index < PassiveAreas.Num(); ++Index) {
+        UK2Node_VariableGet* AreaGet = AddVariableGet(Graph, PassiveAreas[Index]->GetFName(), X, Y + 160);
+        UK2Node_CallFunction* SetExpanded = AddStaticCall(
+            Graph, UExpandableArea::StaticClass(), TEXT("SetIsExpanded"), X + 260, Y);
+        if (!AreaGet || !SetExpanded
+            || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetExpanded, UEdGraphSchema_K2::PN_Execute)
+            || !Link(AreaGet, PassiveAreas[Index]->GetFName(), SetExpanded, UEdGraphSchema_K2::PN_Self)
+            || !Link(Event, ExpansionInputs[Index], SetExpanded, TEXT("IsExpanded"))) {
+            return false;
+        }
+        ExecTail = SetExpanded;
         X += 560;
     }
 
@@ -3775,6 +3886,55 @@ bool AppendExternalIntegerIncrement(
         return false;
     }
     ExecTail = ValueSet;
+    return true;
+}
+
+bool AppendPassiveTokenMutation(
+    UEdGraph* Graph,
+    UClass* ModActorClass,
+    UK2Node_VariableGet* BridgeGet,
+    UK2Node_VariableGet* SkillIdGet,
+    const FName& TextVariableName,
+    bool bAdd,
+    UEdGraphNode*& ExecTail,
+    int32 X,
+    int32 Y) {
+    UK2Node_CallFunction* SkillIdToString = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_NameToString"), X, Y + 240);
+    UK2Node_CallFunction* TokenPrefix = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), X + 260, Y + 240);
+    UK2Node_CallFunction* TokenSuffix = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), X + 520, Y + 240);
+    UK2Node_VariableGet* TextGet = AddExternalVariableGet(
+        Graph, TextVariableName, ModActorClass, X, Y + 120);
+    UK2Node_CallFunction* RemoveToken = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), X + 780, Y + 120);
+    UK2Node_CallFunction* AddToken = bAdd
+        ? AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), X + 1040, Y + 120)
+        : nullptr;
+    UK2Node_VariableSet* StoreText = AddExternalVariableSet(
+        Graph, TextVariableName, ModActorClass, X + 1300, Y);
+    UEdGraphNode* ValueSource = bAdd ? static_cast<UEdGraphNode*>(AddToken) : static_cast<UEdGraphNode*>(RemoveToken);
+    if (!Graph || !ModActorClass || !BridgeGet || !SkillIdGet || !ExecTail
+        || !SkillIdToString || !TokenPrefix || !TokenSuffix || !TextGet || !RemoveToken || !StoreText
+        || (bAdd && !AddToken)
+        || !Link(SkillIdGet, PassiveEntrySkillIdVariableName, SkillIdToString, TEXT("InName"))
+        || !SetPinDefault(TokenPrefix, TEXT("A"), TEXT("|"))
+        || !Link(SkillIdToString, UEdGraphSchema_K2::PN_ReturnValue, TokenPrefix, TEXT("B"))
+        || !Link(TokenPrefix, UEdGraphSchema_K2::PN_ReturnValue, TokenSuffix, TEXT("A"))
+        || !SetPinDefault(TokenSuffix, TEXT("B"), TEXT("|"))
+        || !Link(BridgeGet, PassiveEntryBridgeVariableName, TextGet, UEdGraphSchema_K2::PN_Self)
+        || !Link(TextGet, TextVariableName, RemoveToken, TEXT("SourceString"))
+        || !Link(TokenSuffix, UEdGraphSchema_K2::PN_ReturnValue, RemoveToken, TEXT("From"))
+        || !SetPinDefault(RemoveToken, TEXT("To"), TEXT(""))
+        || (bAdd && (!Link(RemoveToken, UEdGraphSchema_K2::PN_ReturnValue, AddToken, TEXT("A"))
+            || !Link(TokenSuffix, UEdGraphSchema_K2::PN_ReturnValue, AddToken, TEXT("B"))))
+        || !Link(ValueSource, UEdGraphSchema_K2::PN_ReturnValue, StoreText, TextVariableName)
+        || !Link(BridgeGet, PassiveEntryBridgeVariableName, StoreText, UEdGraphSchema_K2::PN_Self)
+        || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, StoreText, UEdGraphSchema_K2::PN_Execute)) {
+        return false;
+    }
+    ExecTail = StoreText;
     return true;
 }
 
@@ -4062,9 +4222,15 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClas
     }
     UEdGraphNode* AddTail = SetIncludeLabel;
     UEdGraphNode* RemoveTail = RemoveItem;
-    if (!AppendExternalIntegerIncrement(Graph, ModActorClass, BridgeGet, PassiveFilterRevisionVariableName, AddTail, -480, 80)
+    if (!AppendPassiveTokenMutation(
+            Graph, ModActorClass, BridgeGet, SkillIdGet, PassiveExcludeTextVariableName, false, AddTail, 920, -360)
+        || !AppendPassiveTokenMutation(
+            Graph, ModActorClass, BridgeGet, SkillIdGet, PassiveIncludeTextVariableName, true, AddTail, 2520, -360)
+        || !AppendPassiveTokenMutation(
+            Graph, ModActorClass, BridgeGet, SkillIdGet, PassiveIncludeTextVariableName, false, RemoveTail, 920, 600)
+        || !AppendExternalIntegerIncrement(Graph, ModActorClass, BridgeGet, PassiveFilterRevisionVariableName, AddTail, 4120, 80)
         || !AppendExternalIntegerIncrement(Graph, ModActorClass, BridgeGet, ControlRevisionVariableName, AddTail, 320, 80)
-        || !AppendExternalIntegerIncrement(Graph, ModActorClass, BridgeGet, PassiveFilterRevisionVariableName, RemoveTail, -480, 600)
+        || !AppendExternalIntegerIncrement(Graph, ModActorClass, BridgeGet, PassiveFilterRevisionVariableName, RemoveTail, 2520, 600)
         || !AppendExternalIntegerIncrement(Graph, ModActorClass, BridgeGet, ControlRevisionVariableName, RemoveTail, 320, 600)) {
         return false;
     }
@@ -4176,7 +4342,16 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClas
     }
     UEdGraphNode* RightExcludeAddTail = SetRightExcludedLabel;
     UEdGraphNode* RightExcludeRemoveTail = SetRightUnexcludedLabel;
-    if (!AppendExternalIntegerIncrement(
+    if (!AppendPassiveTokenMutation(
+            MouseGraph, ModActorClass, RightBridgeGet, RightSkillIdGet,
+            PassiveIncludeTextVariableName, false, RightExcludeAddTail, 1480, 1680)
+        || !AppendPassiveTokenMutation(
+            MouseGraph, ModActorClass, RightBridgeGet, RightSkillIdGet,
+            PassiveExcludeTextVariableName, true, RightExcludeAddTail, 3080, 1680)
+        || !AppendPassiveTokenMutation(
+            MouseGraph, ModActorClass, RightBridgeGet, RightSkillIdGet,
+            PassiveExcludeTextVariableName, false, RightExcludeRemoveTail, 920, 1040)
+        || !AppendExternalIntegerIncrement(
             MouseGraph, ModActorClass, RightBridgeGet, PassiveFilterRevisionVariableName, RightExcludeAddTail, 1480, 1520)
         || !AppendExternalIntegerIncrement(
             MouseGraph, ModActorClass, RightBridgeGet, ControlRevisionVariableName, RightExcludeAddTail, 2280, 1520)
@@ -4657,6 +4832,13 @@ bool BuildPanelClearFiltersEvent(
 
     UEdGraphNode* ExecTail = ClearExcludeIds;
     int32 X = -240;
+    if (!AppendExternalAssignment(
+            Graph, ModActorClass, BridgeGet, ExecTail, PassiveIncludeTextVariableName, TEXT(""), X, Y)
+        || !AppendExternalAssignment(
+            Graph, ModActorClass, BridgeGet, ExecTail, PassiveExcludeTextVariableName, TEXT(""), X + 300, Y)) {
+        return false;
+    }
+    X += 600;
     if (bClearAll) {
         const TArray<FPanelControlAssignment> Assignments = {
             {LevelMinVariableName, TEXT("0")},
@@ -5118,7 +5300,7 @@ bool BuildPanel(
         SetVerticalPadding(PassiveActions, FMargin(0.0f, 4.0f, 0.0f, 8.0f));
     }
     UButton* ClearAllFilters = PassiveActions
-        ? AddPanelButtonV2(Blueprint, PassiveActions, TEXT("ESP_ClearAllFiltersButton"), TEXT("ESP_ClearAllFiltersText"), TEXT("清空所有筛选"))
+        ? AddPanelButtonV2(Blueprint, PassiveActions, TEXT("ESP_ClearAllFiltersButton"), TEXT("ESP_ClearAllFiltersText"), TEXT("筛选设置为默认"))
         : nullptr;
     UButton* ClearPassiveFilters = PassiveActions
         ? AddPanelButtonV2(Blueprint, PassiveActions, TEXT("ESP_ClearPassiveFiltersButton"), TEXT("ESP_ClearPassiveFiltersText"), TEXT("清空词条"))
@@ -5128,6 +5310,7 @@ bool BuildPanel(
         PassiveScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
     }
 
+    TArray<UExpandableArea*> PassiveAreas;
     auto AddPassiveGroup = [&](const FName& AreaName, const FName& HeaderName, const FName& WrapName,
                                const TCHAR* HeaderText, bool bExpanded) -> UWrapBox* {
         UExpandableArea* Area = Blueprint->WidgetTree->ConstructWidget<UExpandableArea>(UExpandableArea::StaticClass(), AreaName);
@@ -5142,6 +5325,7 @@ bool BuildPanel(
         HeaderFont.Size = 14;
         Header->SetFont(HeaderFont);
         Header->SetColorAndOpacity(FSlateColor(PanelV2Style::PrimaryText));
+        Area->bIsVariable = true;
         Wrap->bIsVariable = true;
         Wrap->SetInnerSlotPadding(FVector2D(6.0f, 6.0f));
         Area->SetContentForSlot(TEXT("Header"), Header);
@@ -5150,12 +5334,13 @@ bool BuildPanel(
         Area->AreaPadding = FMargin(8.0f, 4.0f, 8.0f, 8.0f);
         Area->MaxHeight = 1200.0f;
         Area->SetIsExpanded(bExpanded);
+        PassiveAreas.Add(Area);
         PassiveGroups->AddChild(Area);
         SetVerticalPadding(Area, FMargin(0.0f, 0.0f, 0.0f, 4.0f));
         return Wrap;
     };
-    UWrapBox* PassiveRainbow = AddPassiveGroup(TEXT("ESP_PassiveRainbowArea"), TEXT("ESP_PassiveRainbowHeaderText"), TEXT("ESP_PassiveRainbowWrap"), TEXT("彩虹"), true);
-    UWrapBox* PassiveSpecial = AddPassiveGroup(TEXT("ESP_PassiveSpecialArea"), TEXT("ESP_PassiveSpecialHeaderText"), TEXT("ESP_PassiveSpecialWrap"), TEXT("传说"), true);
+    UWrapBox* PassiveRainbow = AddPassiveGroup(TEXT("ESP_PassiveRainbowArea"), TEXT("ESP_PassiveRainbowHeaderText"), TEXT("ESP_PassiveRainbowWrap"), TEXT("彩虹"), false);
+    UWrapBox* PassiveSpecial = AddPassiveGroup(TEXT("ESP_PassiveSpecialArea"), TEXT("ESP_PassiveSpecialHeaderText"), TEXT("ESP_PassiveSpecialWrap"), TEXT("传说"), false);
     UWrapBox* PassiveGold = AddPassiveGroup(TEXT("ESP_PassiveGoldArea"), TEXT("ESP_PassiveGoldHeaderText"), TEXT("ESP_PassiveGoldWrap"), TEXT("金色 III"), false);
     UWrapBox* PassiveGold2 = AddPassiveGroup(TEXT("ESP_PassiveGold2Area"), TEXT("ESP_PassiveGold2HeaderText"), TEXT("ESP_PassiveGold2Wrap"), TEXT("金色 II"), false);
     UWrapBox* PassiveNormal = AddPassiveGroup(TEXT("ESP_PassiveNormalArea"), TEXT("ESP_PassiveNormalHeaderText"), TEXT("ESP_PassiveNormalWrap"), TEXT("普通"), false);
@@ -5363,8 +5548,9 @@ bool BuildPanel(
         || !PassiveHeading || !PassiveSummary || !PassiveSearchLabel || !PassiveSearchRow
         || !PassiveSearchBox || !PassiveSearchButton || !PassiveClearSearchButton
         || !PassiveActions || !ClearAllFilters || !ClearPassiveFilters
-        || !PassiveRainbow || !PassiveSpecial || !PassiveGold || !PassiveNormal
+        || !PassiveRainbow || !PassiveSpecial || !PassiveGold || !PassiveGold2 || !PassiveNormal
         || !PassiveNegative1 || !PassiveNegative2 || !PassiveNegative3
+        || PassiveAreas.Num() != 8 || PassiveAreas.Contains(nullptr)
         || !FilterHeading || !DisplayLimit.Slider || !DisplayLimit.SpinBox || !LevelHeading
         || !LevelMin.Slider || !LevelMin.SpinBox || !LevelMax.Slider || !LevelMax.SpinBox
         || !DistanceMax.Slider || !DistanceMax.SpinBox || !IvHeading
@@ -5443,7 +5629,15 @@ bool BuildPanel(
             TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("LuckyFilterId"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("BossFilterId"), IntPin()),
-            TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin())
+            TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandRainbow"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandLegend"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandGold3"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandGold2"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandNormal"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandNegative1"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandNegative2"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ExpandNegative3"), BoolPin())
         }
     );
     UK2Node_CustomEvent* PopulatePassiveCatalog = AddCustomEvent(
@@ -5510,10 +5704,18 @@ bool BuildPanel(
         || !BuildPanelBooleanEvent(Blueprint, ElementIce, ModActorClass, ElementIceVariableName, Y + 10680)
         || !BuildPanelBooleanEvent(Blueprint, ElementEarth, ModActorClass, ElementEarthVariableName, Y + 11040)
         || !BuildPanelBooleanEvent(Blueprint, ElementDark, ModActorClass, ElementDarkVariableName, Y + 11400)
-        || !BuildPanelBooleanEvent(Blueprint, ElementDragon, ModActorClass, ElementDragonVariableName, Y + 11760)) {
+        || !BuildPanelBooleanEvent(Blueprint, ElementDragon, ModActorClass, ElementDragonVariableName, Y + 11760)
+        || !BuildPanelExpansionEvent(Blueprint, PassiveAreas[0], ModActorClass, PassiveRainbowExpandedVariableName, Y + 12120)
+        || !BuildPanelExpansionEvent(Blueprint, PassiveAreas[1], ModActorClass, PassiveLegendExpandedVariableName, Y + 12480)
+        || !BuildPanelExpansionEvent(Blueprint, PassiveAreas[2], ModActorClass, PassiveGold3ExpandedVariableName, Y + 12840)
+        || !BuildPanelExpansionEvent(Blueprint, PassiveAreas[3], ModActorClass, PassiveGold2ExpandedVariableName, Y + 13200)
+        || !BuildPanelExpansionEvent(Blueprint, PassiveAreas[4], ModActorClass, PassiveNormalExpandedVariableName, Y + 13560)
+        || !BuildPanelExpansionEvent(Blueprint, PassiveAreas[5], ModActorClass, PassiveNegative1ExpandedVariableName, Y + 13920)
+        || !BuildPanelExpansionEvent(Blueprint, PassiveAreas[6], ModActorClass, PassiveNegative2ExpandedVariableName, Y + 14280)
+        || !BuildPanelExpansionEvent(Blueprint, PassiveAreas[7], ModActorClass, PassiveNegative3ExpandedVariableName, Y + 14640)) {
         return false;
     }
-    Y += 10200;
+    Y += 13200;
     auto Control = [&](UButton* Button, const TArray<FPanelControlAssignment>& Assignments, const FName& StatusName, const TCHAR* Status) {
         const bool bOk = BuildPanelControlEvent(Blueprint, Button, ModActorClass, Assignments, StatusName, Status, Y);
         Y += 360;
@@ -5574,7 +5776,7 @@ bool BuildPanel(
             Blueprint, DisplayLimit, LevelMin, LevelMax, DistanceMax, IvHpMin, IvAttackMin, IvDefenseMin,
             RuntimeEnabled, TopGuide, ShowName, ShowLevel, ShowDistance, ShowIv, ShowPassiveSkills,
             ElementToggles, GenderStatus, GenderButtons, LuckyStatus, LuckyButtons,
-            BossStatus, BossButtons, Y, PanelInitializeV2)) {
+            BossStatus, BossButtons, PassiveAreas, Y, PanelInitializeV2)) {
         return false;
     }
     Y += 900;
@@ -5629,7 +5831,7 @@ bool BuildPanel(
         {TEXT("ESP_PassiveSearchLabelText"), TEXT("搜索被动技能"), TEXT("Search passive skills")},
         {TEXT("ESP_PassiveSearchText"), TEXT("搜索"), TEXT("Search")},
         {TEXT("ESP_PassiveClearSearchText"), TEXT("清空"), TEXT("Clear")},
-        {TEXT("ESP_ClearAllFiltersText"), TEXT("清空所有筛选"), TEXT("Clear all filters")},
+        {TEXT("ESP_ClearAllFiltersText"), TEXT("筛选设置为默认"), TEXT("Reset filters to defaults")},
         {TEXT("ESP_ClearPassiveFiltersText"), TEXT("清空词条"), TEXT("Clear passives")},
         {TEXT("ESP_PassiveRainbowHeaderText"), TEXT("彩虹"), TEXT("Rainbow")},
         {TEXT("ESP_PassiveSpecialHeaderText"), TEXT("传说"), TEXT("Legend")},
@@ -5775,8 +5977,71 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         TPair<FName, FEdGraphPinType>(FName("ElementFilterMask"), IntPin())
     });
     UK2Node_CustomEvent* TogglePanel = AddCustomEvent(Blueprint, Graph, TEXT("PalworldResourceESP_TogglePanel"), -900, 1520, {});
-    if (!PostBeginPlay || !BridgeReady || !Reset || !SetTarget || !ClearTarget || !SetDisplayStyle || !TogglePanel) {
+    UK2Node_CustomEvent* ApplyPersistedPanelState = AddCustomEvent(
+        Blueprint, Graph, *ApplyPersistedPanelStateEventName.ToString(), -900, 3200, {});
+    if (!PostBeginPlay || !BridgeReady || !Reset || !SetTarget || !ClearTarget || !SetDisplayStyle
+        || !TogglePanel || !ApplyPersistedPanelState) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildModActor custom event creation failed post=%s ready=%s reset=%s set=%s clear=%s toggle=%s"), PostBeginPlay ? TEXT("ok") : TEXT("null"), BridgeReady ? TEXT("ok") : TEXT("null"), Reset ? TEXT("ok") : TEXT("null"), SetTarget ? TEXT("ok") : TEXT("null"), ClearTarget ? TEXT("ok") : TEXT("null"), TogglePanel ? TEXT("ok") : TEXT("null"));
+        return false;
+    }
+
+    UK2Node_VariableGet* RestoreFilterIdsClearGet = AddVariableGet(Graph, PassiveFilterIdsVariableName, -620, 3360);
+    UK2Node_CallArrayFunction* RestoreFilterIdsClear = AddArrayCall(Graph, TEXT("Array_Clear"), -340, 3200);
+    UK2Node_VariableGet* RestoreExcludeIdsClearGet = AddVariableGet(Graph, PassiveExcludeIdsVariableName, -340, 3360);
+    UK2Node_CallArrayFunction* RestoreExcludeIdsClear = AddArrayCall(Graph, TEXT("Array_Clear"), -60, 3200);
+    UK2Node_VariableGet* RestoreIncludeTextGet = AddVariableGet(Graph, PassiveIncludeTextVariableName, -60, 3520);
+    UK2Node_CallFunction* RestoreParseIncludes = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("ParseIntoArray"), 220, 3440);
+    UK2Node_MacroInstance* RestoreForEachInclude = AddForEachLoop(Graph, 500, 3200);
+    UK2Node_CallFunction* RestoreIncludeToName = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_StringToName"), 780, 3440);
+    UK2Node_VariableGet* RestoreFilterIdsAddGet = AddVariableGet(Graph, PassiveFilterIdsVariableName, 780, 3560);
+    UK2Node_CallArrayFunction* RestoreFilterIdsAdd = AddArrayCall(Graph, TEXT("Array_AddUnique"), 1060, 3200);
+
+    UK2Node_VariableGet* RestoreExcludeTextGet = AddVariableGet(Graph, PassiveExcludeTextVariableName, 1340, 3520);
+    UK2Node_CallFunction* RestoreParseExcludes = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("ParseIntoArray"), 1620, 3440);
+    UK2Node_MacroInstance* RestoreForEachExclude = AddForEachLoop(Graph, 1900, 3200);
+    UK2Node_CallFunction* RestoreExcludeToName = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_StringToName"), 2180, 3440);
+    UK2Node_VariableGet* RestoreExcludeIdsAddGet = AddVariableGet(Graph, PassiveExcludeIdsVariableName, 2180, 3560);
+    UK2Node_CallArrayFunction* RestoreExcludeIdsAdd = AddArrayCall(Graph, TEXT("Array_AddUnique"), 2460, 3200);
+    UK2Node_VariableGet* RestoreRevisionGet = AddVariableGet(Graph, PassiveFilterRevisionVariableName, 2740, 3360);
+    UK2Node_CallFunction* RestoreRevisionAdd = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Add_IntInt"), 3020, 3360);
+    UK2Node_VariableSet* RestoreRevisionSet = AddVariableSet(Graph, PassiveFilterRevisionVariableName, 3300, 3200);
+    if (!RestoreFilterIdsClearGet || !RestoreFilterIdsClear || !RestoreExcludeIdsClearGet || !RestoreExcludeIdsClear
+        || !RestoreIncludeTextGet || !RestoreParseIncludes || !RestoreForEachInclude || !RestoreIncludeToName
+        || !RestoreFilterIdsAddGet || !RestoreFilterIdsAdd || !RestoreExcludeTextGet || !RestoreParseExcludes
+        || !RestoreForEachExclude || !RestoreExcludeToName || !RestoreExcludeIdsAddGet || !RestoreExcludeIdsAdd
+        || !RestoreRevisionGet || !RestoreRevisionAdd || !RestoreRevisionSet
+        || !Link(ApplyPersistedPanelState, UEdGraphSchema_K2::PN_Then, RestoreFilterIdsClear, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RestoreFilterIdsClearGet, PassiveFilterIdsVariableName, RestoreFilterIdsClear, TEXT("TargetArray"))
+        || !Link(RestoreFilterIdsClear, UEdGraphSchema_K2::PN_Then, RestoreExcludeIdsClear, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RestoreExcludeIdsClearGet, PassiveExcludeIdsVariableName, RestoreExcludeIdsClear, TEXT("TargetArray"))
+        || !Link(RestoreIncludeTextGet, PassiveIncludeTextVariableName, RestoreParseIncludes, TEXT("SourceString"))
+        || !SetPinDefault(RestoreParseIncludes, TEXT("Delimiter"), TEXT("|"))
+        || !SetPinDefault(RestoreParseIncludes, TEXT("CullEmptyStrings"), TEXT("true"))
+        || !Link(RestoreParseIncludes, UEdGraphSchema_K2::PN_ReturnValue, RestoreForEachInclude, TEXT("Array"))
+        || !Link(RestoreExcludeIdsClear, UEdGraphSchema_K2::PN_Then, RestoreForEachInclude, TEXT("Exec"))
+        || !Link(RestoreForEachInclude, TEXT("Array Element"), RestoreIncludeToName, TEXT("InString"))
+        || !Link(RestoreForEachInclude, TEXT("LoopBody"), RestoreFilterIdsAdd, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RestoreFilterIdsAddGet, PassiveFilterIdsVariableName, RestoreFilterIdsAdd, TEXT("TargetArray"))
+        || !Link(RestoreIncludeToName, UEdGraphSchema_K2::PN_ReturnValue, RestoreFilterIdsAdd, TEXT("NewItem"))
+        || !Link(RestoreExcludeTextGet, PassiveExcludeTextVariableName, RestoreParseExcludes, TEXT("SourceString"))
+        || !SetPinDefault(RestoreParseExcludes, TEXT("Delimiter"), TEXT("|"))
+        || !SetPinDefault(RestoreParseExcludes, TEXT("CullEmptyStrings"), TEXT("true"))
+        || !Link(RestoreParseExcludes, UEdGraphSchema_K2::PN_ReturnValue, RestoreForEachExclude, TEXT("Array"))
+        || !Link(RestoreForEachInclude, TEXT("Completed"), RestoreForEachExclude, TEXT("Exec"))
+        || !Link(RestoreForEachExclude, TEXT("Array Element"), RestoreExcludeToName, TEXT("InString"))
+        || !Link(RestoreForEachExclude, TEXT("LoopBody"), RestoreExcludeIdsAdd, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RestoreExcludeIdsAddGet, PassiveExcludeIdsVariableName, RestoreExcludeIdsAdd, TEXT("TargetArray"))
+        || !Link(RestoreExcludeToName, UEdGraphSchema_K2::PN_ReturnValue, RestoreExcludeIdsAdd, TEXT("NewItem"))
+        || !Link(RestoreForEachExclude, TEXT("Completed"), RestoreRevisionSet, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RestoreRevisionGet, PassiveFilterRevisionVariableName, RestoreRevisionAdd, TEXT("A"))
+        || !SetPinDefault(RestoreRevisionAdd, TEXT("B"), TEXT("1"))
+        || !Link(RestoreRevisionAdd, UEdGraphSchema_K2::PN_ReturnValue, RestoreRevisionSet, PassiveFilterRevisionVariableName)) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildModActor persisted passive restore graph failed"));
         return false;
     }
 
@@ -5840,6 +6105,14 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableGet* PanelElementDragon = AddVariableGet(Graph, ElementDragonVariableName, 6860, 2200);
     UK2Node_VariableGet* PanelShowName = AddVariableGet(Graph, ShowNameVariableName, 4620, 2080);
     UK2Node_VariableGet* PanelLanguage = AddVariableGet(Graph, LanguageIdVariableName, 4900, 2080);
+    UK2Node_VariableGet* PanelExpandRainbow = AddVariableGet(Graph, PassiveRainbowExpandedVariableName, 5180, 2080);
+    UK2Node_VariableGet* PanelExpandLegend = AddVariableGet(Graph, PassiveLegendExpandedVariableName, 5460, 2080);
+    UK2Node_VariableGet* PanelExpandGold3 = AddVariableGet(Graph, PassiveGold3ExpandedVariableName, 5740, 2080);
+    UK2Node_VariableGet* PanelExpandGold2 = AddVariableGet(Graph, PassiveGold2ExpandedVariableName, 6020, 2080);
+    UK2Node_VariableGet* PanelExpandNormal = AddVariableGet(Graph, PassiveNormalExpandedVariableName, 6300, 2080);
+    UK2Node_VariableGet* PanelExpandNegative1 = AddVariableGet(Graph, PassiveNegative1ExpandedVariableName, 6580, 2080);
+    UK2Node_VariableGet* PanelExpandNegative2 = AddVariableGet(Graph, PassiveNegative2ExpandedVariableName, 6860, 2080);
+    UK2Node_VariableGet* PanelExpandNegative3 = AddVariableGet(Graph, PassiveNegative3ExpandedVariableName, 7140, 2080);
     UK2Node_CallFunction* AddPanelToViewport = AddStaticCall(Graph, UUserWidget::StaticClass(), TEXT("AddToViewport"), 2100, 1760);
     UK2Node_VariableSet* ShowCursor = AddExternalVariableSet(Graph, TEXT("bShowMouseCursor"), APlayerController::StaticClass(), 2380, 1760);
     UK2Node_CallFunction* UiOnly = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("SetInputMode_UIOnlyEx"), 2660, 1760);
@@ -5852,7 +6125,9 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !PanelRuntimeEnabled || !PanelTopGuide || !PanelGenderFilter || !PanelLuckyFilter || !PanelBossFilter
         || !PanelElementNormal || !PanelElementFire || !PanelElementWater || !PanelElementLeaf
         || !PanelElementElectricity || !PanelElementIce || !PanelElementEarth || !PanelElementDark || !PanelElementDragon
-        || !PanelShowName || !PanelLanguage || !PopulatePassiveCatalog
+        || !PanelShowName || !PanelLanguage || !PanelExpandRainbow || !PanelExpandLegend || !PanelExpandGold3
+        || !PanelExpandGold2 || !PanelExpandNormal || !PanelExpandNegative1 || !PanelExpandNegative2 || !PanelExpandNegative3
+        || !PopulatePassiveCatalog
         || !AddPanelToViewport || !ShowCursor || !UiOnly
         || !SetClassPin(CreatePanel, TEXT("WidgetType"), PanelClass)
         || !SetPinDefault(CloseController, TEXT("PlayerIndex"), TEXT("0"))
@@ -5914,6 +6189,14 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(PanelLuckyFilter, LuckyFilterIdVariableName, InitializePanel, TEXT("LuckyFilterId"))
         || !Link(PanelBossFilter, BossFilterIdVariableName, InitializePanel, TEXT("BossFilterId"))
         || !Link(PanelLanguage, LanguageIdVariableName, InitializePanel, TEXT("LanguageId"))
+        || !Link(PanelExpandRainbow, PassiveRainbowExpandedVariableName, InitializePanel, TEXT("ExpandRainbow"))
+        || !Link(PanelExpandLegend, PassiveLegendExpandedVariableName, InitializePanel, TEXT("ExpandLegend"))
+        || !Link(PanelExpandGold3, PassiveGold3ExpandedVariableName, InitializePanel, TEXT("ExpandGold3"))
+        || !Link(PanelExpandGold2, PassiveGold2ExpandedVariableName, InitializePanel, TEXT("ExpandGold2"))
+        || !Link(PanelExpandNormal, PassiveNormalExpandedVariableName, InitializePanel, TEXT("ExpandNormal"))
+        || !Link(PanelExpandNegative1, PassiveNegative1ExpandedVariableName, InitializePanel, TEXT("ExpandNegative1"))
+        || !Link(PanelExpandNegative2, PassiveNegative2ExpandedVariableName, InitializePanel, TEXT("ExpandNegative2"))
+        || !Link(PanelExpandNegative3, PassiveNegative3ExpandedVariableName, InitializePanel, TEXT("ExpandNegative3"))
         || !Link(InitializePanel, UEdGraphSchema_K2::PN_Then, InitializeLanguage, UEdGraphSchema_K2::PN_Execute)
         || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, InitializeLanguage, UEdGraphSchema_K2::PN_Self)
         || !Link(PanelLanguage, LanguageIdVariableName, InitializeLanguage, TEXT("LanguageId"))
