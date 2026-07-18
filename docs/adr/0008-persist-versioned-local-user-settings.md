@@ -18,10 +18,10 @@ The first in-game deployment exposed an additional runtime constraint: UE4SS can
 
 ## Decision
 
-Persist panel preferences in `PalworldResourceESP/Scripts/user-settings.log` as an append-only sequence of complete versioned snapshots. New writes use `v7`; the reader accepts strict complete `v1` through `v7` records.
+Persist panel preferences in `PalworldResourceESP/Scripts/user-settings.log` as an append-only sequence of complete versioned snapshots. New writes use `v8`; the reader accepts strict complete `v1` through `v8` records.
 
-- Every snapshot contains only a fixed whitelist of booleans and bounded integers: runtime/profile/preset, language, level endpoints, maximum distance, visible target limit, top guide, name/level/distance/IV/passive visibility, IV minimum, gender filter, Lucky filter, Boss filter, and nine element toggles.
-- A valid `v1` snapshot migrates in memory by defaulting Lucky and Boss to `all`; `v2` defaults Boss to `all`; `v1`, `v2`, and `v3` default all element toggles to unselected; `v1` through `v4` default IV display to disabled; `v1` through `v5` default the IV minimum to zero; and `v1` through `v6` default passive-skill display to disabled. Old records are never rewritten in place. The next stable user change appends a complete `v7` snapshot.
+- Every snapshot contains only a fixed whitelist of booleans and bounded integers: runtime/profile/preset, language, level endpoints, maximum distance, visible target limit, top guide, name/level/distance/IV/passive visibility, legacy IV minimum, HP/attack/defense IV minima, gender filter, Lucky filter, Boss filter, and nine element toggles. Blueprint-owned passive ID selections are intentionally not serialized through Lua.
+- A valid `v1` snapshot migrates in memory by defaulting Lucky and Boss to `all`; `v2` defaults Boss to `all`; `v1`, `v2`, and `v3` default all element toggles to unselected; `v1` through `v4` default IV display to disabled; `v1` through `v5` default the legacy IV minimum to zero; and `v1` through `v6` default passive-skill display to disabled. For `v1` through `v7`, the legacy IV minimum migrates into all three dimensional minima. Old records are never rewritten in place. The next stable user change appends a complete `v8` snapshot.
 - Capture state, players, entities, names, IDs, and coordinates are never persisted.
 - Lua loads the last valid complete snapshot and ignores malformed, incomplete, unknown-version, or unknown-field lines.
 - Loaded values are clamped to the public UI limits and written once to the passive ModActor before the panel is initialized.
@@ -93,6 +93,7 @@ Follow-up considerations:
 - [x] Add strict `v4` read compatibility and `v5` writes for the IV visibility toggle.
 - [x] Add strict `v5` read compatibility and `v6` writes for the IV minimum.
 - [x] Add strict `v6` read compatibility and `v7` writes for the passive-skill visibility toggle.
+- [x] Add strict `v7` read compatibility and `v8` writes for independent HP/attack/defense IV minima.
 - [x] Add and runtime-stub test the `package.searchpath` fallback required by UE4SS when the debug source is unavailable.
 - [ ] Verify settings restoration after a full Palworld restart.
 - [ ] Verify a malformed final line falls back to the preceding valid line in the game environment.

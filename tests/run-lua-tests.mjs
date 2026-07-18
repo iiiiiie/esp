@@ -100,7 +100,9 @@ if (!generatorSource.includes('TEXT("GetSaveParameter")')
     || !generatorSource.includes('TEXT("ESP_TargetIvDefense")')
     || !generatorSource.includes('SetPinDefault(AddIvHpItem, TEXT("NewItem"), TEXT("-1"))')
     || !generatorSource.includes('TEXT("ESP_ShowIV")')
-    || !generatorSource.includes('TEXT("ESP_IvMin")')
+    || !generatorSource.includes('TEXT("ESP_IvHpMin")')
+    || !generatorSource.includes('TEXT("ESP_IvAttackMin")')
+    || !generatorSource.includes('TEXT("ESP_IvDefenseMin")')
     || !generatorSource.includes("IvMinimumAccepted")
     || !generatorSource.includes("IvHpMeetsMinimum")
     || !generatorSource.includes("IvAttackMeetsMinimum")
@@ -117,6 +119,20 @@ if (!generatorSource.includes('TEXT("GetPassiveSkillList")')
     || !generatorSource.includes('TEXT("ESP_ShowPassiveSkills")')
     || !generatorSource.includes('TEXT("ESP_ShowPassiveSkillsToggle")')) {
   throw new Error("Blueprint passive-skill provider, localization, or display contract is incomplete");
+}
+if (!generatorSource.includes('TEXT("GetSortedPassiveSkillNameArray")')
+    || !generatorSource.includes('TEXT("GetPassiveSkillManager")')
+    || !generatorSource.includes('TEXT("GetSkillData")')
+    || !generatorSource.includes('TEXT("GetLocalizedText")')
+    || !generatorSource.includes('TEXT("SkillDesc")')
+    || !generatorSource.includes('TEXT("ESP_PassiveFilterIds")')
+    || !generatorSource.includes("ForEachPassiveFilterId")
+    || !generatorSource.includes("PassiveFilterMatchAnd")
+    || !generatorSource.includes('SetPinDefault(HasCapacity, TEXT("B"), TEXT("4"))')
+    || !generatorSource.includes("SetWidthOverride(1180.0f)")
+    || !generatorSource.includes("UWidgetSwitcher")
+    || !generatorSource.includes('/Game/Mods/PalworldResourceESP/WBP_ESPPassiveEntry')) {
+  throw new Error("Blueprint passive AND-filter, tooltip catalog, or tabbed-panel contract is incomplete");
 }
 if (!generatorSource.includes("ToggleUnchecked")
     || !generatorSource.includes("ToggleOutline")
@@ -323,6 +339,10 @@ local bridge_actor = {
     ESP_ShowIV = false,
     ESP_ShowPassiveSkills = false,
     ESP_IvMin = 0,
+    ESP_IvHpMin = 0,
+    ESP_IvAttackMin = 0,
+    ESP_IvDefenseMin = 0,
+    ESP_PassiveFilterRevision = 0,
     ESP_GenderFilterId = 0,
     ESP_LuckyFilterId = 0,
     ESP_BossFilterId = 0,
@@ -354,7 +374,7 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
     }
 end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
-function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, show_iv, show_passives, iv_min, gender_filter_id, lucky_filter_id, boss_filter_id, element_filter_mask)
+function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, show_iv, show_passives, iv_min, iv_hp_min, iv_attack_min, iv_defense_min, passive_filter_revision, gender_filter_id, lucky_filter_id, boss_filter_id, element_filter_mask)
     bridge_style_payloads[#bridge_style_payloads + 1] = {
         show_top = show_top,
         show_name = show_name,
@@ -363,6 +383,10 @@ function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, s
         show_iv = show_iv,
         show_passives = show_passives,
         iv_min = iv_min,
+        iv_hp_min = iv_hp_min,
+        iv_attack_min = iv_attack_min,
+        iv_defense_min = iv_defense_min,
+        passive_filter_revision = passive_filter_revision,
         gender_filter_id = gender_filter_id,
         lucky_filter_id = lucky_filter_id,
         boss_filter_id = boss_filter_id,
@@ -586,7 +610,10 @@ bridge_actor.ESP_ControlRevision = 52
 reconcile_loop()
 bridge_actor.ESP_ShowIV = true
 bridge_actor.ESP_ShowPassiveSkills = true
-bridge_actor.ESP_IvMin = 75
+bridge_actor.ESP_IvHpMin = 75
+bridge_actor.ESP_IvAttackMin = 76
+bridge_actor.ESP_IvDefenseMin = 77
+bridge_actor.ESP_PassiveFilterRevision = 1
 bridge_actor.ESP_ControlRevision = 521
 reconcile_loop()
 bridge_actor.ESP_GenderFilterId = 1
@@ -650,7 +677,8 @@ for _, message in ipairs(runtime_logs) do
     name_shown_found = name_shown_found or message:match("DISPLAY_STYLE.*show_name=true") ~= nil
     iv_shown_found = iv_shown_found or message:match("DISPLAY_STYLE.*show_iv=true") ~= nil
     passives_shown_found = passives_shown_found or message:match("DISPLAY_STYLE.*show_passives=true") ~= nil
-    iv_min_found = iv_min_found or message:match("DISPLAY_STYLE.*iv_min=75") ~= nil
+    iv_min_found = iv_min_found
+        or message:match("DISPLAY_STYLE.*iv_hp_min=75.*iv_attack_min=76.*iv_defense_min=77.*passive_filter_revision=1") ~= nil
     gender_male_found = gender_male_found or message:match("DISPLAY_STYLE.*gender_filter=male") ~= nil
     gender_female_found = gender_female_found or message:match("DISPLAY_STYLE.*gender_filter=female") ~= nil
     gender_clamped_found = gender_clamped_found
@@ -687,7 +715,10 @@ assert(bridge_actor.ESP_ElementFilterMask == 6, "element mask was not synchroniz
 assert(bridge_style_payloads[#bridge_style_payloads].show_name == true, "name style did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].show_iv == true, "IV style did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].show_passives == true, "passive-skill style did not reach the bridge")
-assert(bridge_style_payloads[#bridge_style_payloads].iv_min == 75, "IV minimum did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].iv_hp_min == 75, "HP IV minimum did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].iv_attack_min == 76, "attack IV minimum did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].iv_defense_min == 77, "defense IV minimum did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].passive_filter_revision == 1, "passive filter revision did not reach the bridge")
 print("Panel display styles passed")
 
 assert(type(load_map_pre_hook) == "function", "load-map pre-hook was not captured")
@@ -704,7 +735,7 @@ for _, message in ipairs(runtime_logs) do
 end
 reconcile_loop()
 assert(#runtime_settings_writes == 1, "stable settings changes were not coalesced into one append")
-assert(runtime_settings_writes[1]:match("^v7 "), "saved settings did not use the current versioned format")
+assert(runtime_settings_writes[1]:match("^v8 "), "saved settings did not use the current versioned format")
 assert(runtime_settings_writes[1]:match("show_name=true"), "saved settings omitted the name toggle")
 assert(runtime_settings_writes[1]:match("lucky=2"), "saved settings omitted the Lucky filter")
 assert(runtime_settings_writes[1]:match("boss=2"), "saved settings omitted the Boss filter")
@@ -712,7 +743,9 @@ assert(runtime_settings_writes[1]:match("element_fire=true"), "saved settings om
 assert(runtime_settings_writes[1]:match("element_water=true"), "saved settings omitted the Water element")
 assert(runtime_settings_writes[1]:match("element_dragon=false"), "saved settings omitted an unselected element")
 assert(runtime_settings_writes[1]:match("show_iv=true"), "saved settings omitted the IV toggle")
-assert(runtime_settings_writes[1]:match("iv_min=75"), "saved settings omitted the IV minimum")
+assert(runtime_settings_writes[1]:match("iv_hp_min=75"), "saved settings omitted the HP IV minimum")
+assert(runtime_settings_writes[1]:match("iv_attack_min=76"), "saved settings omitted the attack IV minimum")
+assert(runtime_settings_writes[1]:match("iv_defense_min=77"), "saved settings omitted the defense IV minimum")
 assert(runtime_settings_writes[1]:match("show_passives=true"), "saved settings omitted the passive-skill toggle")
 assert(#delayed_callbacks == 0, "periodic reconcile retained actors in delayed callbacks")
 local scan_done_count_after = 0

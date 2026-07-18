@@ -18,6 +18,8 @@ Add an editor-only `ESPBlueprintAutomation` plugin that constructs and links the
 
 The external PMK is a build workspace, not a source of record. Its `Binaries`, `Intermediate`, `Saved`, cooked assets, and unrelated local compatibility changes are never copied into this repository. The plugin is enabled only while generating/cooking assets and is not included in the packaged LogicMod runtime.
 
+Cross-asset Widget dependencies must remain valid throughout repeated generation. `WBP_ESPPassiveEntry` establishes its public initialization event before `WBP_ESPPanel` is generated. A WidgetTree-only intermediate compile is allowed only on first creation, when the generated control properties do not yet exist; later runs preserve the previous public event until the final replacement graph compiles.
+
 ## Options Considered
 
 ### Option 1: Manual Unreal Editor authoring
@@ -65,5 +67,5 @@ Negative:
 ## Follow-ups
 
 - [x] Validate the generated bridge events in a Steam single-player smoke test.
-- [x] Keep the editor-only plugin out of the final LogicMod package; the panel pak contains exactly ten asset files and no DLL.
-- [x] Regenerate and cook `WBP_ESPPanel`; retain five canonical source assets in `LogicMod/Content`.
+- [x] Keep the editor-only plugin out of the final LogicMod package; the tabbed-filter pak contains exactly twelve asset files and no DLL.
+- [x] Regenerate and cook `WBP_ESPPanel` plus `WBP_ESPPassiveEntry`; retain six canonical source assets in `LogicMod/Content`.

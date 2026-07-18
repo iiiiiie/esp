@@ -17,6 +17,9 @@ local function complete(overrides)
         show_distance = true,
         show_iv = false,
         iv_min = 0,
+        iv_hp_min = 0,
+        iv_attack_min = 0,
+        iv_defense_min = 0,
         show_passives = false,
         gender = 0,
         lucky = 0,
@@ -35,6 +38,13 @@ local function complete(overrides)
         values[name] = value
     end
     return values
+end
+
+local function legacy_snapshot(values, version)
+    return user_settings.serialize(values):gsub("^v8 ", version .. " ")
+        :gsub(" iv_hp_min=%-?%d+", "")
+        :gsub(" iv_attack_min=%-?%d+", "")
+        :gsub(" iv_defense_min=%-?%d+", "")
 end
 
 local function read_backend(lines)
@@ -68,7 +78,9 @@ return {
             element_fire = true,
             element_water = true,
             show_iv = true,
-            iv_min = 73,
+            iv_hp_min = 73,
+            iv_attack_min = 64,
+            iv_defense_min = 88,
             show_passives = true,
         })
         local parsed = assert(user_settings.parse_line(user_settings.serialize(input)))
@@ -83,12 +95,14 @@ return {
         helper.equal(parsed.element_water, true)
         helper.equal(parsed.element_normal, false)
         helper.equal(parsed.show_iv, true)
-        helper.equal(parsed.iv_min, 73)
+        helper.equal(parsed.iv_hp_min, 73)
+        helper.equal(parsed.iv_attack_min, 64)
+        helper.equal(parsed.iv_defense_min, 88)
         helper.equal(parsed.show_passives, true)
     end),
 
     helper.case("settings v1 snapshots remain readable with Lucky defaulted to all", function()
-        local v1 = user_settings.serialize(complete()):gsub("^v7 ", "v1 ")
+        local v1 = legacy_snapshot(complete(), "v1")
             :gsub(" lucky=0", ""):gsub(" boss=0", "")
             :gsub(" element_[%a_]+=false", ""):gsub(" show_iv=false", ""):gsub(" iv_min=0", ""):gsub(" show_passives=false", "")
         local parsed, parse_error, version = user_settings.parse_line(v1)
@@ -99,11 +113,14 @@ return {
         helper.equal(parsed.element_fire, false)
         helper.equal(parsed.show_iv, false)
         helper.equal(parsed.iv_min, 0)
+        helper.equal(parsed.iv_hp_min, 0)
+        helper.equal(parsed.iv_attack_min, 0)
+        helper.equal(parsed.iv_defense_min, 0)
         helper.equal(parsed.show_passives, false)
     end),
 
     helper.case("settings v2 snapshots remain readable with Boss defaulted to all", function()
-        local v2 = user_settings.serialize(complete({ lucky = 2 })):gsub("^v7 ", "v2 ")
+        local v2 = legacy_snapshot(complete({ lucky = 2 }), "v2")
             :gsub(" boss=0", ""):gsub(" element_[%a_]+=false", ""):gsub(" show_iv=false", ""):gsub(" iv_min=0", ""):gsub(" show_passives=false", "")
         local parsed, parse_error, version = user_settings.parse_line(v2)
         helper.equal(parse_error, nil)
@@ -117,7 +134,7 @@ return {
     end),
 
     helper.case("settings v3 snapshots remain readable with elements defaulted to all", function()
-        local v3 = user_settings.serialize(complete({ boss = 1 })):gsub("^v7 ", "v3 ")
+        local v3 = legacy_snapshot(complete({ boss = 1 }), "v3")
             :gsub(" element_[%a_]+=false", ""):gsub(" show_iv=false", ""):gsub(" iv_min=0", ""):gsub(" show_passives=false", "")
         local parsed, parse_error, version = user_settings.parse_line(v3)
         helper.equal(parse_error, nil)
@@ -138,7 +155,7 @@ return {
     end),
 
     helper.case("settings v4 snapshots remain readable with IV display disabled", function()
-        local v4 = user_settings.serialize(complete({ show_iv = true })):gsub("^v7 ", "v4 ")
+        local v4 = legacy_snapshot(complete({ show_iv = true }), "v4")
             :gsub(" show_iv=true", ""):gsub(" iv_min=0", ""):gsub(" show_passives=false", "")
         local parsed, parse_error, version = user_settings.parse_line(v4)
         helper.equal(parse_error, nil)
@@ -150,7 +167,7 @@ return {
     end),
 
     helper.case("settings v5 snapshots remain readable with IV minimum disabled", function()
-        local v5 = user_settings.serialize(complete({ show_iv = true, iv_min = 80 })):gsub("^v7 ", "v5 ")
+        local v5 = legacy_snapshot(complete({ show_iv = true, iv_min = 80 }), "v5")
             :gsub(" iv_min=80", ""):gsub(" show_passives=false", "")
         local parsed, parse_error, version = user_settings.parse_line(v5)
         helper.equal(parse_error, nil)
@@ -161,13 +178,27 @@ return {
     end),
 
     helper.case("settings v6 snapshots remain readable with passive display disabled", function()
-        local v6 = user_settings.serialize(complete({ iv_min = 80, show_passives = true })):gsub("^v7 ", "v6 ")
+        local v6 = legacy_snapshot(complete({ iv_min = 80, show_passives = true }), "v6")
             :gsub(" show_passives=true", "")
         local parsed, parse_error, version = user_settings.parse_line(v6)
         helper.equal(parse_error, nil)
         helper.equal(version, "v6")
         helper.equal(parsed.iv_min, 80)
+        helper.equal(parsed.iv_hp_min, 80)
+        helper.equal(parsed.iv_attack_min, 80)
+        helper.equal(parsed.iv_defense_min, 80)
         helper.equal(parsed.show_passives, false)
+    end),
+
+    helper.case("settings v7 snapshots migrate one IV minimum into all dimensions", function()
+        local v7 = legacy_snapshot(complete({ iv_min = 61, show_passives = true }), "v7")
+        local parsed, parse_error, version = user_settings.parse_line(v7)
+        helper.equal(parse_error, nil)
+        helper.equal(version, "v7")
+        helper.equal(parsed.show_passives, true)
+        helper.equal(parsed.iv_hp_min, 61)
+        helper.equal(parsed.iv_attack_min, 61)
+        helper.equal(parsed.iv_defense_min, 61)
     end),
 
     helper.case("settings parser rejects unknown or incomplete snapshots", function()
@@ -188,6 +219,9 @@ return {
             lucky = -4,
             boss = 99,
             iv_min = 999,
+            iv_hp_min = -9,
+            iv_attack_min = 47,
+            iv_defense_min = 999,
         }))
         helper.equal(normalized.profile_id, 3)
         helper.equal(normalized.language_id, 0)
@@ -198,6 +232,9 @@ return {
         helper.equal(normalized.lucky, 0)
         helper.equal(normalized.boss, 2)
         helper.equal(normalized.iv_min, 100)
+        helper.equal(normalized.iv_hp_min, 0)
+        helper.equal(normalized.iv_attack_min, 47)
+        helper.equal(normalized.iv_defense_min, 100)
     end),
 
     helper.case("settings loader uses the last valid snapshot", function()
@@ -226,16 +263,25 @@ return {
                 }
             end,
         }
-        local ok = user_settings.append("memory.log", complete({ show_name = false, show_iv = true, iv_min = 67, show_passives = true }), backend)
+        local ok = user_settings.append("memory.log", complete({
+            show_name = false,
+            show_iv = true,
+            iv_hp_min = 67,
+            iv_attack_min = 68,
+            iv_defense_min = 69,
+            show_passives = true,
+        }), backend)
         helper.truthy(ok)
-        helper.truthy(written:match("^v7 "))
+        helper.truthy(written:match("^v8 "))
         helper.truthy(written:match("show_name=false"))
         helper.truthy(written:match("lucky=0"))
         helper.truthy(written:match("boss=0"))
         helper.truthy(written:match("element_normal=false"))
         helper.truthy(written:match("element_dragon=false"))
         helper.truthy(written:match("show_iv=true"))
-        helper.truthy(written:match("iv_min=67"))
+        helper.truthy(written:match("iv_hp_min=67"))
+        helper.truthy(written:match("iv_attack_min=68"))
+        helper.truthy(written:match("iv_defense_min=69"))
         helper.truthy(written:match("show_passives=true"))
         helper.truthy(written:match("\n$"))
     end),

@@ -160,6 +160,10 @@ local state = {
     show_iv = config.SHOW_IV,
     show_passive_skills = config.SHOW_PASSIVE_SKILLS,
     iv_min = 0,
+    iv_hp_min = 0,
+    iv_attack_min = 0,
+    iv_defense_min = 0,
+    passive_filter_revision = 0,
     gender_filter_id = 0,
     lucky_filter_id = 0,
     boss_filter_id = 0,
@@ -340,6 +344,9 @@ local SETTINGS_PROPERTIES = {
     { name = "show_iv", property = "ESP_ShowIV" },
     { name = "show_passives", property = "ESP_ShowPassiveSkills" },
     { name = "iv_min", property = "ESP_IvMin" },
+    { name = "iv_hp_min", property = "ESP_IvHpMin" },
+    { name = "iv_attack_min", property = "ESP_IvAttackMin" },
+    { name = "iv_defense_min", property = "ESP_IvDefenseMin" },
     { name = "gender", property = "ESP_GenderFilterId" },
     { name = "lucky", property = "ESP_LuckyFilterId" },
     { name = "boss", property = "ESP_BossFilterId" },
@@ -495,7 +502,7 @@ local function flush_user_settings_if_due()
     state.settings_pending = nil
     state.settings_save_due_at = nil
     state.settings_save_error_logged = false
-    debug_event("USER_SETTINGS_SAVED", "version=v7")
+    debug_event("USER_SETTINGS_SAVED", "version=v8")
 end
 
 local function safe_call_no_args(object, method_name)
@@ -2529,6 +2536,10 @@ local function apply_display_styles(
     show_iv,
     show_passive_skills,
     raw_iv_min,
+    raw_iv_hp_min,
+    raw_iv_attack_min,
+    raw_iv_defense_min,
+    raw_passive_filter_revision,
     raw_gender_filter_id,
     raw_lucky_filter_id,
     raw_boss_filter_id,
@@ -2538,6 +2549,10 @@ local function apply_display_styles(
     local lucky_filter_id = normalize_lucky_filter_id(raw_lucky_filter_id)
     local boss_filter_id = normalize_boss_filter_id(raw_boss_filter_id)
     local iv_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_min) or 0)))
+    local iv_hp_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_hp_min) or iv_min)))
+    local iv_attack_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_attack_min) or iv_min)))
+    local iv_defense_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_defense_min) or iv_min)))
+    local passive_filter_revision = math.max(0, math.floor(tonumber(raw_passive_filter_revision) or 0))
     local element_filter_mask = math.max(0, math.min(511, math.floor(tonumber(raw_element_filter_mask) or 0)))
     if show_top_guide_line == state.show_top_guide_line
         and show_name == state.show_name
@@ -2546,6 +2561,10 @@ local function apply_display_styles(
         and show_iv == state.show_iv
         and show_passive_skills == state.show_passive_skills
         and iv_min == state.iv_min
+        and iv_hp_min == state.iv_hp_min
+        and iv_attack_min == state.iv_attack_min
+        and iv_defense_min == state.iv_defense_min
+        and passive_filter_revision == state.passive_filter_revision
         and gender_filter_id == state.gender_filter_id
         and lucky_filter_id == state.lucky_filter_id
         and boss_filter_id == state.boss_filter_id
@@ -2559,6 +2578,10 @@ local function apply_display_styles(
     state.show_iv = show_iv
     state.show_passive_skills = show_passive_skills
     state.iv_min = iv_min
+    state.iv_hp_min = iv_hp_min
+    state.iv_attack_min = iv_attack_min
+    state.iv_defense_min = iv_defense_min
+    state.passive_filter_revision = passive_filter_revision
     state.gender_filter_id = gender_filter_id
     state.lucky_filter_id = lucky_filter_id
     state.boss_filter_id = boss_filter_id
@@ -2575,6 +2598,10 @@ local function apply_display_styles(
         show_iv,
         show_passive_skills,
         iv_min,
+        iv_hp_min,
+        iv_attack_min,
+        iv_defense_min,
+        passive_filter_revision,
         gender_filter_id,
         lucky_filter_id,
         boss_filter_id,
@@ -2584,14 +2611,17 @@ local function apply_display_styles(
     local lucky_filter_names = { [0] = "all", [1] = "only_lucky", [2] = "exclude_lucky" }
     local boss_filter_names = { [0] = "all", [1] = "only_boss", [2] = "exclude_boss" }
     log_event("DISPLAY_STYLE", string.format(
-        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s show_iv=%s show_passives=%s iv_min=%d gender_filter=%s lucky_filter=%s boss_filter=%s element_filter_mask=%d",
+        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s show_iv=%s show_passives=%s iv_hp_min=%d iv_attack_min=%d iv_defense_min=%d passive_filter_revision=%d gender_filter=%s lucky_filter=%s boss_filter=%s element_filter_mask=%d",
         tostring(show_top_guide_line),
         tostring(show_name),
         tostring(show_level),
         tostring(show_distance),
         tostring(show_iv),
         tostring(show_passive_skills),
-        iv_min,
+        iv_hp_min,
+        iv_attack_min,
+        iv_defense_min,
+        passive_filter_revision,
         gender_filter_names[gender_filter_id],
         lucky_filter_names[lucky_filter_id],
         boss_filter_names[boss_filter_id],
@@ -2651,6 +2681,10 @@ local function poll_panel_controls()
     local show_iv = read_panel_boolean("ESP_ShowIV")
     local show_passive_skills = read_panel_boolean("ESP_ShowPassiveSkills")
     local iv_min = read_panel_number("ESP_IvMin")
+    local iv_hp_min = read_panel_number("ESP_IvHpMin")
+    local iv_attack_min = read_panel_number("ESP_IvAttackMin")
+    local iv_defense_min = read_panel_number("ESP_IvDefenseMin")
+    local passive_filter_revision = read_panel_number("ESP_PassiveFilterRevision")
     local gender_filter_id = read_panel_number("ESP_GenderFilterId")
     local lucky_filter_id = read_panel_number("ESP_LuckyFilterId")
     local boss_filter_id = read_panel_number("ESP_BossFilterId")
@@ -2671,6 +2705,8 @@ local function poll_panel_controls()
         or level_min == nil or level_max == nil or distance_max == nil
         or show_top_guide_line == nil or show_name == nil or show_level == nil or show_distance == nil
         or show_iv == nil or show_passive_skills == nil or iv_min == nil
+        or iv_hp_min == nil or iv_attack_min == nil or iv_defense_min == nil
+        or passive_filter_revision == nil
         or gender_filter_id == nil or lucky_filter_id == nil or boss_filter_id == nil
         or element_normal == nil or element_fire == nil or element_water == nil or element_leaf == nil
         or element_electricity == nil or element_ice == nil or element_earth == nil
@@ -2700,6 +2736,10 @@ local function poll_panel_controls()
         show_iv,
         show_passive_skills,
         iv_min,
+        iv_hp_min,
+        iv_attack_min,
+        iv_defense_min,
+        passive_filter_revision,
         gender_filter_id,
         lucky_filter_id,
         boss_filter_id,
@@ -2727,7 +2767,10 @@ local function poll_panel_controls()
         show_distance = show_distance,
         show_iv = show_iv,
         show_passives = show_passive_skills,
-        iv_min = iv_min,
+        iv_min = 0,
+        iv_hp_min = iv_hp_min,
+        iv_attack_min = iv_attack_min,
+        iv_defense_min = iv_defense_min,
         gender = gender_filter_id,
         lucky = lucky_filter_id,
         boss = boss_filter_id,

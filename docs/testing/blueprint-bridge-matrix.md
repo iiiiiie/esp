@@ -17,11 +17,11 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | MSVC | `14.38` installed; UBT selected `14.39.33523` for the current editor-plugin build |
 | Wwise | Not required by the accepted no-Wwise PMK path |
 | Last fully verified LogicMod pak | `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14`; 8 files |
-| Current deployed panel pak | `8A0492FBEBBB032E47836CE8AD6E237C2BA7EC671C519361F6AA595C966E1E60`; IV minimum, passive-skill display, and panel-safety checkpoint; runtime regression pending |
-| Current Pak contents | 10 files under `../../../Pal/Content/Mods/PalworldResourceESP/`; no DLL |
+| Current deployed panel pak | `710FD094FE0B42AC045498EB0FBF0B087F27229F9BFD66982ED6184BE74A95E3`; tabbed filters, dimensional IV thresholds, and capped passive AND-filter checkpoint; runtime regression pending |
+| Current Pak contents | 12 files under `../../../Pal/Content/Mods/PalworldResourceESP/`; no DLL |
 | Current Lua script hash | `2670C212EAE60D2DA2E9477DE7B9DB69DE09B08F5D5C857AF1345DE8B843C107` |
 | Current Lua config hash | `DA3B598DD1854402D5A3ABE7BC012C2D910A4D77F5427E55948399F58F18EC53` |
-| Current settings module hash | `FDC1740A4528750B3DFB17FB5B9889CB96E0B19BCFF23679E318C589F4D3DBEE` |
+| Current settings module hash | `51F652DB28A4E4A1B64D99CE76104DC2C46E9EC4D04F32FAA8E3E221AC9C8AE2` |
 
 ## Required Cases
 
@@ -48,13 +48,16 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | BP-19 | Slider commit behavior | Dragging updates only the visible number; releasing applies one filter revision without continuous hitching | Pending | Source and automated contract complete; Steam verification required. |
 | BP-20 | Name label and outline | Name visibility is independent; all name/level/distance text uses a black outline | Pending | Generated Blueprint and Steam verification required. |
 | BP-21 | Settings restoration | Restart restores the last stable functional settings and language without restoring capture state | Pending | Parser/runtime tests pass; full restart verification required. |
-| BP-22 | Lucky filter | All/only Lucky/exclude Lucky filters already-admitted wild Pals; unknown states fail closed in restricted modes | Pending | `IsRarePal()` provider, three-state UI, persistence, Blueprint compilation, and 10-file Pak checks pass; Steam verification requires an ordinary Pal and ideally a Lucky sample. |
-| BP-23 | Boss filter | All/only Boss/exclude Boss filters already-admitted wild Pals; unknown states fail closed in restricted modes | Pending | `GetCharacterID()` + character database `GetIsBoss()` provider, three-state UI, `v3` persistence, Blueprint compilation, and 10-file Pak checks pass; Steam verification requires a fixed-map Boss and ordinary Pal. |
-| BP-24 | Element filter | Nine compact toggles filter already-admitted wild Pals with match-any semantics; no selection means all and unknown masks fail closed | Pending | `HasElementType()` provider, 3x3 UI, scalar mask bridge, strict `v4` persistence, Blueprint compilation, 408/408 clean Cook, and 10-file/0-DLL Pak checks pass; ordinary Pals are sufficient for Steam verification. |
-| BP-25 | IV display | Optional `IV HP x / ATK y / DEF z` uses typed save-parameter fields for already-admitted wild Pals; unknown values are hidden instead of shown as zero | Pending | `GetSaveParameter()` plus `Talent_HP`/`Talent_Shot`/`Talent_Defense`, three indexed arrays, `v5` persistence, Blueprint compilation, 408/408 clean Cook, and 10-file/0-DLL Pak checks pass; ordinary-Pal value correctness requires Steam verification. |
-| BP-26 | IV minimum filter | A `0..100` minimum hides a Pal unless HP, attack, and defense IVs are all known and at least the selected value; zero disables the filter | Pending | Typed provider, fail-closed all-three comparison, actor-free scalar update, strict `v6` persistence, Blueprint compilation, clean Cook, and package checks pass; Steam threshold behavior requires verification. |
+| BP-22 | Lucky filter | All/only Lucky/exclude Lucky filters already-admitted wild Pals; unknown states fail closed in restricted modes | Pending | `IsRarePal()` provider, three-state UI, persistence, Blueprint compilation, and 12-file Pak checks pass; Steam verification requires an ordinary Pal and ideally a Lucky sample. |
+| BP-23 | Boss filter | All/only Boss/exclude Boss filters already-admitted wild Pals; unknown states fail closed in restricted modes | Pending | `GetCharacterID()` + character database `GetIsBoss()` provider, three-state UI, `v3` persistence, Blueprint compilation, and 12-file Pak checks pass; Steam verification requires a fixed-map Boss and ordinary Pal. |
+| BP-24 | Element filter | Nine compact toggles filter already-admitted wild Pals with match-any semantics; no selection means all and unknown masks fail closed | Pending | `HasElementType()` provider, 3x3 UI, scalar mask bridge, strict `v4` persistence, Blueprint compilation, clean Cook, and 12-file/0-DLL Pak checks pass; ordinary Pals are sufficient for Steam verification. |
+| BP-25 | IV display | Optional `IV HP x / ATK y / DEF z` uses typed save-parameter fields for already-admitted wild Pals; unknown values are hidden instead of shown as zero | Pending | `GetSaveParameter()` plus `Talent_HP`/`Talent_Shot`/`Talent_Defense`, three indexed arrays, `v5` persistence, Blueprint compilation, clean Cook, and 12-file/0-DLL Pak checks pass; ordinary-Pal value correctness requires Steam verification. |
+| BP-26 | IV minimum filter | Independent HP/ATK/DEF `0..100` minima hide a Pal unless every dimension meets its own threshold; zero disables that dimension | Pending | Typed provider, fail-closed three-comparison graph, actor-free scalar update, strict `v8` persistence, Blueprint compilation, clean Cook, and package checks pass; Steam threshold behavior requires verification. |
 | BP-27 | Passive-skill display | Optional passive-skill text uses the game's localized names for already-admitted wild Pals and hides immediately when disabled | Pending | Blueprint calls `GetPassiveSkillList()` and resolves IDs with `PalUIUtility::GetPassiveSkillName()` without sending the source array through Lua; strict `v7` persistence, Blueprint compilation, clean Cook, and package checks pass. |
 | BP-28 | Display checkbox contrast | Every display row has a clearly visible unchecked and checked state and an unambiguous label association | Pending | Generated controls use a fixed 28x24 outlined checkbox with medium-gray unchecked and green checked fills; Steam visual verification remains. |
+| BP-29 | Passive-skill AND filter | Zero to four skills may be selected; every selected game-provided passive ID must be present on a target | Pending | Blueprint-owned capped `TArray<FName>`, delimiter-safe per-target IDs, AND accumulator, clear actions, repeated asset generation, clean Cook, and 12-file/0-DLL Pak checks pass; Steam behavior remains. |
+| BP-30 | Passive catalog and tooltips | Catalog categories come from game rank/lottery data and hover text uses localized `SkillDesc` | Pending | Game manager/data/localization nodes and seven expandable groups compile; Steam content, category, and tooltip verification remains. |
+| BP-31 | Tabbed panel layout | 1180x680 panel switches between Display, Filters, and pending Display style without losing input or filter state | Pending | WidgetSwitcher, tab highlighting, two-column filter page, and repeat-generation dependency contract compile; 720p and higher visual verification remains. |
 
 ## Panel Regression Evidence
 
@@ -80,4 +83,4 @@ Expected result: no matches.
 
 ## Completion Rule
 
-The original Blueprint bridge spike passed BP-01 through BP-11 on Steam single-player. The current panel checkpoint is complete only when BP-12 through BP-28 pass without regressing BP-01 through BP-11 or `candidate_player_count=0`.
+The original Blueprint bridge spike passed BP-01 through BP-11 on Steam single-player. The current panel checkpoint is complete only when BP-12 through BP-31 pass without regressing BP-01 through BP-11 or `candidate_player_count=0`.

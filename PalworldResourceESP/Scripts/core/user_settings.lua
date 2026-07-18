@@ -1,6 +1,6 @@
 local user_settings = {}
 
-local VERSION = "v7"
+local VERSION = "v8"
 
 local v1_fields = {
     { name = "runtime_enabled", kind = "boolean", default = true },
@@ -53,11 +53,19 @@ for _, field in ipairs(v5_fields) do
 end
 v6_fields[#v6_fields + 1] = { name = "iv_min", kind = "integer", min = 0, max = 100, default = 0 }
 
-local fields = {}
+local v7_fields = {}
 for _, field in ipairs(v6_fields) do
+    v7_fields[#v7_fields + 1] = field
+end
+v7_fields[#v7_fields + 1] = { name = "show_passives", kind = "boolean", default = false }
+
+local fields = {}
+for _, field in ipairs(v7_fields) do
     fields[#fields + 1] = field
 end
-fields[#fields + 1] = { name = "show_passives", kind = "boolean", default = false }
+fields[#fields + 1] = { name = "iv_hp_min", kind = "integer", min = 0, max = 100, default = 0 }
+fields[#fields + 1] = { name = "iv_attack_min", kind = "integer", min = 0, max = 100, default = 0 }
+fields[#fields + 1] = { name = "iv_defense_min", kind = "integer", min = 0, max = 100, default = 0 }
 
 local schemas = {
     v1 = v1_fields,
@@ -66,7 +74,8 @@ local schemas = {
     v4 = v4_fields,
     v5 = v5_fields,
     v6 = v6_fields,
-    v7 = fields,
+    v7 = v7_fields,
+    v8 = fields,
 }
 
 local fields_by_version = {}
@@ -149,10 +158,10 @@ function user_settings.parse_line(line)
     if version == "v1" then
         normalized.lucky = 0
     end
-    if version ~= "v3" and version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" then
+    if version ~= "v3" and version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" then
         normalized.boss = 0
     end
-    if version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" then
+    if version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" then
         normalized.element_normal = false
         normalized.element_fire = false
         normalized.element_water = false
@@ -163,14 +172,19 @@ function user_settings.parse_line(line)
         normalized.element_dark = false
         normalized.element_dragon = false
     end
-    if version ~= "v5" and version ~= "v6" and version ~= "v7" then
+    if version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" then
         normalized.show_iv = false
     end
-    if version ~= "v6" and version ~= "v7" then
+    if version ~= "v6" and version ~= "v7" and version ~= "v8" then
         normalized.iv_min = 0
     end
-    if version ~= "v7" then
+    if version ~= "v7" and version ~= "v8" then
         normalized.show_passives = false
+    end
+    if version ~= "v8" then
+        normalized.iv_hp_min = normalized.iv_min or 0
+        normalized.iv_attack_min = normalized.iv_min or 0
+        normalized.iv_defense_min = normalized.iv_min or 0
     end
     return normalized, nil, version
 end
