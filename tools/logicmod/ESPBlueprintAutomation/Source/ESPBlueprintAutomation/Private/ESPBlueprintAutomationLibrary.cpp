@@ -4230,7 +4230,7 @@ bool BuildPanelPassiveCatalog(
     int32 Y) {
     if (!Blueprint || !ModActorClass || !PassiveEntryClass || !PalUtilityClass || !PalUIUtilityClass
         || !PassiveSkillManagerClass || !PassiveSkillDatabaseRowStruct || !MasterDataTablesUtilityClass
-        || Groups.Num() != 7 || Groups.Contains(nullptr) || !SearchBox) {
+        || Groups.Num() != 8 || Groups.Contains(nullptr) || !SearchBox) {
         return false;
     }
     UEdGraph* Graph = EventGraph(Blueprint);
@@ -4335,25 +4335,31 @@ bool BuildPanelPassiveCatalog(
     UK2Node_CallFunction* InitializeEntry = AddStaticCall(Graph, PassiveEntryClass, *PassiveEntryInitializeEventName.ToString(), X + 780, Y);
 
     UK2Node_CallFunction* RankRainbow = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("GreaterEqual_IntInt"), X + 1040, Y + 1120);
-    UK2Node_CallFunction* RankPositive = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Greater_IntInt"), X + 1040, Y + 1240);
-    UK2Node_CallFunction* WeightSpecial = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("LessEqual_IntInt"), X + 1040, Y + 1360);
-    UK2Node_CallFunction* RankSpecial = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), X + 1300, Y + 1300);
-    UK2Node_CallFunction* RankGold = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("GreaterEqual_IntInt"), X + 1040, Y + 1420);
-    // __DEPRECATED_20260718__ [reason: ordinary passives use both rank 0 and rank 1]
-    // UK2Node_CallFunction* RankNormal = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1480);
-    UK2Node_CallFunction* RankNormal = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("GreaterEqual_IntInt"), X + 1040, Y + 1480);
-    UK2Node_CallFunction* RankNegative1 = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1600);
-    UK2Node_CallFunction* RankNegative2 = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1720);
+    // __DEPRECATED_20260718__ [reason: LotteryWeight does not define the visible rarity tier]
+    // UK2Node_CallFunction* RankPositive = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Greater_IntInt"), X + 1040, Y + 1240);
+    // UK2Node_CallFunction* WeightSpecial = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("LessEqual_IntInt"), X + 1040, Y + 1360);
+    // UK2Node_CallFunction* RankSpecial = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), X + 1300, Y + 1300);
+    UK2Node_CallFunction* RankLegend = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1240);
+    UK2Node_CallFunction* RankGold3 = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1360);
+    UK2Node_CallFunction* RankGold2 = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1480);
+    UK2Node_CallFunction* RankNormal = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1600);
+    UK2Node_CallFunction* RankNegative1 = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1720);
+    UK2Node_CallFunction* RankNegative2 = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1840);
+    UK2Node_CallFunction* RankNegative3 = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 1040, Y + 1960);
     UK2Node_IfThenElse* RainbowBranch = AddBranch(Graph, X + 1040, Y);
-    UK2Node_IfThenElse* SpecialBranch = AddBranch(Graph, X + 1300, Y + 120);
-    UK2Node_IfThenElse* GoldBranch = AddBranch(Graph, X + 1560, Y + 240);
-    UK2Node_IfThenElse* NormalBranch = AddBranch(Graph, X + 1820, Y + 360);
-    UK2Node_IfThenElse* Negative1Branch = AddBranch(Graph, X + 2080, Y + 480);
-    UK2Node_IfThenElse* Negative2Branch = AddBranch(Graph, X + 2340, Y + 600);
+    // __DEPRECATED_20260718__ [reason: the former special branch mixed ranks by lottery weight]
+    // UK2Node_IfThenElse* SpecialBranch = AddBranch(Graph, X + 1300, Y + 120);
+    UK2Node_IfThenElse* LegendBranch = AddBranch(Graph, X + 1300, Y + 120);
+    UK2Node_IfThenElse* Gold3Branch = AddBranch(Graph, X + 1560, Y + 240);
+    UK2Node_IfThenElse* Gold2Branch = AddBranch(Graph, X + 1820, Y + 360);
+    UK2Node_IfThenElse* NormalBranch = AddBranch(Graph, X + 2080, Y + 480);
+    UK2Node_IfThenElse* Negative1Branch = AddBranch(Graph, X + 2340, Y + 600);
+    UK2Node_IfThenElse* Negative2Branch = AddBranch(Graph, X + 2600, Y + 720);
+    UK2Node_IfThenElse* Negative3Branch = AddBranch(Graph, X + 2860, Y + 840);
 
     TArray<UK2Node_CallFunction*> AddToGroup;
     for (int32 Index = 0; Index < Groups.Num(); ++Index) {
-        AddToGroup.Add(AddStaticCall(Graph, UPanelWidget::StaticClass(), TEXT("AddChild"), X + 2860, Y + Index * 180));
+        AddToGroup.Add(AddStaticCall(Graph, UPanelWidget::StaticClass(), TEXT("AddChild"), X + 3380, Y + Index * 180));
     }
 
     UEdGraphNode* FallbackDescriptionSource = nullptr;
@@ -4405,9 +4411,10 @@ bool BuildPanelPassiveCatalog(
         || !LanguageIdGet || !LanguageIsEnglish || !SelectedIdsGet || !IsSelected || !ExcludedIdsGet || !IsExcluded
         || !FallbackDescriptionSource || !FallbackDescriptionNotEmpty || !SelectResolvedDescription || !ResolvedDescriptionToText
         || !GetController || !CreateEntry || !CastEntry || !InitializeEntry
-        || !RankRainbow || !RankPositive || !WeightSpecial || !RankSpecial || !RankGold || !RankNormal
-        || !RankNegative1 || !RankNegative2 || !RainbowBranch || !SpecialBranch || !GoldBranch
-        || !NormalBranch || !Negative1Branch || !Negative2Branch || AddToGroup.Contains(nullptr)
+        || !RankRainbow || !RankLegend || !RankGold3 || !RankGold2 || !RankNormal
+        || !RankNegative1 || !RankNegative2 || !RankNegative3
+        || !RainbowBranch || !LegendBranch || !Gold3Branch || !Gold2Branch
+        || !NormalBranch || !Negative1Branch || !Negative2Branch || !Negative3Branch || AddToGroup.Contains(nullptr)
         || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, ForEachSkillId, TEXT("Exec"))
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetSortedSkills, TEXT("WorldContextObject"))
         || !Link(GetSortedSkills, TEXT("OutPassiveIdArray"), ForEachSkillId, TEXT("Array"))
@@ -4489,29 +4496,27 @@ bool BuildPanelPassiveCatalog(
         || !Link(ResolvedDescriptionToText, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Description"))
         || !Link(IsSelected, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Selected"))
         || !Link(IsExcluded, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Excluded"))
-        // __DEPRECATED_20260718__ [reason: zero-weight positive skills must reach Legend / exclusive before rank-4 Rainbow]
-        // || !Link(InitializeEntry, UEdGraphSchema_K2::PN_Then, RainbowBranch, UEdGraphSchema_K2::PN_Execute)
-        || !Link(InitializeEntry, UEdGraphSchema_K2::PN_Then, SpecialBranch, UEdGraphSchema_K2::PN_Execute)
+        // __DEPRECATED_20260718__ [reason: rarity is an exact Rank mapping, not a lottery-weight branch]
+        // || !Link(InitializeEntry, UEdGraphSchema_K2::PN_Then, SpecialBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(InitializeEntry, UEdGraphSchema_K2::PN_Then, RainbowBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(BreakSkillData, TEXT("Rank"), RankRainbow, TEXT("A"))
-        || !SetPinDefault(RankRainbow, TEXT("B"), TEXT("4"))
+        || !SetPinDefault(RankRainbow, TEXT("B"), TEXT("5"))
         || !Link(RankRainbow, UEdGraphSchema_K2::PN_ReturnValue, RainbowBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(BreakSkillData, TEXT("Rank"), RankPositive, TEXT("A"))
-        || !SetPinDefault(RankPositive, TEXT("B"), TEXT("0"))
-        || !Link(BreakSkillData, TEXT("LotteryWeight"), WeightSpecial, TEXT("A"))
-        || !SetPinDefault(WeightSpecial, TEXT("B"), TEXT("0"))
-        || !Link(RankPositive, UEdGraphSchema_K2::PN_ReturnValue, RankSpecial, TEXT("A"))
-        || !Link(WeightSpecial, UEdGraphSchema_K2::PN_ReturnValue, RankSpecial, TEXT("B"))
-        || !Link(RankSpecial, UEdGraphSchema_K2::PN_ReturnValue, SpecialBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(SpecialBranch, UEdGraphSchema_K2::PN_Else, RainbowBranch, UEdGraphSchema_K2::PN_Execute)
-        || !Link(RainbowBranch, UEdGraphSchema_K2::PN_Else, GoldBranch, UEdGraphSchema_K2::PN_Execute)
-        || !Link(BreakSkillData, TEXT("Rank"), RankGold, TEXT("A"))
-        || !SetPinDefault(RankGold, TEXT("B"), TEXT("2"))
-        // __DEPRECATED_20260718__ [reason: rank-1 ordinary passives do not belong in Gold]
-        // || !Link(RankPositive, UEdGraphSchema_K2::PN_ReturnValue, GoldBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(RankGold, UEdGraphSchema_K2::PN_ReturnValue, GoldBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(GoldBranch, UEdGraphSchema_K2::PN_Else, NormalBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RainbowBranch, UEdGraphSchema_K2::PN_Else, LegendBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BreakSkillData, TEXT("Rank"), RankLegend, TEXT("A"))
+        || !SetPinDefault(RankLegend, TEXT("B"), TEXT("4"))
+        || !Link(RankLegend, UEdGraphSchema_K2::PN_ReturnValue, LegendBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(LegendBranch, UEdGraphSchema_K2::PN_Else, Gold3Branch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BreakSkillData, TEXT("Rank"), RankGold3, TEXT("A"))
+        || !SetPinDefault(RankGold3, TEXT("B"), TEXT("3"))
+        || !Link(RankGold3, UEdGraphSchema_K2::PN_ReturnValue, Gold3Branch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(Gold3Branch, UEdGraphSchema_K2::PN_Else, Gold2Branch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BreakSkillData, TEXT("Rank"), RankGold2, TEXT("A"))
+        || !SetPinDefault(RankGold2, TEXT("B"), TEXT("2"))
+        || !Link(RankGold2, UEdGraphSchema_K2::PN_ReturnValue, Gold2Branch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(Gold2Branch, UEdGraphSchema_K2::PN_Else, NormalBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(BreakSkillData, TEXT("Rank"), RankNormal, TEXT("A"))
-        || !SetPinDefault(RankNormal, TEXT("B"), TEXT("0"))
+        || !SetPinDefault(RankNormal, TEXT("B"), TEXT("1"))
         || !Link(RankNormal, UEdGraphSchema_K2::PN_ReturnValue, NormalBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(NormalBranch, UEdGraphSchema_K2::PN_Else, Negative1Branch, UEdGraphSchema_K2::PN_Execute)
         || !Link(BreakSkillData, TEXT("Rank"), RankNegative1, TEXT("A"))
@@ -4520,7 +4525,11 @@ bool BuildPanelPassiveCatalog(
         || !Link(Negative1Branch, UEdGraphSchema_K2::PN_Else, Negative2Branch, UEdGraphSchema_K2::PN_Execute)
         || !Link(BreakSkillData, TEXT("Rank"), RankNegative2, TEXT("A"))
         || !SetPinDefault(RankNegative2, TEXT("B"), TEXT("-2"))
-        || !Link(RankNegative2, UEdGraphSchema_K2::PN_ReturnValue, Negative2Branch, UEdGraphSchema_K2::PN_Condition)) {
+        || !Link(RankNegative2, UEdGraphSchema_K2::PN_ReturnValue, Negative2Branch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(Negative2Branch, UEdGraphSchema_K2::PN_Else, Negative3Branch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BreakSkillData, TEXT("Rank"), RankNegative3, TEXT("A"))
+        || !SetPinDefault(RankNegative3, TEXT("B"), TEXT("-3"))
+        || !Link(RankNegative3, UEdGraphSchema_K2::PN_ReturnValue, Negative3Branch, UEdGraphSchema_K2::PN_Condition)) {
         return false;
     }
 
@@ -4550,15 +4559,15 @@ bool BuildPanelPassiveCatalog(
     }
 
     const TArray<UK2Node_IfThenElse*> Branches = {
-        RainbowBranch, SpecialBranch, GoldBranch, NormalBranch, Negative1Branch, Negative2Branch,
+        RainbowBranch, LegendBranch, Gold3Branch, Gold2Branch,
+        NormalBranch, Negative1Branch, Negative2Branch, Negative3Branch,
     };
     for (int32 Index = 0; Index < Groups.Num(); ++Index) {
         UK2Node_CallFunction* AddChild = AddToGroup[Index];
-        UEdGraphNode* Source = Index < Branches.Num() ? static_cast<UEdGraphNode*>(Branches[Index]) : static_cast<UEdGraphNode*>(Negative2Branch);
-        const FName ExecPin = Index < Branches.Num() ? UEdGraphSchema_K2::PN_Then : UEdGraphSchema_K2::PN_Else;
-        UK2Node_VariableGet* GroupGet = AddVariableGet(Graph, Groups[Index]->GetFName(), X + 2600, Y + Index * 180 + 100);
+        UEdGraphNode* Source = Branches[Index];
+        UK2Node_VariableGet* GroupGet = AddVariableGet(Graph, Groups[Index]->GetFName(), X + 3120, Y + Index * 180 + 100);
         if (!GroupGet
-            || !Link(Source, ExecPin, AddChild, UEdGraphSchema_K2::PN_Execute)
+            || !Link(Source, UEdGraphSchema_K2::PN_Then, AddChild, UEdGraphSchema_K2::PN_Execute)
             || !Link(GroupGet, Groups[Index]->GetFName(), AddChild, UEdGraphSchema_K2::PN_Self)
             || !Link(CastEntry, CastEntry->GetCastResultPin()->PinName, AddChild, TEXT("Content"))) {
             return false;
@@ -5146,8 +5155,9 @@ bool BuildPanel(
         return Wrap;
     };
     UWrapBox* PassiveRainbow = AddPassiveGroup(TEXT("ESP_PassiveRainbowArea"), TEXT("ESP_PassiveRainbowHeaderText"), TEXT("ESP_PassiveRainbowWrap"), TEXT("彩虹"), true);
-    UWrapBox* PassiveSpecial = AddPassiveGroup(TEXT("ESP_PassiveSpecialArea"), TEXT("ESP_PassiveSpecialHeaderText"), TEXT("ESP_PassiveSpecialWrap"), TEXT("传说 / 专属"), true);
-    UWrapBox* PassiveGold = AddPassiveGroup(TEXT("ESP_PassiveGoldArea"), TEXT("ESP_PassiveGoldHeaderText"), TEXT("ESP_PassiveGoldWrap"), TEXT("金色"), false);
+    UWrapBox* PassiveSpecial = AddPassiveGroup(TEXT("ESP_PassiveSpecialArea"), TEXT("ESP_PassiveSpecialHeaderText"), TEXT("ESP_PassiveSpecialWrap"), TEXT("传说"), true);
+    UWrapBox* PassiveGold = AddPassiveGroup(TEXT("ESP_PassiveGoldArea"), TEXT("ESP_PassiveGoldHeaderText"), TEXT("ESP_PassiveGoldWrap"), TEXT("金色 III"), false);
+    UWrapBox* PassiveGold2 = AddPassiveGroup(TEXT("ESP_PassiveGold2Area"), TEXT("ESP_PassiveGold2HeaderText"), TEXT("ESP_PassiveGold2Wrap"), TEXT("金色 II"), false);
     UWrapBox* PassiveNormal = AddPassiveGroup(TEXT("ESP_PassiveNormalArea"), TEXT("ESP_PassiveNormalHeaderText"), TEXT("ESP_PassiveNormalWrap"), TEXT("普通"), false);
     UWrapBox* PassiveNegative1 = AddPassiveGroup(TEXT("ESP_PassiveNegative1Area"), TEXT("ESP_PassiveNegative1HeaderText"), TEXT("ESP_PassiveNegative1Wrap"), TEXT("负面 I"), false);
     UWrapBox* PassiveNegative2 = AddPassiveGroup(TEXT("ESP_PassiveNegative2Area"), TEXT("ESP_PassiveNegative2HeaderText"), TEXT("ESP_PassiveNegative2Wrap"), TEXT("负面 II"), false);
@@ -5570,7 +5580,7 @@ bool BuildPanel(
     Y += 900;
     const TArray<UButton*> TabButtons = {DisplayTab, FilterTab, StyleTab};
     const TArray<UWrapBox*> PassiveCatalogGroups = {
-        PassiveRainbow, PassiveSpecial, PassiveGold, PassiveNormal,
+        PassiveRainbow, PassiveSpecial, PassiveGold, PassiveGold2, PassiveNormal,
         PassiveNegative1, PassiveNegative2, PassiveNegative3,
     };
     const TArray<FPanelNumericControlV2> FilterNumericControls = {
@@ -5622,8 +5632,9 @@ bool BuildPanel(
         {TEXT("ESP_ClearAllFiltersText"), TEXT("清空所有筛选"), TEXT("Clear all filters")},
         {TEXT("ESP_ClearPassiveFiltersText"), TEXT("清空词条"), TEXT("Clear passives")},
         {TEXT("ESP_PassiveRainbowHeaderText"), TEXT("彩虹"), TEXT("Rainbow")},
-        {TEXT("ESP_PassiveSpecialHeaderText"), TEXT("传说 / 专属"), TEXT("Legend / exclusive")},
-        {TEXT("ESP_PassiveGoldHeaderText"), TEXT("金色"), TEXT("Gold")},
+        {TEXT("ESP_PassiveSpecialHeaderText"), TEXT("传说"), TEXT("Legend")},
+        {TEXT("ESP_PassiveGoldHeaderText"), TEXT("金色 III"), TEXT("Gold III")},
+        {TEXT("ESP_PassiveGold2HeaderText"), TEXT("金色 II"), TEXT("Gold II")},
         {TEXT("ESP_PassiveNormalHeaderText"), TEXT("普通"), TEXT("Normal")},
         {TEXT("ESP_PassiveNegative1HeaderText"), TEXT("负面 I"), TEXT("Negative I")},
         {TEXT("ESP_PassiveNegative2HeaderText"), TEXT("负面 II"), TEXT("Negative II")},

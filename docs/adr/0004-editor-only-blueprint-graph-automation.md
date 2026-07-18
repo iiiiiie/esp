@@ -24,7 +24,7 @@ Passive-skill descriptions use a project-owned `DT_ESPRichTextStyle` and a dedic
 
 The generated catalog prefers the current game's localized `SkillDesc` row and substitutes all `{EffectValue1..4}` placeholders. Some standard Pal passives intentionally have neither `OverrideDescMsgID` nor `OverrideSummaryTextId`, while a small set of current localized descriptions contains tags that the pinned PMK cannot faithfully reproduce. For confirmed stable internal IDs, the canonical generator therefore embeds a narrowly-scoped Chinese/English fallback description. A fallback overrides the live description only for its exact internal ID; every other passive continues to use current game localization. The fallback list is source-controlled and must be revalidated when the pinned Palworld data fingerprint changes.
 
-Catalog rarity groups use data fields rather than localized names: positive skills with `LotteryWeight <= 0` are Legend / exclusive; remaining rank 4 or higher skills are Rainbow; ranks 2 and 3 are Gold; ranks 0 and 1 are Normal; negative ranks remain split into the three negative groups. This ordering prevents zero-weight rank-4 exclusives from being consumed by Rainbow and rank-1 ordinary passives from being consumed by Gold.
+Catalog rarity groups use the game row's `Rank` field rather than localized names or `LotteryWeight`. Rank 5 and higher is Rainbow, Rank 4 is Legend, Rank 3 is Gold III, Rank 2 is Gold II, Rank 1 is Normal, and Ranks -1/-2/-3 are the matching negative tiers. Rank 0 and unknown future ranks are not mounted into a visible group. `LotteryWeight` controls acquisition probability and must not be used as a rarity label: doing so previously moved Rank-5 World Tree passives into Legend and split Rank-4 passives between Rainbow and Legend.
 
 ## Options Considered
 
@@ -69,7 +69,7 @@ Positive:
 Negative:
 - The experimental PMK editor target must be rebuilt once after adding the plugin.
 - Generated assets should be regenerated when the graph contract changes.
-- The exact-ID fallback list and rank/weight grouping rules require review after game data updates.
+- The exact-ID fallback list and Rank grouping rules require review after game data updates.
 - The sync step must verify the external PMK destination before replacing the build-workspace copy.
 
 ## Follow-ups

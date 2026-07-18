@@ -191,13 +191,22 @@ if (passiveDescriptionFallbackIds.some((id) => !generatorSource.includes(`TEXT("
     || !generatorSource.includes("ResolvedDescriptionToText")) {
   throw new Error("Passive description fallback or rich-text status contract is incomplete");
 }
-if (!generatorSource.includes("RankGold")
-    || !generatorSource.includes('SetPinDefault(RankGold, TEXT("B"), TEXT("2"))')
-    || !generatorSource.includes('TEXT("GreaterEqual_IntInt"), X + 1040, Y + 1480')
-    || !generatorSource.includes("InitializeEntry, UEdGraphSchema_K2::PN_Then, SpecialBranch")
-    || !generatorSource.includes("SpecialBranch, UEdGraphSchema_K2::PN_Else, RainbowBranch")
-    || !generatorSource.includes("RainbowBranch, UEdGraphSchema_K2::PN_Else, GoldBranch")) {
-  throw new Error("Passive Legend/Rainbow/Gold/Normal category ordering is incomplete");
+if (!generatorSource.includes("Groups.Num() != 8")
+    || !generatorSource.includes('SetPinDefault(RankRainbow, TEXT("B"), TEXT("5"))')
+    || !generatorSource.includes('SetPinDefault(RankLegend, TEXT("B"), TEXT("4"))')
+    || !generatorSource.includes('SetPinDefault(RankGold3, TEXT("B"), TEXT("3"))')
+    || !generatorSource.includes('SetPinDefault(RankGold2, TEXT("B"), TEXT("2"))')
+    || !generatorSource.includes('SetPinDefault(RankNormal, TEXT("B"), TEXT("1"))')
+    || !generatorSource.includes('SetPinDefault(RankNegative1, TEXT("B"), TEXT("-1"))')
+    || !generatorSource.includes('SetPinDefault(RankNegative2, TEXT("B"), TEXT("-2"))')
+    || !generatorSource.includes('SetPinDefault(RankNegative3, TEXT("B"), TEXT("-3"))')
+    || !generatorSource.includes("InitializeEntry, UEdGraphSchema_K2::PN_Then, RainbowBranch")
+    || !generatorSource.includes("RainbowBranch, UEdGraphSchema_K2::PN_Else, LegendBranch")
+    || !generatorSource.includes("LegendBranch, UEdGraphSchema_K2::PN_Else, Gold3Branch")
+    || !generatorSource.includes("Gold3Branch, UEdGraphSchema_K2::PN_Else, Gold2Branch")
+    || !generatorSource.includes('TEXT("ESP_PassiveGold2HeaderText")')
+    || /^\s*\|\| !Link\(BreakSkillData, TEXT\("LotteryWeight"\)/m.test(generatorSource)) {
+  throw new Error("Passive Rank 5..-3 category mapping is incomplete or still uses lottery weight");
 }
 if (!generatorSource.includes('TEXT("ESP_PassiveExcludeIds")')
     || !generatorSource.includes('TEXT("ESP_PassiveExcludeMatch")')
