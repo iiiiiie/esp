@@ -1,6 +1,6 @@
 local user_settings = {}
 
-local VERSION = "v5"
+local VERSION = "v7"
 
 local v1_fields = {
     { name = "runtime_enabled", kind = "boolean", default = true },
@@ -41,18 +41,32 @@ for _, name in ipairs({
     v4_fields[#v4_fields + 1] = { name = name, kind = "boolean", default = false }
 end
 
-local fields = {}
+local v5_fields = {}
 for _, field in ipairs(v4_fields) do
+    v5_fields[#v5_fields + 1] = field
+end
+v5_fields[#v5_fields + 1] = { name = "show_iv", kind = "boolean", default = false }
+
+local v6_fields = {}
+for _, field in ipairs(v5_fields) do
+    v6_fields[#v6_fields + 1] = field
+end
+v6_fields[#v6_fields + 1] = { name = "iv_min", kind = "integer", min = 0, max = 100, default = 0 }
+
+local fields = {}
+for _, field in ipairs(v6_fields) do
     fields[#fields + 1] = field
 end
-fields[#fields + 1] = { name = "show_iv", kind = "boolean", default = false }
+fields[#fields + 1] = { name = "show_passives", kind = "boolean", default = false }
 
 local schemas = {
     v1 = v1_fields,
     v2 = v2_fields,
     v3 = v3_fields,
     v4 = v4_fields,
-    v5 = fields,
+    v5 = v5_fields,
+    v6 = v6_fields,
+    v7 = fields,
 }
 
 local fields_by_version = {}
@@ -135,10 +149,10 @@ function user_settings.parse_line(line)
     if version == "v1" then
         normalized.lucky = 0
     end
-    if version ~= "v3" and version ~= "v4" and version ~= "v5" then
+    if version ~= "v3" and version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" then
         normalized.boss = 0
     end
-    if version ~= "v4" and version ~= "v5" then
+    if version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" then
         normalized.element_normal = false
         normalized.element_fire = false
         normalized.element_water = false
@@ -149,8 +163,14 @@ function user_settings.parse_line(line)
         normalized.element_dark = false
         normalized.element_dragon = false
     end
-    if version ~= "v5" then
+    if version ~= "v5" and version ~= "v6" and version ~= "v7" then
         normalized.show_iv = false
+    end
+    if version ~= "v6" and version ~= "v7" then
+        normalized.iv_min = 0
+    end
+    if version ~= "v7" then
+        normalized.show_passives = false
     end
     return normalized, nil, version
 end

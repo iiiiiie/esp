@@ -73,6 +73,8 @@ const FName OverlayTargetIvHpVariableName(TEXT("ESP_TargetIvHp"));
 const FName OverlayTargetIvAttackVariableName(TEXT("ESP_TargetIvAttack"));
 const FName OverlayTargetIvDefenseVariableName(TEXT("ESP_TargetIvDefense"));
 const FName OverlayTargetNamesVariableName(TEXT("ESP_TargetNames"));
+const FName OverlayTargetPassiveTextsVariableName(TEXT("ESP_TargetPassiveTexts"));
+const FName OverlayPassiveBuildTextVariableName(TEXT("ESP_PassiveBuildText"));
 const FName OverlayGenderLoggedVariableName(TEXT("ESP_GenderLogged"));
 const FName OverlayGenderDiagnosticVariableName(TEXT("ESP_GenderDiagnostic"));
 const FName OverlayGenderDiagnosticCodeVariableName(TEXT("ESP_GenderDiagnosticCode"));
@@ -81,6 +83,8 @@ const FName OverlayShowNameVariableName(TEXT("ESP_ShowName"));
 const FName OverlayShowLevelVariableName(TEXT("ESP_ShowLevel"));
 const FName OverlayShowDistanceVariableName(TEXT("ESP_ShowDistance"));
 const FName OverlayShowIvVariableName(TEXT("ESP_ShowIV"));
+const FName OverlayShowPassiveSkillsVariableName(TEXT("ESP_ShowPassiveSkills"));
+const FName OverlayIvMinVariableName(TEXT("ESP_IvMin"));
 const FName OverlayGenderFilterIdVariableName(TEXT("ESP_GenderFilterId"));
 const FName OverlayLuckyFilterIdVariableName(TEXT("ESP_LuckyFilterId"));
 const FName OverlayBossFilterIdVariableName(TEXT("ESP_BossFilterId"));
@@ -105,6 +109,8 @@ const FName ShowNameVariableName(TEXT("ESP_ShowName"));
 const FName ShowLevelVariableName(TEXT("ESP_ShowLevel"));
 const FName ShowDistanceVariableName(TEXT("ESP_ShowDistance"));
 const FName ShowIvVariableName(TEXT("ESP_ShowIV"));
+const FName ShowPassiveSkillsVariableName(TEXT("ESP_ShowPassiveSkills"));
+const FName IvMinVariableName(TEXT("ESP_IvMin"));
 const FName GenderFilterIdVariableName(TEXT("ESP_GenderFilterId"));
 const FName LuckyFilterIdVariableName(TEXT("ESP_LuckyFilterId"));
 const FName BossFilterIdVariableName(TEXT("ESP_BossFilterId"));
@@ -843,11 +849,12 @@ bool BuildOverlay(
     UEnum* GenderEnum,
     UEnum* ElementEnum,
     UClass* PalUtilityClass,
+    UClass* PalUIUtilityClass,
     UClass* DatabaseCharacterParameterClass) {
     UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildOverlay dynamic begin blueprint=%s"), *GetNameSafe(Blueprint));
     if (!Blueprint || !Blueprint->WidgetTree || !PalMonsterClass || !CharacterParameterComponentClass
         || !IndividualParameterClass || !IndividualSaveParameterStruct || !GenderEnum || !ElementEnum
-        || !PalUtilityClass || !DatabaseCharacterParameterClass) {
+        || !PalUtilityClass || !PalUIUtilityClass || !DatabaseCharacterParameterClass) {
         return false;
     }
 
@@ -1021,6 +1028,24 @@ bool BuildOverlay(
         Blueprint->NewVariables[ExistingTargetNamesIndex].VarType = StringArrayPin();
     }
 
+    const int32 ExistingTargetPassiveTextsIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayTargetPassiveTextsVariableName);
+    if (ExistingTargetPassiveTextsIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayTargetPassiveTextsVariableName, StringArrayPin())) {
+            return false;
+        }
+    } else {
+        Blueprint->NewVariables[ExistingTargetPassiveTextsIndex].VarType = StringArrayPin();
+    }
+
+    const int32 ExistingPassiveBuildTextIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayPassiveBuildTextVariableName);
+    if (ExistingPassiveBuildTextIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayPassiveBuildTextVariableName, StringPin())) {
+            return false;
+        }
+    } else {
+        Blueprint->NewVariables[ExistingPassiveBuildTextIndex].VarType = StringPin();
+    }
+
     const int32 ExistingGenderLoggedIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayGenderLoggedVariableName);
     if (ExistingGenderLoggedIndex == INDEX_NONE) {
         if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayGenderLoggedVariableName, BoolPin())) {
@@ -1108,6 +1133,32 @@ bool BuildOverlay(
     }
     Blueprint->NewVariables[ExistingShowIvIndex].VarType = BoolPin();
     Blueprint->NewVariables[ExistingShowIvIndex].DefaultValue = TEXT("false");
+
+    int32 ExistingShowPassiveSkillsIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayShowPassiveSkillsVariableName);
+    if (ExistingShowPassiveSkillsIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayShowPassiveSkillsVariableName, BoolPin())) {
+            return false;
+        }
+        ExistingShowPassiveSkillsIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayShowPassiveSkillsVariableName);
+    }
+    if (ExistingShowPassiveSkillsIndex == INDEX_NONE) {
+        return false;
+    }
+    Blueprint->NewVariables[ExistingShowPassiveSkillsIndex].VarType = BoolPin();
+    Blueprint->NewVariables[ExistingShowPassiveSkillsIndex].DefaultValue = TEXT("false");
+
+    int32 ExistingIvMinIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayIvMinVariableName);
+    if (ExistingIvMinIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayIvMinVariableName, IntPin())) {
+            return false;
+        }
+        ExistingIvMinIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayIvMinVariableName);
+    }
+    if (ExistingIvMinIndex == INDEX_NONE) {
+        return false;
+    }
+    Blueprint->NewVariables[ExistingIvMinIndex].VarType = IntPin();
+    Blueprint->NewVariables[ExistingIvMinIndex].DefaultValue = TEXT("0");
 
     int32 ExistingGenderFilterIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayGenderFilterIdVariableName);
     if (ExistingGenderFilterIndex == INDEX_NONE) {
@@ -1199,8 +1250,10 @@ bool BuildOverlay(
     UK2Node_CallArrayFunction* ClearIvAttackArray = AddArrayCall(Graph, TEXT("Array_Clear"), 3360, -300);
     UK2Node_VariableGet* ClearIvDefenseGet = AddVariableGet(Graph, OverlayTargetIvDefenseVariableName, 3620, -140);
     UK2Node_CallArrayFunction* ClearIvDefenseArray = AddArrayCall(Graph, TEXT("Array_Clear"), 3900, -300);
-    UK2Node_VariableGet* ClearNamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, 4160, -140);
-    UK2Node_CallArrayFunction* ClearNameArray = AddArrayCall(Graph, TEXT("Array_Clear"), 4440, -300);
+    UK2Node_VariableGet* ClearPassiveTextsGet = AddVariableGet(Graph, OverlayTargetPassiveTextsVariableName, 4160, -140);
+    UK2Node_CallArrayFunction* ClearPassiveTextArray = AddArrayCall(Graph, TEXT("Array_Clear"), 4440, -300);
+    UK2Node_VariableGet* ClearNamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, 4700, -140);
+    UK2Node_CallArrayFunction* ClearNameArray = AddArrayCall(Graph, TEXT("Array_Clear"), 4980, -300);
     if (!AddTarget || !AddTargetsGet || !AddTargetItem || !AddLevelsGet || !AddLevelItem
         || !AddDistancesGet || !AddDistanceItem || !ClearTargets || !ClearTargetsGet || !ClearTargetArray
         || !ClearLevelsGet || !ClearLevelArray || !ClearDistancesGet || !ClearDistanceArray
@@ -1209,6 +1262,7 @@ bool BuildOverlay(
         || !ClearElementMasksGet || !ClearElementMaskArray
         || !ClearIvHpGet || !ClearIvHpArray || !ClearIvAttackGet || !ClearIvAttackArray
         || !ClearIvDefenseGet || !ClearIvDefenseArray
+        || !ClearPassiveTextsGet || !ClearPassiveTextArray
         || !ClearNamesGet || !ClearNameArray
         || !Link(AddTarget, UEdGraphSchema_K2::PN_Then, AddTargetItem, UEdGraphSchema_K2::PN_Execute)
         || !Link(AddTargetsGet, OverlayTargetsVariableName, AddTargetItem, TEXT("TargetArray"))
@@ -1239,7 +1293,9 @@ bool BuildOverlay(
         || !Link(ClearIvAttackGet, OverlayTargetIvAttackVariableName, ClearIvAttackArray, TEXT("TargetArray"))
         || !Link(ClearIvAttackArray, UEdGraphSchema_K2::PN_Then, ClearIvDefenseArray, UEdGraphSchema_K2::PN_Execute)
         || !Link(ClearIvDefenseGet, OverlayTargetIvDefenseVariableName, ClearIvDefenseArray, TEXT("TargetArray"))
-        || !Link(ClearIvDefenseArray, UEdGraphSchema_K2::PN_Then, ClearNameArray, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ClearIvDefenseArray, UEdGraphSchema_K2::PN_Then, ClearPassiveTextArray, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ClearPassiveTextsGet, OverlayTargetPassiveTextsVariableName, ClearPassiveTextArray, TEXT("TargetArray"))
+        || !Link(ClearPassiveTextArray, UEdGraphSchema_K2::PN_Then, ClearNameArray, UEdGraphSchema_K2::PN_Execute)
         || !Link(ClearNamesGet, OverlayTargetNamesVariableName, ClearNameArray, TEXT("TargetArray"))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay target array graph failed"));
         return false;
@@ -1275,6 +1331,17 @@ bool BuildOverlay(
     UK2Node_CallFunction* IvHpToInt = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Conv_ByteToInt"), 2060, 440);
     UK2Node_CallFunction* IvAttackToInt = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Conv_ByteToInt"), 2060, 520);
     UK2Node_CallFunction* IvDefenseToInt = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Conv_ByteToInt"), 2060, 600);
+    UK2Node_CallFunction* GetPassiveSkillList = AddStaticCall(Graph, IndividualParameterClass, TEXT("GetPassiveSkillList"), 1500, 680);
+    UK2Node_VariableSet* ResetPassiveBuildText = AddVariableSet(Graph, OverlayPassiveBuildTextVariableName, 1780, 680);
+    UK2Node_MacroInstance* ForEachPassiveSkill = AddForEachLoop(Graph, 2060, 680);
+    UK2Node_VariableGet* PassiveBuildTextGet = AddVariableGet(Graph, OverlayPassiveBuildTextVariableName, 2340, 840);
+    UK2Node_CallFunction* PassiveBuildTextEmpty = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("EqualEqual_StrStr"), 2600, 840);
+    UK2Node_CallFunction* PassiveSeparator = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 2860, 840);
+    UK2Node_CallFunction* PassiveWithSeparator = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 3120, 840);
+    UK2Node_CallFunction* GetPassiveSkillName = AddStaticCall(Graph, PalUIUtilityClass, TEXT("GetPassiveSkillName"), 2860, 1040);
+    UK2Node_CallFunction* PassiveNameToString = AddStaticCall(Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), 3120, 1040);
+    UK2Node_CallFunction* PassiveWithName = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 3380, 920);
+    UK2Node_VariableSet* StorePassiveBuildText = AddVariableSet(Graph, OverlayPassiveBuildTextVariableName, 3640, 680);
     UK2Node_SwitchEnum* GenderSwitch = AddSwitchEnum(Graph, GenderEnum, 1500, -600);
     UK2Node_Self* GenderSelf = AddSelfNode(Graph, 1500, 160);
     if (!GenderTargetValid || !GenderTargetBranch
@@ -1282,6 +1349,9 @@ bool BuildOverlay(
         || !IndividualParameter || !IndividualParameterValid || !IndividualParameterBranch
         || !GenderType || !IsRarePal || !CharacterId || !CharacterDatabase || !IsBoss
         || !GetSaveParameter || !BreakSaveParameter || !IvHpToInt || !IvAttackToInt || !IvDefenseToInt
+        || !GetPassiveSkillList || !ResetPassiveBuildText || !ForEachPassiveSkill || !PassiveBuildTextGet
+        || !PassiveBuildTextEmpty || !PassiveSeparator || !PassiveWithSeparator || !GetPassiveSkillName
+        || !PassiveNameToString || !PassiveWithName || !StorePassiveBuildText
         || !GenderSwitch || !GenderSelf
         // __DEPRECATED_20260717__ [reason: the one-shot gate skipped gender normalization for later targets]
         // || !Link(AddDistanceItem, UEdGraphSchema_K2::PN_Then, GenderGate, UEdGraphSchema_K2::PN_Execute)
@@ -1296,7 +1366,9 @@ bool BuildOverlay(
         || !Link(CharacterParameter, UEdGraphSchema_K2::PN_ReturnValue, IndividualParameter, UEdGraphSchema_K2::PN_Self)
         || !Link(IndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, IndividualParameterValid, TEXT("Object"))
         || !Link(IndividualParameterValid, UEdGraphSchema_K2::PN_ReturnValue, IndividualParameterBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(IndividualParameterBranch, UEdGraphSchema_K2::PN_Then, GenderSwitch, UEdGraphSchema_K2::PN_Execute)
+        // __DEPRECATED_20260718__ [reason: passive names are normalized before the gender result path]
+        // || !Link(IndividualParameterBranch, UEdGraphSchema_K2::PN_Then, GenderSwitch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(IndividualParameterBranch, UEdGraphSchema_K2::PN_Then, ResetPassiveBuildText, UEdGraphSchema_K2::PN_Execute)
         || !Link(IndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, GenderType, UEdGraphSchema_K2::PN_Self)
         || !Link(IndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, IsRarePal, UEdGraphSchema_K2::PN_Self)
         || !Link(IndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, CharacterId, UEdGraphSchema_K2::PN_Self)
@@ -1305,6 +1377,25 @@ bool BuildOverlay(
         || !Link(BreakSaveParameter, TEXT("Talent_HP"), IvHpToInt, TEXT("InByte"))
         || !Link(BreakSaveParameter, TEXT("Talent_Shot"), IvAttackToInt, TEXT("InByte"))
         || !Link(BreakSaveParameter, TEXT("Talent_Defense"), IvDefenseToInt, TEXT("InByte"))
+        || !Link(IndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, GetPassiveSkillList, UEdGraphSchema_K2::PN_Self)
+        || !SetPinDefault(ResetPassiveBuildText, OverlayPassiveBuildTextVariableName, TEXT(""))
+        || !Link(ResetPassiveBuildText, UEdGraphSchema_K2::PN_Then, ForEachPassiveSkill, TEXT("Exec"))
+        || !Link(GetPassiveSkillList, UEdGraphSchema_K2::PN_ReturnValue, ForEachPassiveSkill, TEXT("Array"))
+        || !Link(ForEachPassiveSkill, TEXT("LoopBody"), StorePassiveBuildText, UEdGraphSchema_K2::PN_Execute)
+        || !Link(PassiveBuildTextGet, OverlayPassiveBuildTextVariableName, PassiveBuildTextEmpty, TEXT("A"))
+        || !SetPinDefault(PassiveBuildTextEmpty, TEXT("B"), TEXT(""))
+        || !SetPinDefault(PassiveSeparator, TEXT("A"), TEXT(""))
+        || !SetPinDefault(PassiveSeparator, TEXT("B"), TEXT(" / "))
+        || !Link(PassiveBuildTextEmpty, UEdGraphSchema_K2::PN_ReturnValue, PassiveSeparator, TEXT("bPickA"))
+        || !Link(PassiveBuildTextGet, OverlayPassiveBuildTextVariableName, PassiveWithSeparator, TEXT("A"))
+        || !Link(PassiveSeparator, UEdGraphSchema_K2::PN_ReturnValue, PassiveWithSeparator, TEXT("B"))
+        || !Link(GenderSelf, UEdGraphSchema_K2::PN_Self, GetPassiveSkillName, TEXT("WorldContextObject"))
+        || !Link(ForEachPassiveSkill, TEXT("Array Element"), GetPassiveSkillName, TEXT("PassiveSkillId"))
+        || !Link(GetPassiveSkillName, TEXT("outName"), PassiveNameToString, TEXT("InText"))
+        || !Link(PassiveWithSeparator, UEdGraphSchema_K2::PN_ReturnValue, PassiveWithName, TEXT("A"))
+        || !Link(PassiveNameToString, UEdGraphSchema_K2::PN_ReturnValue, PassiveWithName, TEXT("B"))
+        || !Link(PassiveWithName, UEdGraphSchema_K2::PN_ReturnValue, StorePassiveBuildText, OverlayPassiveBuildTextVariableName)
+        || !Link(ForEachPassiveSkill, TEXT("Completed"), GenderSwitch, UEdGraphSchema_K2::PN_Execute)
         || !Link(GenderSelf, UEdGraphSchema_K2::PN_Self, CharacterDatabase, TEXT("WorldContextObject"))
         || !Link(CharacterDatabase, UEdGraphSchema_K2::PN_ReturnValue, IsBoss, UEdGraphSchema_K2::PN_Self)
         || !Link(CharacterId, UEdGraphSchema_K2::PN_ReturnValue, IsBoss, TEXT("RowName"))
@@ -1397,6 +1488,7 @@ bool BuildOverlay(
 
     auto AddGenderResultPath = [&](UEdGraphNode* ExecNode, const FName& ExecPin, const TCHAR* Value, int32 Code,
                                    bool bUseName, bool bLuckyKnown, bool bBossKnown, bool bElementsKnown, bool bIvKnown,
+                                   bool bPassiveKnown,
                                    int32 X, int32 Y) -> bool {
         UK2Node_VariableGet* GendersGet = AddVariableGet(Graph, OverlayTargetGendersVariableName, X, Y + 120);
         UK2Node_CallArrayFunction* AddGenderItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 260, Y);
@@ -1418,18 +1510,21 @@ bool BuildOverlay(
         UK2Node_CallArrayFunction* AddIvAttackItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 2860, Y);
         UK2Node_VariableGet* IvDefenseGet = AddVariableGet(Graph, OverlayTargetIvDefenseVariableName, X + 3120, Y + 120);
         UK2Node_CallArrayFunction* AddIvDefenseItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 3380, Y);
-        UK2Node_VariableGet* NamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, X + 3640, Y + 120);
-        UK2Node_CallArrayFunction* AddNameItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 3900, Y);
+        UK2Node_VariableGet* PassiveTextsGet = AddVariableGet(Graph, OverlayTargetPassiveTextsVariableName, X + 3640, Y + 120);
+        UK2Node_CallArrayFunction* AddPassiveTextItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 3900, Y);
+        UK2Node_VariableGet* PassiveBuildTextSource = AddVariableGet(Graph, OverlayPassiveBuildTextVariableName, X + 3640, Y + 260);
+        UK2Node_VariableGet* NamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, X + 4160, Y + 120);
+        UK2Node_CallArrayFunction* AddNameItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 4420, Y);
         UK2Node_CallFunction* Nickname = bUseName
-            ? AddStaticCall(Graph, CharacterParameterComponentClass, TEXT("GetNickname"), X + 3640, Y + 260)
+            ? AddStaticCall(Graph, CharacterParameterComponentClass, TEXT("GetNickname"), X + 4160, Y + 260)
             : nullptr;
-        UK2Node_VariableGet* LoggedGet = AddVariableGet(Graph, OverlayGenderLoggedVariableName, X + 4160, Y + 160);
-        UK2Node_CallFunction* NotLogged = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 4420, Y + 160);
-        UK2Node_IfThenElse* LogBranch = AddBranch(Graph, X + 4680, Y);
-        UK2Node_VariableSet* StoreDiagnostic = AddVariableSet(Graph, OverlayGenderDiagnosticVariableName, X + 4940, Y);
-        UK2Node_VariableSet* StoreDiagnosticCode = AddVariableSet(Graph, OverlayGenderDiagnosticCodeVariableName, X + 5200, Y);
-        UK2Node_CallFunction* Print = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), X + 5460, Y);
-        UK2Node_VariableSet* MarkLogged = AddVariableSet(Graph, OverlayGenderLoggedVariableName, X + 5720, Y);
+        UK2Node_VariableGet* LoggedGet = AddVariableGet(Graph, OverlayGenderLoggedVariableName, X + 4680, Y + 160);
+        UK2Node_CallFunction* NotLogged = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 4940, Y + 160);
+        UK2Node_IfThenElse* LogBranch = AddBranch(Graph, X + 5200, Y);
+        UK2Node_VariableSet* StoreDiagnostic = AddVariableSet(Graph, OverlayGenderDiagnosticVariableName, X + 5460, Y);
+        UK2Node_VariableSet* StoreDiagnosticCode = AddVariableSet(Graph, OverlayGenderDiagnosticCodeVariableName, X + 5720, Y);
+        UK2Node_CallFunction* Print = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), X + 5980, Y);
+        UK2Node_VariableSet* MarkLogged = AddVariableSet(Graph, OverlayGenderLoggedVariableName, X + 6240, Y);
         const FString Message = FString::Printf(TEXT("[PalworldResourceESP] BLUEPRINT_GENDER value=%s"), Value);
         const bool bLuckySourceReady = bLuckyKnown
             ? SelectLuckyState
@@ -1460,11 +1555,15 @@ bool BuildOverlay(
                 && Link(CharacterParameter, UEdGraphSchema_K2::PN_ReturnValue, Nickname, UEdGraphSchema_K2::PN_Self)
                 && Link(Nickname, TEXT("outName"), AddNameItem, TEXT("NewItem"))
             : SetPinDefault(AddNameItem, TEXT("NewItem"), TEXT(""));
+        const bool bPassiveSourceReady = bPassiveKnown
+            ? Link(PassiveBuildTextSource, OverlayPassiveBuildTextVariableName, AddPassiveTextItem, TEXT("NewItem"))
+            : SetPinDefault(AddPassiveTextItem, TEXT("NewItem"), TEXT(""));
         return GendersGet && AddGenderItem && LuckyStatesGet && AddLuckyStateItem && bLuckySourceReady
             && BossStatesGet && AddBossStateItem && bBossSourceReady
             && ElementMasksGet && AddElementMaskItem && bElementSourceReady
             && IvHpGet && AddIvHpItem && IvAttackGet && AddIvAttackItem
             && IvDefenseGet && AddIvDefenseItem && bIvSourceReady
+            && PassiveTextsGet && AddPassiveTextItem && PassiveBuildTextSource && bPassiveSourceReady
             && NamesGet && AddNameItem && bNameSourceReady
             && LoggedGet && NotLogged && LogBranch
             && StoreDiagnostic && StoreDiagnosticCode && Print && MarkLogged
@@ -1483,7 +1582,9 @@ bool BuildOverlay(
             && Link(IvAttackGet, OverlayTargetIvAttackVariableName, AddIvAttackItem, TEXT("TargetArray"))
             && Link(AddIvAttackItem, UEdGraphSchema_K2::PN_Then, AddIvDefenseItem, UEdGraphSchema_K2::PN_Execute)
             && Link(IvDefenseGet, OverlayTargetIvDefenseVariableName, AddIvDefenseItem, TEXT("TargetArray"))
-            && Link(AddIvDefenseItem, UEdGraphSchema_K2::PN_Then, AddNameItem, UEdGraphSchema_K2::PN_Execute)
+            && Link(AddIvDefenseItem, UEdGraphSchema_K2::PN_Then, AddPassiveTextItem, UEdGraphSchema_K2::PN_Execute)
+            && Link(PassiveTextsGet, OverlayTargetPassiveTextsVariableName, AddPassiveTextItem, TEXT("TargetArray"))
+            && Link(AddPassiveTextItem, UEdGraphSchema_K2::PN_Then, AddNameItem, UEdGraphSchema_K2::PN_Execute)
             && Link(NamesGet, OverlayTargetNamesVariableName, AddNameItem, TEXT("TargetArray"))
             && Link(AddNameItem, UEdGraphSchema_K2::PN_Then, LogBranch, UEdGraphSchema_K2::PN_Execute)
             && Link(LoggedGet, OverlayGenderLoggedVariableName, NotLogged, TEXT("A"))
@@ -1500,12 +1601,12 @@ bool BuildOverlay(
             && SetPinDefault(Print, TEXT("bPrintToLog"), TEXT("true"))
             && SetPinDefault(MarkLogged, OverlayGenderLoggedVariableName, TEXT("true"));
     };
-    if (!AddGenderResultPath(GenderTargetBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, false, false, false, false, false, 1740, -1040)
-        || !AddGenderResultPath(CharacterParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, false, false, false, false, false, 1740, -880)
-        || !AddGenderResultPath(IndividualParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, true, false, false, true, false, 1740, -720)
-        || !AddGenderResultPath(GenderSwitch, TEXT("None"), TEXT("unknown"), 0, true, true, true, true, true, 1740, -560)
-        || !AddGenderResultPath(GenderSwitch, TEXT("Male"), TEXT("male"), 1, true, true, true, true, true, 1740, -400)
-        || !AddGenderResultPath(GenderSwitch, TEXT("Female"), TEXT("female"), 2, true, true, true, true, true, 1740, -240)) {
+    if (!AddGenderResultPath(GenderTargetBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, false, false, false, false, false, false, 1740, -1040)
+        || !AddGenderResultPath(CharacterParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, false, false, false, false, false, false, 1740, -880)
+        || !AddGenderResultPath(IndividualParameterBranch, UEdGraphSchema_K2::PN_Else, TEXT("unknown"), 0, true, false, false, true, false, false, 1740, -720)
+        || !AddGenderResultPath(GenderSwitch, TEXT("None"), TEXT("unknown"), 0, true, true, true, true, true, true, 1740, -560)
+        || !AddGenderResultPath(GenderSwitch, TEXT("Male"), TEXT("male"), 1, true, true, true, true, true, true, 1740, -400)
+        || !AddGenderResultPath(GenderSwitch, TEXT("Female"), TEXT("female"), 2, true, true, true, true, true, true, 1740, -240)) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay gender/Lucky/Boss/element/IV result graph failed"));
         return false;
     }
@@ -1516,12 +1617,15 @@ bool BuildOverlay(
     UK2Node_VariableGet* ShowLevelGet = AddVariableGet(Graph, OverlayShowLevelVariableName, -1500, 360);
     UK2Node_VariableGet* ShowDistanceGet = AddVariableGet(Graph, OverlayShowDistanceVariableName, -1500, 520);
     UK2Node_VariableGet* ShowIvGet = AddVariableGet(Graph, OverlayShowIvVariableName, -1500, 600);
+    UK2Node_VariableGet* ShowPassiveSkillsGet = AddVariableGet(Graph, OverlayShowPassiveSkillsVariableName, -1500, 640);
     UK2Node_VariableGet* GenderFilterGet = AddVariableGet(Graph, OverlayGenderFilterIdVariableName, -1500, 680);
     UK2Node_VariableGet* LuckyFilterGet = AddVariableGet(Graph, OverlayLuckyFilterIdVariableName, -1500, 760);
     UK2Node_VariableGet* BossFilterGet = AddVariableGet(Graph, OverlayBossFilterIdVariableName, -1500, 840);
     UK2Node_VariableGet* ElementFilterGet = AddVariableGet(Graph, OverlayElementFilterMaskVariableName, -1500, 920);
+    UK2Node_VariableGet* IvMinGet = AddVariableGet(Graph, OverlayIvMinVariableName, -1500, 1000);
     UK2Node_CallFunction* BasicMetadataEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), -300, 320);
     UK2Node_CallFunction* MetadataEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), -20, 320);
+    UK2Node_CallFunction* AllMetadataEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 260, 480);
     UK2Node_CallFunction* VisibleNameEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), -20, 480);
     UK2Node_CallFunction* LabelsEnabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 260, 320);
     UK2Node_ExecutionSequence* PaintSequence = AddSequence(Graph, 0, 80);
@@ -1579,6 +1683,17 @@ bool BuildOverlay(
     UK2Node_CallFunction* IvHpAttackKnown = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), -160, 2960);
     UK2Node_CallFunction* IvKnown = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), 120, 3040);
     UK2Node_CallFunction* IvVisible = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), 400, 3040);
+    UK2Node_CallFunction* IvMinimumDisabled = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -440, 3360);
+    UK2Node_CallFunction* IvHpMeetsMinimum = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("GreaterEqual_IntInt"), -440, 3520);
+    UK2Node_CallFunction* IvAttackMeetsMinimum = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("GreaterEqual_IntInt"), -440, 3680);
+    UK2Node_CallFunction* IvDefenseMeetsMinimum = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("GreaterEqual_IntInt"), -440, 3840);
+    UK2Node_CallFunction* IvHpAttackMeetsMinimum = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), -160, 3600);
+    UK2Node_CallFunction* IvAllMeetMinimum = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), 120, 3680);
+    UK2Node_CallFunction* IvMinimumAccepted = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 400, 3520);
+    UK2Node_VariableGet* TargetPassiveTextsGet = AddVariableGet(Graph, OverlayTargetPassiveTextsVariableName, -1000, 4000);
+    UK2Node_CallArrayFunction* TargetPassiveTextGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 4000);
+    UK2Node_CallFunction* PassiveTextNotEmpty = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), -440, 4000);
+    UK2Node_CallFunction* PassiveVisible = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), -160, 4000);
     // __DEPRECATED_20260717__ [reason: displayed distance now follows live player and target positions]
     // UK2Node_VariableGet* TargetDistancesGet = AddVariableGet(Graph, OverlayTargetDistancesVariableName, -1000, 1200);
     // UK2Node_CallArrayFunction* TargetDistanceGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1200);
@@ -1601,6 +1716,11 @@ bool BuildOverlay(
     UK2Node_CallFunction* MetadataWithSeparator = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 2160, 1360);
     UK2Node_CallFunction* MetadataWithIv = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 2440, 1360);
     UK2Node_CallFunction* SelectMetadata = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 2720, 1360);
+    UK2Node_CallFunction* MetadataNotEmpty = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), 3000, 1360);
+    UK2Node_CallFunction* PassiveLineSeparator = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 3280, 1360);
+    UK2Node_CallFunction* MetadataWithPassiveSeparator = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 3560, 1360);
+    UK2Node_CallFunction* MetadataWithPassive = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 3840, 1360);
+    UK2Node_CallFunction* SelectMetadataWithPassive = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 4120, 1360);
     UK2Node_CallFunction* NameWithNewline = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 1880, 880);
     UK2Node_CallFunction* NameAndMetadata = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 2160, 960);
     UK2Node_CallFunction* SelectNameLabel = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 2440, 960);
@@ -1614,6 +1734,7 @@ bool BuildOverlay(
     UK2Node_IfThenElse* LuckyFilterBranch = AddBranch(Graph, 120, 80);
     UK2Node_IfThenElse* BossFilterBranch = AddBranch(Graph, 400, 80);
     UK2Node_IfThenElse* ElementFilterBranch = AddBranch(Graph, 680, 80);
+    UK2Node_IfThenElse* IvMinimumBranch = AddBranch(Graph, 960, 80);
     UK2Node_CallFunction* ActorLocation = AddStaticCall(Graph, AActor::StaticClass(), TEXT("K2_GetActorLocation"), -940, 460);
     UK2Node_Self* Self = AddSelfNode(Graph, -1220, 660);
     UK2Node_CallFunction* PlayerController = AddStaticCall(Graph, UGameplayStatics::StaticClass(), TEXT("GetPlayerController"), -940, 660);
@@ -1661,8 +1782,9 @@ bool BuildOverlay(
         OutlineX += 840;
     }
     if (!OnPaint || !TopGuideEnabledGet || !ShowNameGet || !ShowLevelGet || !ShowDistanceGet || !ShowIvGet
+        || !ShowPassiveSkillsGet || !IvMinGet
         || !GenderFilterGet || !LuckyFilterGet || !BossFilterGet || !ElementFilterGet
-        || !BasicMetadataEnabled || !MetadataEnabled || !VisibleNameEnabled || !LabelsEnabled
+        || !BasicMetadataEnabled || !MetadataEnabled || !AllMetadataEnabled || !VisibleNameEnabled || !LabelsEnabled
         || !PaintSequence || !LabelEnabledBranch || !TopGuideEnabledBranch || !TargetsGet || !ForEachTarget
         || !TargetLevelsGet || !TargetLevelGet || !TargetNamesGet || !TargetNameGet || !NameNotEmpty
         || !TargetGendersGet || !TargetGenderGet
@@ -1677,15 +1799,20 @@ bool BuildOverlay(
         || !ElementMaskOverlap || !ElementMaskMatches || !ElementKnownMatch || !ElementFilterAccepted
         || !TargetIvHpGet || !TargetIvHpValue || !TargetIvAttackGet || !TargetIvAttackValue
         || !TargetIvDefenseGet || !TargetIvDefenseValue || !IvHpKnown || !IvAttackKnown || !IvDefenseKnown
-        || !IvHpAttackKnown || !IvKnown || !IvVisible
+        || !IvHpAttackKnown || !IvKnown || !IvVisible || !IvMinimumDisabled
+        || !IvHpMeetsMinimum || !IvAttackMeetsMinimum || !IvDefenseMeetsMinimum
+        || !IvHpAttackMeetsMinimum || !IvAllMeetMinimum || !IvMinimumAccepted
+        || !TargetPassiveTextsGet || !TargetPassiveTextGet || !PassiveTextNotEmpty || !PassiveVisible
         || !BuildLevelText || !PlayerPawn || !PlayerLocation
         || !LiveDistance || !DistanceMeters || !RoundDistance || !BuildDistanceText || !LevelWithSpacing
         || !LevelAndDistance || !SelectWithLevel || !SelectWithoutLevel || !SelectLabel
         || !BuildIvHp || !BuildIvAttack || !BuildIvDefense || !IvSeparator
-        || !MetadataWithSeparator || !MetadataWithIv || !SelectMetadata
+        || !MetadataWithSeparator || !MetadataWithIv || !SelectMetadata || !MetadataNotEmpty
+        || !PassiveLineSeparator || !MetadataWithPassiveSeparator || !MetadataWithPassive || !SelectMetadataWithPassive
         || !NameWithNewline || !NameAndMetadata || !SelectNameLabel || !SelectFinalLabel
         || !TargetValid || !TargetBranch || !TargetDead || !TargetNotDead
         || !TargetAliveBranch || !GenderFilterBranch || !LuckyFilterBranch || !BossFilterBranch || !ElementFilterBranch
+        || !IvMinimumBranch
         || !ActorLocation || !Self || !PlayerController
         || !Project || !ProjectBranch || !ViewportSize || !ViewportScale || !BreakViewport || !RemoveScale
         || !HalfWidth || !MakeStart || !DrawLine || !MakeLabelOffset || !LabelPosition || !DrawText
@@ -1695,10 +1822,12 @@ bool BuildOverlay(
         || !Link(ShowDistanceGet, OverlayShowDistanceVariableName, BasicMetadataEnabled, TEXT("B"))
         || !Link(BasicMetadataEnabled, UEdGraphSchema_K2::PN_ReturnValue, MetadataEnabled, TEXT("A"))
         || !Link(IvVisible, UEdGraphSchema_K2::PN_ReturnValue, MetadataEnabled, TEXT("B"))
+        || !Link(MetadataEnabled, UEdGraphSchema_K2::PN_ReturnValue, AllMetadataEnabled, TEXT("A"))
+        || !Link(PassiveVisible, UEdGraphSchema_K2::PN_ReturnValue, AllMetadataEnabled, TEXT("B"))
         || !Link(ShowNameGet, OverlayShowNameVariableName, VisibleNameEnabled, TEXT("A"))
         || !Link(NameNotEmpty, UEdGraphSchema_K2::PN_ReturnValue, VisibleNameEnabled, TEXT("B"))
         || !Link(VisibleNameEnabled, UEdGraphSchema_K2::PN_ReturnValue, LabelsEnabled, TEXT("A"))
-        || !Link(MetadataEnabled, UEdGraphSchema_K2::PN_ReturnValue, LabelsEnabled, TEXT("B"))
+        || !Link(AllMetadataEnabled, UEdGraphSchema_K2::PN_ReturnValue, LabelsEnabled, TEXT("B"))
         || !Link(LabelsEnabled, UEdGraphSchema_K2::PN_ReturnValue, LabelEnabledBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(TargetsGet, OverlayTargetsVariableName, ForEachTarget, TEXT("Array"))
         || !Link(TargetNamesGet, OverlayTargetNamesVariableName, TargetNameGet, TEXT("TargetArray"))
@@ -1790,6 +1919,26 @@ bool BuildOverlay(
         || !Link(IvDefenseKnown, UEdGraphSchema_K2::PN_ReturnValue, IvKnown, TEXT("B"))
         || !Link(ShowIvGet, OverlayShowIvVariableName, IvVisible, TEXT("A"))
         || !Link(IvKnown, UEdGraphSchema_K2::PN_ReturnValue, IvVisible, TEXT("B"))
+        || !Link(IvMinGet, OverlayIvMinVariableName, IvMinimumDisabled, TEXT("A"))
+        || !SetPinDefault(IvMinimumDisabled, TEXT("B"), TEXT("0"))
+        || !Link(TargetIvHpValue, TEXT("Item"), IvHpMeetsMinimum, TEXT("A"))
+        || !Link(IvMinGet, OverlayIvMinVariableName, IvHpMeetsMinimum, TEXT("B"))
+        || !Link(TargetIvAttackValue, TEXT("Item"), IvAttackMeetsMinimum, TEXT("A"))
+        || !Link(IvMinGet, OverlayIvMinVariableName, IvAttackMeetsMinimum, TEXT("B"))
+        || !Link(TargetIvDefenseValue, TEXT("Item"), IvDefenseMeetsMinimum, TEXT("A"))
+        || !Link(IvMinGet, OverlayIvMinVariableName, IvDefenseMeetsMinimum, TEXT("B"))
+        || !Link(IvHpMeetsMinimum, UEdGraphSchema_K2::PN_ReturnValue, IvHpAttackMeetsMinimum, TEXT("A"))
+        || !Link(IvAttackMeetsMinimum, UEdGraphSchema_K2::PN_ReturnValue, IvHpAttackMeetsMinimum, TEXT("B"))
+        || !Link(IvHpAttackMeetsMinimum, UEdGraphSchema_K2::PN_ReturnValue, IvAllMeetMinimum, TEXT("A"))
+        || !Link(IvDefenseMeetsMinimum, UEdGraphSchema_K2::PN_ReturnValue, IvAllMeetMinimum, TEXT("B"))
+        || !Link(IvMinimumDisabled, UEdGraphSchema_K2::PN_ReturnValue, IvMinimumAccepted, TEXT("A"))
+        || !Link(IvAllMeetMinimum, UEdGraphSchema_K2::PN_ReturnValue, IvMinimumAccepted, TEXT("B"))
+        || !Link(TargetPassiveTextsGet, OverlayTargetPassiveTextsVariableName, TargetPassiveTextGet, TEXT("TargetArray"))
+        || !Link(ForEachTarget, TEXT("Array Index"), TargetPassiveTextGet, TEXT("Index"))
+        || !Link(TargetPassiveTextGet, TEXT("Item"), PassiveTextNotEmpty, TEXT("A"))
+        || !SetPinDefault(PassiveTextNotEmpty, TEXT("B"), TEXT(""))
+        || !Link(ShowPassiveSkillsGet, OverlayShowPassiveSkillsVariableName, PassiveVisible, TEXT("A"))
+        || !Link(PassiveTextNotEmpty, UEdGraphSchema_K2::PN_ReturnValue, PassiveVisible, TEXT("B"))
         || !Link(Self, UEdGraphSchema_K2::PN_Self, PlayerPawn, TEXT("WorldContextObject"))
         || !Link(PlayerPawn, UEdGraphSchema_K2::PN_ReturnValue, PlayerLocation, UEdGraphSchema_K2::PN_Self)
         || !Link(ActorLocation, UEdGraphSchema_K2::PN_ReturnValue, LiveDistance, TEXT("V1"))
@@ -1821,15 +1970,27 @@ bool BuildOverlay(
         || !Link(MetadataWithIv, UEdGraphSchema_K2::PN_ReturnValue, SelectMetadata, TEXT("A"))
         || !Link(SelectLabel, UEdGraphSchema_K2::PN_ReturnValue, SelectMetadata, TEXT("B"))
         || !Link(IvVisible, UEdGraphSchema_K2::PN_ReturnValue, SelectMetadata, TEXT("bPickA"))
+        || !Link(SelectMetadata, UEdGraphSchema_K2::PN_ReturnValue, MetadataNotEmpty, TEXT("A"))
+        || !SetPinDefault(MetadataNotEmpty, TEXT("B"), TEXT(""))
+        || !SetPinDefault(PassiveLineSeparator, TEXT("A"), TEXT("\n"))
+        || !SetPinDefault(PassiveLineSeparator, TEXT("B"), TEXT(""))
+        || !Link(MetadataNotEmpty, UEdGraphSchema_K2::PN_ReturnValue, PassiveLineSeparator, TEXT("bPickA"))
+        || !Link(SelectMetadata, UEdGraphSchema_K2::PN_ReturnValue, MetadataWithPassiveSeparator, TEXT("A"))
+        || !Link(PassiveLineSeparator, UEdGraphSchema_K2::PN_ReturnValue, MetadataWithPassiveSeparator, TEXT("B"))
+        || !Link(MetadataWithPassiveSeparator, UEdGraphSchema_K2::PN_ReturnValue, MetadataWithPassive, TEXT("A"))
+        || !Link(TargetPassiveTextGet, TEXT("Item"), MetadataWithPassive, TEXT("B"))
+        || !Link(MetadataWithPassive, UEdGraphSchema_K2::PN_ReturnValue, SelectMetadataWithPassive, TEXT("A"))
+        || !Link(SelectMetadata, UEdGraphSchema_K2::PN_ReturnValue, SelectMetadataWithPassive, TEXT("B"))
+        || !Link(PassiveVisible, UEdGraphSchema_K2::PN_ReturnValue, SelectMetadataWithPassive, TEXT("bPickA"))
         || !Link(TargetNameGet, TEXT("Item"), NameWithNewline, TEXT("A"))
         || !SetPinDefault(NameWithNewline, TEXT("B"), TEXT("\n"))
         || !Link(NameWithNewline, UEdGraphSchema_K2::PN_ReturnValue, NameAndMetadata, TEXT("A"))
-        || !Link(SelectMetadata, UEdGraphSchema_K2::PN_ReturnValue, NameAndMetadata, TEXT("B"))
+        || !Link(SelectMetadataWithPassive, UEdGraphSchema_K2::PN_ReturnValue, NameAndMetadata, TEXT("B"))
         || !Link(NameAndMetadata, UEdGraphSchema_K2::PN_ReturnValue, SelectNameLabel, TEXT("A"))
         || !Link(TargetNameGet, TEXT("Item"), SelectNameLabel, TEXT("B"))
         || !Link(MetadataEnabled, UEdGraphSchema_K2::PN_ReturnValue, SelectNameLabel, TEXT("bPickA"))
         || !Link(SelectNameLabel, UEdGraphSchema_K2::PN_ReturnValue, SelectFinalLabel, TEXT("A"))
-        || !Link(SelectMetadata, UEdGraphSchema_K2::PN_ReturnValue, SelectFinalLabel, TEXT("B"))
+        || !Link(SelectMetadataWithPassive, UEdGraphSchema_K2::PN_ReturnValue, SelectFinalLabel, TEXT("B"))
         || !Link(VisibleNameEnabled, UEdGraphSchema_K2::PN_ReturnValue, SelectFinalLabel, TEXT("bPickA"))
         // __DEPRECATED_20260716__ [reason: UE 5.1 StandardMacros exposes this pin as LoopBody]
         // || !Link(ForEachTarget, TEXT("Loop Body"), TargetBranch, UEdGraphSchema_K2::PN_Execute)
@@ -1846,7 +2007,9 @@ bool BuildOverlay(
         || !Link(GenderFilterBranch, UEdGraphSchema_K2::PN_Then, LuckyFilterBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(LuckyFilterBranch, UEdGraphSchema_K2::PN_Then, BossFilterBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(BossFilterBranch, UEdGraphSchema_K2::PN_Then, ElementFilterBranch, UEdGraphSchema_K2::PN_Execute)
-        || !Link(ElementFilterBranch, UEdGraphSchema_K2::PN_Then, ProjectBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ElementFilterBranch, UEdGraphSchema_K2::PN_Then, IvMinimumBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(IvMinimumAccepted, UEdGraphSchema_K2::PN_ReturnValue, IvMinimumBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(IvMinimumBranch, UEdGraphSchema_K2::PN_Then, ProjectBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(ForEachTarget, TEXT("Array Element"), ActorLocation, UEdGraphSchema_K2::PN_Self)
         || !Link(Self, UEdGraphSchema_K2::PN_Self, PlayerController, TEXT("WorldContextObject"))
         || !Link(PlayerController, UEdGraphSchema_K2::PN_ReturnValue, Project, TEXT("PlayerController"))
@@ -1949,6 +2112,8 @@ bool PrepareModActorControls(UBlueprint* Blueprint) {
         || !EnsureMemberVariable(Blueprint, ShowLevelVariableName, BoolPin(), TEXT("true"))
         || !EnsureMemberVariable(Blueprint, ShowDistanceVariableName, BoolPin(), TEXT("true"))
         || !EnsureMemberVariable(Blueprint, ShowIvVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, ShowPassiveSkillsVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, IvMinVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, GenderFilterIdVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, LuckyFilterIdVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, BossFilterIdVariableName, IntPin(), TEXT("0"))
@@ -2054,6 +2219,9 @@ const FLinearColor SecondaryText(0.67f, 0.69f, 0.71f, 1.0f);
 const FLinearColor Accent(0.16f, 0.72f, 0.45f, 1.0f);
 const FLinearColor AccentHover(0.20f, 0.82f, 0.52f, 1.0f);
 const FLinearColor Disabled(0.18f, 0.185f, 0.195f, 0.72f);
+const FLinearColor ToggleUnchecked(0.26f, 0.27f, 0.29f, 1.0f);
+const FLinearColor ToggleUncheckedHover(0.34f, 0.35f, 0.37f, 1.0f);
+const FLinearColor ToggleOutline(0.82f, 0.83f, 0.85f, 1.0f);
 }
 
 void SetVerticalPadding(UWidget* Widget, const FMargin& Padding) {
@@ -2181,12 +2349,12 @@ UCheckBox* AddPanelToggleV2(
     }
     FCheckBoxStyle Style = FCheckBoxStyle::GetDefault();
     Style.SetCheckBoxType(ESlateCheckBoxType::CheckBox)
-        .SetUncheckedImage(FSlateRoundedBoxBrush(PanelV2Style::SurfaceRaised, 11.0f, FVector2D(42.0f, 22.0f)))
-        .SetUncheckedHoveredImage(FSlateRoundedBoxBrush(PanelV2Style::SurfaceHover, 11.0f, FVector2D(42.0f, 22.0f)))
-        .SetUncheckedPressedImage(FSlateRoundedBoxBrush(PanelV2Style::Border, 11.0f, FVector2D(42.0f, 22.0f)))
-        .SetCheckedImage(FSlateRoundedBoxBrush(PanelV2Style::Accent, 11.0f, FVector2D(42.0f, 22.0f)))
-        .SetCheckedHoveredImage(FSlateRoundedBoxBrush(PanelV2Style::AccentHover, 11.0f, FVector2D(42.0f, 22.0f)))
-        .SetCheckedPressedImage(FSlateRoundedBoxBrush(PanelV2Style::Accent, 11.0f, FVector2D(42.0f, 22.0f)))
+        .SetUncheckedImage(FSlateRoundedBoxBrush(PanelV2Style::ToggleUnchecked, 5.0f, PanelV2Style::ToggleOutline, 1.5f, FVector2D(28.0f, 24.0f)))
+        .SetUncheckedHoveredImage(FSlateRoundedBoxBrush(PanelV2Style::ToggleUncheckedHover, 5.0f, PanelV2Style::ToggleOutline, 1.5f, FVector2D(28.0f, 24.0f)))
+        .SetUncheckedPressedImage(FSlateRoundedBoxBrush(PanelV2Style::SurfaceHover, 5.0f, PanelV2Style::ToggleOutline, 1.5f, FVector2D(28.0f, 24.0f)))
+        .SetCheckedImage(FSlateRoundedBoxBrush(PanelV2Style::Accent, 5.0f, PanelV2Style::ToggleOutline, 1.5f, FVector2D(28.0f, 24.0f)))
+        .SetCheckedHoveredImage(FSlateRoundedBoxBrush(PanelV2Style::AccentHover, 5.0f, PanelV2Style::ToggleOutline, 1.5f, FVector2D(28.0f, 24.0f)))
+        .SetCheckedPressedImage(FSlateRoundedBoxBrush(PanelV2Style::Accent, 5.0f, PanelV2Style::ToggleOutline, 1.5f, FVector2D(28.0f, 24.0f)))
         .SetPadding(FMargin(0.0f));
     Toggle->bIsVariable = true;
     Toggle->SetWidgetStyle(Style);
@@ -2719,12 +2887,14 @@ bool BuildPanelInitializeControlsV2(
     const FPanelNumericControlV2& LevelMin,
     const FPanelNumericControlV2& LevelMax,
     const FPanelNumericControlV2& DistanceMax,
+    const FPanelNumericControlV2& IvMin,
     UCheckBox* RuntimeEnabled,
     UCheckBox* ShowTopGuideLine,
     UCheckBox* ShowName,
     UCheckBox* ShowLevel,
     UCheckBox* ShowDistance,
     UCheckBox* ShowIv,
+    UCheckBox* ShowPassiveSkills,
     const TArray<UCheckBox*>& ElementToggles,
     UTextBlock* GenderStatus,
     const TArray<UButton*>& GenderButtons,
@@ -2742,12 +2912,14 @@ bool BuildPanelInitializeControlsV2(
             TPair<FName, FEdGraphPinType>(FName("LevelMin"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("LevelMax"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("DistanceMax"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("IvMin"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("RuntimeEnabled"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowTopGuideLine"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowName"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowIV"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowPassiveSkills"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ElementNormal"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ElementFire"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ElementWater"), BoolPin()),
@@ -2776,6 +2948,7 @@ bool BuildPanelInitializeControlsV2(
         {LevelMin, TEXT("LevelMin")},
         {LevelMax, TEXT("LevelMax")},
         {DistanceMax, TEXT("DistanceMax")},
+        {IvMin, TEXT("IvMin")},
     };
     UEdGraphNode* ExecTail = Event;
     int32 X = -1320;
@@ -2810,6 +2983,7 @@ bool BuildPanelInitializeControlsV2(
         {ShowLevel, TEXT("ShowLevel")},
         {ShowDistance, TEXT("ShowDistance")},
         {ShowIv, TEXT("ShowIV")},
+        {ShowPassiveSkills, TEXT("ShowPassiveSkills")},
         {ElementToggles[0], TEXT("ElementNormal")},
         {ElementToggles[1], TEXT("ElementFire")},
         {ElementToggles[2], TEXT("ElementWater")},
@@ -3347,6 +3521,8 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         Blueprint, Content, TEXT("ESP_ShowDistanceRow"), TEXT("ESP_ShowDistanceText"), TEXT("ESP_ShowDistanceToggle"), TEXT("距离"), true);
     UCheckBox* ShowIv = AddPanelToggleV2(
         Blueprint, Content, TEXT("ESP_ShowIvRow"), TEXT("ESP_ShowIvText"), TEXT("ESP_ShowIvToggle"), TEXT("个体值"), false);
+    UCheckBox* ShowPassiveSkills = AddPanelToggleV2(
+        Blueprint, Content, TEXT("ESP_ShowPassiveSkillsRow"), TEXT("ESP_ShowPassiveSkillsText"), TEXT("ESP_ShowPassiveSkillsToggle"), TEXT("词条"), false);
 
     UTextBlock* FilterHeading = AddPanelTextV2(Blueprint, Content, TEXT("ESP_FilterHeadingText"), TEXT("筛选与数量"), 15);
     const FPanelNumericControlV2 DisplayLimit = AddPanelNumericControlV2(
@@ -3370,6 +3546,11 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         TEXT("ESP_DistanceMaxLabelText"), TEXT("ESP_DistanceMaxRow"),
         TEXT("ESP_DistanceMaxSlider"), TEXT("ESP_DistanceMaxInput"), TEXT("ESP_DistanceMaxUnitText"),
         TEXT("最大距离"), TEXT("m"), 330.0f, 0.0f, 330.0f, 10.0f);
+    const FPanelNumericControlV2 IvMin = AddPanelNumericControlV2(
+        Blueprint, Content,
+        TEXT("ESP_IvMinLabelText"), TEXT("ESP_IvMinRow"),
+        TEXT("ESP_IvMinSlider"), TEXT("ESP_IvMinInput"), TEXT("ESP_IvMinUnitText"),
+        TEXT("个体值下限（0 = 不限）"), TEXT(""), 0.0f, 0.0f, 100.0f, 1.0f);
 
     UTextBlock* ElementHeading = AddPanelTextV2(Blueprint, Content, TEXT("ESP_ElementHeadingText"), TEXT("属性（任一匹配）"), 13, true);
     UTextBlock* ElementStatus = AddPanelTextV2(Blueprint, Content, TEXT("ESP_ElementStatusText"), TEXT("未选择：全部"), 12, true);
@@ -3527,9 +3708,11 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         : nullptr;
 
     if (!Title || !RuntimeEnabled || !StyleHeading || !TopGuide || !ShowName || !ShowLevel || !ShowDistance || !ShowIv
+        || !ShowPassiveSkills
         || !FilterHeading || !DisplayLimit.Slider || !DisplayLimit.SpinBox || !LevelHeading
         || !LevelMin.Slider || !LevelMin.SpinBox || !LevelMax.Slider || !LevelMax.SpinBox
-        || !DistanceMax.Slider || !DistanceMax.SpinBox || !ElementHeading || !ElementStatus
+        || !DistanceMax.Slider || !DistanceMax.SpinBox || !IvMin.Slider || !IvMin.SpinBox
+        || !ElementHeading || !ElementStatus
         || !ElementRowA || !ElementRowB || !ElementRowC || ElementToggles.Contains(nullptr)
         || !GenderHeading || !GenderStatus || !GenderRow
         || !GenderAll || !GenderMale || !GenderFemale || !LuckyHeading || !LuckyStatus || !LuckyRow
@@ -3579,12 +3762,14 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
             TPair<FName, FEdGraphPinType>(FName("LevelMin"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("LevelMax"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("DistanceMax"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("IvMin"), IntPin()),
             TPair<FName, FEdGraphPinType>(FName("RuntimeEnabled"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowTopGuideLine"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowName"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ShowIV"), BoolPin()),
+            TPair<FName, FEdGraphPinType>(FName("ShowPassiveSkills"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ElementNormal"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ElementFire"), BoolPin()),
             TPair<FName, FEdGraphPinType>(FName("ElementWater"), BoolPin()),
@@ -3640,22 +3825,24 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         || !BuildPanelBooleanEvent(Blueprint, ShowLevel, ModActorClass, ShowLevelVariableName, Y + 1080)
         || !BuildPanelBooleanEvent(Blueprint, ShowDistance, ModActorClass, ShowDistanceVariableName, Y + 1440)
         || !BuildPanelBooleanEvent(Blueprint, ShowIv, ModActorClass, ShowIvVariableName, Y + 1800)
-        || !BuildPanelNumericEventV2(Blueprint, DisplayLimit, ModActorClass, DisplayTargetLimitVariableName, Y + 2160)
-        || !BuildPanelNumericEventV2(Blueprint, LevelMin, ModActorClass, LevelMinVariableName, Y + 2760)
-        || !BuildPanelNumericEventV2(Blueprint, LevelMax, ModActorClass, LevelMaxVariableName, Y + 3720)
-        || !BuildPanelNumericEventV2(Blueprint, DistanceMax, ModActorClass, DistanceMaxVariableName, Y + 4680)
-        || !BuildPanelBooleanEvent(Blueprint, ElementNormal, ModActorClass, ElementNormalVariableName, Y + 5640)
-        || !BuildPanelBooleanEvent(Blueprint, ElementFire, ModActorClass, ElementFireVariableName, Y + 6000)
-        || !BuildPanelBooleanEvent(Blueprint, ElementWater, ModActorClass, ElementWaterVariableName, Y + 6360)
-        || !BuildPanelBooleanEvent(Blueprint, ElementLeaf, ModActorClass, ElementLeafVariableName, Y + 6720)
-        || !BuildPanelBooleanEvent(Blueprint, ElementElectricity, ModActorClass, ElementElectricityVariableName, Y + 7080)
-        || !BuildPanelBooleanEvent(Blueprint, ElementIce, ModActorClass, ElementIceVariableName, Y + 7440)
-        || !BuildPanelBooleanEvent(Blueprint, ElementEarth, ModActorClass, ElementEarthVariableName, Y + 7800)
-        || !BuildPanelBooleanEvent(Blueprint, ElementDark, ModActorClass, ElementDarkVariableName, Y + 8160)
-        || !BuildPanelBooleanEvent(Blueprint, ElementDragon, ModActorClass, ElementDragonVariableName, Y + 8520)) {
+        || !BuildPanelBooleanEvent(Blueprint, ShowPassiveSkills, ModActorClass, ShowPassiveSkillsVariableName, Y + 2160)
+        || !BuildPanelNumericEventV2(Blueprint, DisplayLimit, ModActorClass, DisplayTargetLimitVariableName, Y + 2520)
+        || !BuildPanelNumericEventV2(Blueprint, LevelMin, ModActorClass, LevelMinVariableName, Y + 3120)
+        || !BuildPanelNumericEventV2(Blueprint, LevelMax, ModActorClass, LevelMaxVariableName, Y + 4080)
+        || !BuildPanelNumericEventV2(Blueprint, DistanceMax, ModActorClass, DistanceMaxVariableName, Y + 5040)
+        || !BuildPanelNumericEventV2(Blueprint, IvMin, ModActorClass, IvMinVariableName, Y + 6000)
+        || !BuildPanelBooleanEvent(Blueprint, ElementNormal, ModActorClass, ElementNormalVariableName, Y + 6960)
+        || !BuildPanelBooleanEvent(Blueprint, ElementFire, ModActorClass, ElementFireVariableName, Y + 7320)
+        || !BuildPanelBooleanEvent(Blueprint, ElementWater, ModActorClass, ElementWaterVariableName, Y + 7680)
+        || !BuildPanelBooleanEvent(Blueprint, ElementLeaf, ModActorClass, ElementLeafVariableName, Y + 8040)
+        || !BuildPanelBooleanEvent(Blueprint, ElementElectricity, ModActorClass, ElementElectricityVariableName, Y + 8400)
+        || !BuildPanelBooleanEvent(Blueprint, ElementIce, ModActorClass, ElementIceVariableName, Y + 8760)
+        || !BuildPanelBooleanEvent(Blueprint, ElementEarth, ModActorClass, ElementEarthVariableName, Y + 9120)
+        || !BuildPanelBooleanEvent(Blueprint, ElementDark, ModActorClass, ElementDarkVariableName, Y + 9480)
+        || !BuildPanelBooleanEvent(Blueprint, ElementDragon, ModActorClass, ElementDragonVariableName, Y + 9840)) {
         return false;
     }
-    Y += 8880;
+    Y += 10200;
     auto Control = [&](UButton* Button, const TArray<FPanelControlAssignment>& Assignments, const FName& StatusName, const TCHAR* Status) {
         const bool bOk = BuildPanelControlEvent(Blueprint, Button, ModActorClass, Assignments, StatusName, Status, Y);
         Y += 360;
@@ -3713,8 +3900,8 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
     Y += 1080;
 
     if (!BuildPanelInitializeControlsV2(
-            Blueprint, DisplayLimit, LevelMin, LevelMax, DistanceMax,
-            RuntimeEnabled, TopGuide, ShowName, ShowLevel, ShowDistance, ShowIv,
+            Blueprint, DisplayLimit, LevelMin, LevelMax, DistanceMax, IvMin,
+            RuntimeEnabled, TopGuide, ShowName, ShowLevel, ShowDistance, ShowIv, ShowPassiveSkills,
             ElementToggles, GenderStatus, GenderButtons, LuckyStatus, LuckyButtons,
             BossStatus, BossButtons, Y, PanelInitializeV2)) {
         return false;
@@ -3735,12 +3922,14 @@ bool BuildPanel(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
         {TEXT("ESP_ShowLevelText"), TEXT("等级"), TEXT("Level")},
         {TEXT("ESP_ShowDistanceText"), TEXT("距离"), TEXT("Distance")},
         {TEXT("ESP_ShowIvText"), TEXT("个体值"), TEXT("IVs")},
+        {TEXT("ESP_ShowPassiveSkillsText"), TEXT("词条"), TEXT("Passive skills")},
         {TEXT("ESP_FilterHeadingText"), TEXT("筛选与数量"), TEXT("Filters & count")},
         {TEXT("ESP_DisplayTargetLimitLabelText"), TEXT("目标显示上限"), TEXT("Visible target limit")},
         {TEXT("ESP_LevelHeadingText"), TEXT("等级范围"), TEXT("Level range")},
         {TEXT("ESP_LevelMinLabelText"), TEXT("最低等级（0 = 不限）"), TEXT("Minimum level (0 = any)")},
         {TEXT("ESP_LevelMaxLabelText"), TEXT("最高等级（0 = 不限）"), TEXT("Maximum level (0 = any)")},
         {TEXT("ESP_DistanceMaxLabelText"), TEXT("最大距离"), TEXT("Maximum distance")},
+        {TEXT("ESP_IvMinLabelText"), TEXT("个体值下限（0 = 不限）"), TEXT("Minimum IV (0 = any)")},
         {TEXT("ESP_ElementHeadingText"), TEXT("属性（任一匹配）"), TEXT("Elements (match any)")},
         {TEXT("ESP_ElementStatusText"), TEXT("未选择：全部"), TEXT("None selected: all")},
         {TEXT("ESP_ElementNormalText"), TEXT("普通"), TEXT("Normal")},
@@ -3855,6 +4044,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         TPair<FName, FEdGraphPinType>(FName("ShowLevel"), BoolPin()),
         TPair<FName, FEdGraphPinType>(FName("ShowDistance"), BoolPin()),
         TPair<FName, FEdGraphPinType>(FName("ShowIV"), BoolPin()),
+        TPair<FName, FEdGraphPinType>(FName("ShowPassiveSkills"), BoolPin()),
+        TPair<FName, FEdGraphPinType>(FName("IvMin"), IntPin()),
         TPair<FName, FEdGraphPinType>(FName("GenderFilterId"), IntPin()),
         TPair<FName, FEdGraphPinType>(FName("LuckyFilterId"), IntPin()),
         TPair<FName, FEdGraphPinType>(FName("BossFilterId"), IntPin()),
@@ -3905,6 +4096,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableGet* PanelShowLevel = AddVariableGet(Graph, ShowLevelVariableName, 2660, 2080);
     UK2Node_VariableGet* PanelShowDistance = AddVariableGet(Graph, ShowDistanceVariableName, 2940, 2080);
     UK2Node_VariableGet* PanelShowIv = AddVariableGet(Graph, ShowIvVariableName, 3220, 2200);
+    UK2Node_VariableGet* PanelShowPassiveSkills = AddVariableGet(Graph, ShowPassiveSkillsVariableName, 3220, 2320);
+    UK2Node_VariableGet* PanelIvMin = AddVariableGet(Graph, IvMinVariableName, 3500, 2200);
     UK2Node_VariableGet* PanelRuntimeEnabled = AddVariableGet(Graph, RuntimeEnabledVariableName, 3220, 2080);
     UK2Node_VariableGet* PanelTopGuide = AddVariableGet(Graph, ShowTopGuideLineVariableName, 3500, 2080);
     UK2Node_VariableGet* PanelGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 3780, 2080);
@@ -3929,6 +4122,7 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !HideCursor || !GameOnly || !OpenController || !OpenWorldContext || !CreatePanel || !CastPanel || !StorePanel
         || !SetPanelBridge || !ActorSelf || !InitializePanel || !InitializeLanguage || !PanelDisplayLimit || !PanelLevelMin
         || !PanelLevelMax || !PanelDistanceMax || !PanelShowLevel || !PanelShowDistance || !PanelShowIv
+        || !PanelShowPassiveSkills || !PanelIvMin
         || !PanelRuntimeEnabled || !PanelTopGuide || !PanelGenderFilter || !PanelLuckyFilter || !PanelBossFilter
         || !PanelElementNormal || !PanelElementFire || !PanelElementWater || !PanelElementLeaf
         || !PanelElementElectricity || !PanelElementIce || !PanelElementEarth || !PanelElementDark || !PanelElementDragon
@@ -3977,6 +4171,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(PanelShowLevel, ShowLevelVariableName, InitializePanel, TEXT("ShowLevel"))
         || !Link(PanelShowDistance, ShowDistanceVariableName, InitializePanel, TEXT("ShowDistance"))
         || !Link(PanelShowIv, ShowIvVariableName, InitializePanel, TEXT("ShowIV"))
+        || !Link(PanelShowPassiveSkills, ShowPassiveSkillsVariableName, InitializePanel, TEXT("ShowPassiveSkills"))
+        || !Link(PanelIvMin, IvMinVariableName, InitializePanel, TEXT("IvMin"))
         || !Link(PanelElementNormal, ElementNormalVariableName, InitializePanel, TEXT("ElementNormal"))
         || !Link(PanelElementFire, ElementFireVariableName, InitializePanel, TEXT("ElementFire"))
         || !Link(PanelElementWater, ElementWaterVariableName, InitializePanel, TEXT("ElementWater"))
@@ -4024,6 +4220,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreExistingShowDistance = AddExternalVariableSet(Graph, OverlayShowDistanceVariableName, OverlayClass, 1260, 360);
     UK2Node_VariableGet* ExistingShowIv = AddVariableGet(Graph, ShowIvVariableName, 1260, 200);
     UK2Node_VariableSet* StoreExistingShowIv = AddExternalVariableSet(Graph, OverlayShowIvVariableName, OverlayClass, 1540, 200);
+    UK2Node_VariableGet* ExistingShowPassiveSkills = AddVariableGet(Graph, ShowPassiveSkillsVariableName, 1260, 120);
+    UK2Node_VariableSet* StoreExistingShowPassiveSkills = AddExternalVariableSet(Graph, OverlayShowPassiveSkillsVariableName, OverlayClass, 1540, 120);
+    UK2Node_VariableGet* ExistingIvMin = AddVariableGet(Graph, IvMinVariableName, 1540, 120);
+    UK2Node_VariableSet* StoreExistingIvMin = AddExternalVariableSet(Graph, OverlayIvMinVariableName, OverlayClass, 1820, 120);
     UK2Node_VariableGet* ExistingGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 1260, 280);
     UK2Node_VariableSet* StoreExistingGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 1540, 360);
     UK2Node_VariableGet* ExistingLuckyFilter = AddVariableGet(Graph, LuckyFilterIdVariableName, 1540, 280);
@@ -4046,6 +4246,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreNewShowDistance = AddExternalVariableSet(Graph, OverlayShowDistanceVariableName, OverlayClass, 2380, 560);
     UK2Node_VariableGet* NewShowIv = AddVariableGet(Graph, ShowIvVariableName, 2380, 400);
     UK2Node_VariableSet* StoreNewShowIv = AddExternalVariableSet(Graph, OverlayShowIvVariableName, OverlayClass, 2660, 400);
+    UK2Node_VariableGet* NewShowPassiveSkills = AddVariableGet(Graph, ShowPassiveSkillsVariableName, 2380, 320);
+    UK2Node_VariableSet* StoreNewShowPassiveSkills = AddExternalVariableSet(Graph, OverlayShowPassiveSkillsVariableName, OverlayClass, 2660, 320);
+    UK2Node_VariableGet* NewIvMin = AddVariableGet(Graph, IvMinVariableName, 2660, 320);
+    UK2Node_VariableSet* StoreNewIvMin = AddExternalVariableSet(Graph, OverlayIvMinVariableName, OverlayClass, 2940, 320);
     UK2Node_VariableGet* NewGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 2380, 480);
     UK2Node_VariableSet* StoreNewGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 2660, 560);
     UK2Node_VariableGet* NewLuckyFilter = AddVariableGet(Graph, LuckyFilterIdVariableName, 2660, 480);
@@ -4062,7 +4266,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !AddExistingTarget || !AddNewTarget || !ExistingTopGuideEnabled || !StoreExistingTopGuideEnabled
         || !ExistingShowName || !StoreExistingShowName
         || !ExistingShowLevel || !StoreExistingShowLevel || !ExistingShowDistance || !StoreExistingShowDistance
-        || !ExistingShowIv || !StoreExistingShowIv
+        || !ExistingShowIv || !StoreExistingShowIv || !ExistingShowPassiveSkills || !StoreExistingShowPassiveSkills
+        || !ExistingIvMin || !StoreExistingIvMin
         || !ExistingGenderFilter || !StoreExistingGenderFilter || !ExistingLuckyFilter || !StoreExistingLuckyFilter
         || !ExistingBossFilter || !StoreExistingBossFilter
         || !ExistingElementFilter || !StoreExistingElementFilter
@@ -4071,6 +4276,7 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !NewTopGuideEnabled || !StoreNewTopGuideEnabled || !NewShowName || !StoreNewShowName
         || !NewShowLevel || !StoreNewShowLevel
         || !NewShowDistance || !StoreNewShowDistance || !NewShowIv || !StoreNewShowIv
+        || !NewShowPassiveSkills || !StoreNewShowPassiveSkills || !NewIvMin || !StoreNewIvMin
         || !NewGenderFilter || !StoreNewGenderFilter
         || !NewLuckyFilter || !StoreNewLuckyFilter || !NewBossFilter || !StoreNewBossFilter
         || !NewElementFilter || !StoreNewElementFilter
@@ -4112,7 +4318,13 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StoreExistingShowDistance, UEdGraphSchema_K2::PN_Then, StoreExistingShowIv, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingShowIv, ShowIvVariableName, StoreExistingShowIv, OverlayShowIvVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingShowIv, UEdGraphSchema_K2::PN_Self)
-        || !Link(StoreExistingShowIv, UEdGraphSchema_K2::PN_Then, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreExistingShowIv, UEdGraphSchema_K2::PN_Then, StoreExistingShowPassiveSkills, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ExistingShowPassiveSkills, ShowPassiveSkillsVariableName, StoreExistingShowPassiveSkills, OverlayShowPassiveSkillsVariableName)
+        || !Link(OverlayGet, OverlayVariableName, StoreExistingShowPassiveSkills, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreExistingShowPassiveSkills, UEdGraphSchema_K2::PN_Then, StoreExistingIvMin, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ExistingIvMin, IvMinVariableName, StoreExistingIvMin, OverlayIvMinVariableName)
+        || !Link(OverlayGet, OverlayVariableName, StoreExistingIvMin, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreExistingIvMin, UEdGraphSchema_K2::PN_Then, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingGenderFilter, GenderFilterIdVariableName, StoreExistingGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Self)
         || !Link(StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Then, StoreExistingLuckyFilter, UEdGraphSchema_K2::PN_Execute)
@@ -4145,7 +4357,13 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StoreNewShowDistance, UEdGraphSchema_K2::PN_Then, StoreNewShowIv, UEdGraphSchema_K2::PN_Execute)
         || !Link(NewShowIv, ShowIvVariableName, StoreNewShowIv, OverlayShowIvVariableName)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewShowIv, UEdGraphSchema_K2::PN_Self)
-        || !Link(StoreNewShowIv, UEdGraphSchema_K2::PN_Then, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreNewShowIv, UEdGraphSchema_K2::PN_Then, StoreNewShowPassiveSkills, UEdGraphSchema_K2::PN_Execute)
+        || !Link(NewShowPassiveSkills, ShowPassiveSkillsVariableName, StoreNewShowPassiveSkills, OverlayShowPassiveSkillsVariableName)
+        || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewShowPassiveSkills, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreNewShowPassiveSkills, UEdGraphSchema_K2::PN_Then, StoreNewIvMin, UEdGraphSchema_K2::PN_Execute)
+        || !Link(NewIvMin, IvMinVariableName, StoreNewIvMin, OverlayIvMinVariableName)
+        || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewIvMin, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreNewIvMin, UEdGraphSchema_K2::PN_Then, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(NewGenderFilter, GenderFilterIdVariableName, StoreNewGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Self)
         || !Link(StoreNewGenderFilter, UEdGraphSchema_K2::PN_Then, StoreNewLuckyFilter, UEdGraphSchema_K2::PN_Execute)
@@ -4175,12 +4393,14 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StyleLevel = AddExternalVariableSet(Graph, OverlayShowLevelVariableName, OverlayClass, 700, 2320);
     UK2Node_VariableSet* StyleDistance = AddExternalVariableSet(Graph, OverlayShowDistanceVariableName, OverlayClass, 980, 2320);
     UK2Node_VariableSet* StyleIv = AddExternalVariableSet(Graph, OverlayShowIvVariableName, OverlayClass, 1260, 2320);
+    UK2Node_VariableSet* StylePassiveSkills = AddExternalVariableSet(Graph, OverlayShowPassiveSkillsVariableName, OverlayClass, 1400, 2240);
+    UK2Node_VariableSet* StyleIvMin = AddExternalVariableSet(Graph, OverlayIvMinVariableName, OverlayClass, 1540, 2240);
     UK2Node_VariableSet* StyleGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 1540, 2320);
     UK2Node_VariableSet* StyleLuckyFilter = AddExternalVariableSet(Graph, OverlayLuckyFilterIdVariableName, OverlayClass, 1820, 2320);
     UK2Node_VariableSet* StyleBossFilter = AddExternalVariableSet(Graph, OverlayBossFilterIdVariableName, OverlayClass, 2100, 2320);
     UK2Node_VariableSet* StyleElementFilter = AddExternalVariableSet(Graph, OverlayElementFilterMaskVariableName, OverlayClass, 2380, 2320);
     if (!StyleOverlayGet || !StyleOverlayValid || !StyleOverlayBranch || !StyleTopGuide || !StyleName || !StyleLevel || !StyleDistance
-        || !StyleIv || !StyleGenderFilter || !StyleLuckyFilter || !StyleBossFilter || !StyleElementFilter
+        || !StyleIv || !StylePassiveSkills || !StyleIvMin || !StyleGenderFilter || !StyleLuckyFilter || !StyleBossFilter || !StyleElementFilter
         || !Link(SetDisplayStyle, UEdGraphSchema_K2::PN_Then, StyleOverlayBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleOverlayValid, TEXT("Object"))
         || !Link(StyleOverlayValid, UEdGraphSchema_K2::PN_ReturnValue, StyleOverlayBranch, UEdGraphSchema_K2::PN_Condition)
@@ -4199,7 +4419,13 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StyleDistance, UEdGraphSchema_K2::PN_Then, StyleIv, UEdGraphSchema_K2::PN_Execute)
         || !Link(SetDisplayStyle, TEXT("ShowIV"), StyleIv, OverlayShowIvVariableName)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleIv, UEdGraphSchema_K2::PN_Self)
-        || !Link(StyleIv, UEdGraphSchema_K2::PN_Then, StyleGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StyleIv, UEdGraphSchema_K2::PN_Then, StylePassiveSkills, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SetDisplayStyle, TEXT("ShowPassiveSkills"), StylePassiveSkills, OverlayShowPassiveSkillsVariableName)
+        || !Link(StyleOverlayGet, OverlayVariableName, StylePassiveSkills, UEdGraphSchema_K2::PN_Self)
+        || !Link(StylePassiveSkills, UEdGraphSchema_K2::PN_Then, StyleIvMin, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SetDisplayStyle, TEXT("IvMin"), StyleIvMin, OverlayIvMinVariableName)
+        || !Link(StyleOverlayGet, OverlayVariableName, StyleIvMin, UEdGraphSchema_K2::PN_Self)
+        || !Link(StyleIvMin, UEdGraphSchema_K2::PN_Then, StyleGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(SetDisplayStyle, TEXT("GenderFilterId"), StyleGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleGenderFilter, UEdGraphSchema_K2::PN_Self)
         || !Link(StyleGenderFilter, UEdGraphSchema_K2::PN_Then, StyleLuckyFilter, UEdGraphSchema_K2::PN_Execute)
@@ -4271,11 +4497,12 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     UEnum* GenderEnum = LoadObject<UEnum>(nullptr, TEXT("/Script/Pal.EPalGenderType"));
     UEnum* ElementEnum = LoadObject<UEnum>(nullptr, TEXT("/Script/Pal.EPalElementType"));
     UClass* PalUtilityClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalUtility"));
+    UClass* PalUIUtilityClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalUIUtility"));
     UClass* DatabaseCharacterParameterClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalDatabaseCharacterParameter"));
     UClass* OverlayClass = Overlay ? Overlay->GeneratedClass : nullptr;
     if (!ModActor || !Bridge || !Overlay || !Panel || !PalMonsterClass || !CharacterParameterComponentClass
         || !IndividualParameterClass || !IndividualSaveParameterStruct || !GenderEnum || !ElementEnum
-        || !PalUtilityClass || !DatabaseCharacterParameterClass) {
+        || !PalUtilityClass || !PalUIUtilityClass || !DatabaseCharacterParameterClass) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] required asset or class missing"));
         return false;
     }
@@ -4299,7 +4526,7 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     }
     if (!BuildOverlay(Overlay, PalMonsterClass, CharacterParameterComponentClass, IndividualParameterClass,
             IndividualSaveParameterStruct,
-            GenderEnum, ElementEnum, PalUtilityClass, DatabaseCharacterParameterClass)) {
+            GenderEnum, ElementEnum, PalUtilityClass, PalUIUtilityClass, DatabaseCharacterParameterClass)) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] overlay build failed"));
         return false;
     }

@@ -17,11 +17,11 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | MSVC | `14.38` installed; UBT selected `14.39.33523` for the current editor-plugin build |
 | Wwise | Not required by the accepted no-Wwise PMK path |
 | Last fully verified LogicMod pak | `C3AFD891EDF00E671BB2ACD677E275843F79C0DC6BA472AB5BD7E96573245B14`; 8 files |
-| Current deployed panel pak | `1EBE5D4B0B2A1477D4077AE7927C236830E50C44AB8E52B72E92D28992CEB93C`; display-only IV checkpoint, runtime regression pending |
+| Current deployed panel pak | `8A0492FBEBBB032E47836CE8AD6E237C2BA7EC671C519361F6AA595C966E1E60`; IV minimum, passive-skill display, and panel-safety checkpoint; runtime regression pending |
 | Current Pak contents | 10 files under `../../../Pal/Content/Mods/PalworldResourceESP/`; no DLL |
-| Current Lua script hash | `2FCC47E6DBADE8E793BC4CFEB14B9ECE269BABC3EE6FB09AB0B7126F9319F2CE` |
-| Current Lua config hash | `60159901F056F7586419EF6C7DE7887285B2E8F3B1E576A28CE50BCCF6BDD3B3` |
-| Current settings module hash | `010FF4BFE53971F7CEE79D002A434BDC6EC44D09A57E6FC0E1D7DA736D37FB1D` |
+| Current Lua script hash | `2670C212EAE60D2DA2E9477DE7B9DB69DE09B08F5D5C857AF1345DE8B843C107` |
+| Current Lua config hash | `DA3B598DD1854402D5A3ABE7BC012C2D910A4D77F5427E55948399F58F18EC53` |
+| Current settings module hash | `FDC1740A4528750B3DFB17FB5B9889CB96E0B19BCFF23679E318C589F4D3DBEE` |
 
 ## Required Cases
 
@@ -38,7 +38,7 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | BP-09 | Return to title | `BRIDGE_CLEARED reason=load_map_pre`; no stale bridge call or crash | Pass | Final gate run cleared the bridge and 23 candidates before travel; Title received a fresh passive actor. |
 | BP-10 | Normal exit | No new crash report after title wait and normal game exit | Pass | Maintainer confirmed normal exit after validating the gender-filter package. |
 | BP-11 | Multi-target guide | More than one accepted loaded Pal produces simultaneous guide lines; each endpoint follows its own Pal | Pass | Maintainer confirmed simultaneous lines, each following a different Pal, including guides toward targets outside the current screen. Far targets appear only after the client exposes an initialized target actor. |
-| BP-12 | Panel toggle and input | `Shift+Y` opens/closes the panel; mouse cursor, UI input, and gameplay input restore correctly | Pass | Maintainer confirmed repeated Shift+Y open/close, clickable controls, and restored mouse/camera input without a crash. |
+| BP-12 | Panel toggle and input | `Shift+Y` opens/closes the panel; mouse cursor, UI input, and gameplay input restore correctly | Pending | Earlier panel packages passed. A 2026-07-18 run ended after a toggle request during synchronous reconciliation; the current package serializes toggle consumption and scanning on the 250 ms runtime tick and requires a Steam regression run. |
 | BP-13 | Localization | Panel starts in Chinese and `Language` switches all panel labels to/from English | Pass | Maintainer confirmed the Language control switches both directions. |
 | BP-14 | Runtime master switch | Disabling the Mod immediately clears every guide and stops discovery; enabling it resumes the selected mode | Pass | Maintainer confirmed guides disappear when disabled and return when enabled. |
 | BP-15 | Diagnostic modes | Off, snapshot-once, safe snapshot, and event-first remain functional; each change emits one marker | Pending | Internal `chunked_current` ID is retained only for marker compatibility; automated wrapper-safe transitions pass. |
@@ -52,6 +52,9 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | BP-23 | Boss filter | All/only Boss/exclude Boss filters already-admitted wild Pals; unknown states fail closed in restricted modes | Pending | `GetCharacterID()` + character database `GetIsBoss()` provider, three-state UI, `v3` persistence, Blueprint compilation, and 10-file Pak checks pass; Steam verification requires a fixed-map Boss and ordinary Pal. |
 | BP-24 | Element filter | Nine compact toggles filter already-admitted wild Pals with match-any semantics; no selection means all and unknown masks fail closed | Pending | `HasElementType()` provider, 3x3 UI, scalar mask bridge, strict `v4` persistence, Blueprint compilation, 408/408 clean Cook, and 10-file/0-DLL Pak checks pass; ordinary Pals are sufficient for Steam verification. |
 | BP-25 | IV display | Optional `IV HP x / ATK y / DEF z` uses typed save-parameter fields for already-admitted wild Pals; unknown values are hidden instead of shown as zero | Pending | `GetSaveParameter()` plus `Talent_HP`/`Talent_Shot`/`Talent_Defense`, three indexed arrays, `v5` persistence, Blueprint compilation, 408/408 clean Cook, and 10-file/0-DLL Pak checks pass; ordinary-Pal value correctness requires Steam verification. |
+| BP-26 | IV minimum filter | A `0..100` minimum hides a Pal unless HP, attack, and defense IVs are all known and at least the selected value; zero disables the filter | Pending | Typed provider, fail-closed all-three comparison, actor-free scalar update, strict `v6` persistence, Blueprint compilation, clean Cook, and package checks pass; Steam threshold behavior requires verification. |
+| BP-27 | Passive-skill display | Optional passive-skill text uses the game's localized names for already-admitted wild Pals and hides immediately when disabled | Pending | Blueprint calls `GetPassiveSkillList()` and resolves IDs with `PalUIUtility::GetPassiveSkillName()` without sending the source array through Lua; strict `v7` persistence, Blueprint compilation, clean Cook, and package checks pass. |
+| BP-28 | Display checkbox contrast | Every display row has a clearly visible unchecked and checked state and an unambiguous label association | Pending | Generated controls use a fixed 28x24 outlined checkbox with medium-gray unchecked and green checked fills; Steam visual verification remains. |
 
 ## Panel Regression Evidence
 
@@ -64,7 +67,8 @@ Multiplayer is community-pending and is not part of this maintainer-run matrix.
 | 2026-07-17 functional panel run | Shift+Y, localization, master switch, range and visibility controls | Maintainer confirmed panel interaction, all numeric filters, target limit, and live level/distance display; no reported crash. |
 | 2026-07-17 gender filter run | All/male/female behavior and normal exit | Male/female filtering passed and the game exited normally. Selected-button accent remained on the wrong segment, exposing BP-18. |
 | 2026-07-17 gender highlight follow-up | Gender selector highlight fix | Maintainer confirmed the selected segment highlight is correct. |
-| Next run | IV display plus settings restoration | Pending. Verify plausible `0..100` HP/ATK/DEF values on ordinary Pals, toggle visibility, then restart and confirm the IV toggle and selected element chips restore. Lucky/Boss positive matching remains sample-pending. |
+| 2026-07-18 panel termination | Toggle request during synchronous reconciliation | The UE4SS log ended immediately after `PANEL_TOGGLE_REQUESTED`; there was no dispatch/completion marker and no new dump. The current package removes the second delayed GameThread callback and consumes requests only on an idle runtime tick. This is the strongest evidence-backed fix, not a dump-confirmed root cause. |
+| Next run | Toggle safety, IV minimum, passive skills, and checkbox contrast | Pending. Repeatedly toggle the panel first, then verify the all-three IV threshold, localized passive-skill text, and distinct checkbox states. Lucky/Boss positive matching and restart persistence remain sample/runtime-pending. |
 
 ## Privacy Check
 
@@ -76,4 +80,4 @@ Expected result: no matches.
 
 ## Completion Rule
 
-The original Blueprint bridge spike passed BP-01 through BP-11 on Steam single-player. The current panel checkpoint is complete only when BP-12 through BP-25 pass without regressing BP-01 through BP-11 or `candidate_player_count=0`.
+The original Blueprint bridge spike passed BP-01 through BP-11 on Steam single-player. The current panel checkpoint is complete only when BP-12 through BP-28 pass without regressing BP-01 through BP-11 or `candidate_player_count=0`.

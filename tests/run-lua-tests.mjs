@@ -100,10 +100,28 @@ if (!generatorSource.includes('TEXT("GetSaveParameter")')
     || !generatorSource.includes('TEXT("ESP_TargetIvDefense")')
     || !generatorSource.includes('SetPinDefault(AddIvHpItem, TEXT("NewItem"), TEXT("-1"))')
     || !generatorSource.includes('TEXT("ESP_ShowIV")')
+    || !generatorSource.includes('TEXT("ESP_IvMin")')
+    || !generatorSource.includes("IvMinimumAccepted")
+    || !generatorSource.includes("IvHpMeetsMinimum")
+    || !generatorSource.includes("IvAttackMeetsMinimum")
+    || !generatorSource.includes("IvDefenseMeetsMinimum")
     || !generatorSource.includes('TEXT("IV HP ")')
     || !generatorSource.includes('TEXT(" / ATK ")')
     || !generatorSource.includes('TEXT(" / DEF ")')) {
   throw new Error("Blueprint IV provider, unknown sentinel, or display contract is incomplete");
+}
+if (!generatorSource.includes('TEXT("GetPassiveSkillList")')
+    || !generatorSource.includes('TEXT("GetPassiveSkillName")')
+    || !generatorSource.includes('TEXT("Conv_TextToString")')
+    || !generatorSource.includes('TEXT("ESP_TargetPassiveTexts")')
+    || !generatorSource.includes('TEXT("ESP_ShowPassiveSkills")')
+    || !generatorSource.includes('TEXT("ESP_ShowPassiveSkillsToggle")')) {
+  throw new Error("Blueprint passive-skill provider, localization, or display contract is incomplete");
+}
+if (!generatorSource.includes("ToggleUnchecked")
+    || !generatorSource.includes("ToggleOutline")
+    || !generatorSource.includes("1.5f, FVector2D(28.0f, 24.0f)")) {
+  throw new Error("Panel display toggles do not expose the high-contrast outlined state contract");
 }
 
 const normalize = (value) => value.replaceAll("\\", "/");
@@ -303,6 +321,8 @@ local bridge_actor = {
     ESP_ShowLevel = true,
     ESP_ShowDistance = true,
     ESP_ShowIV = false,
+    ESP_ShowPassiveSkills = false,
+    ESP_IvMin = 0,
     ESP_GenderFilterId = 0,
     ESP_LuckyFilterId = 0,
     ESP_BossFilterId = 0,
@@ -334,13 +354,15 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
     }
 end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
-function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, show_iv, gender_filter_id, lucky_filter_id, boss_filter_id, element_filter_mask)
+function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, show_iv, show_passives, iv_min, gender_filter_id, lucky_filter_id, boss_filter_id, element_filter_mask)
     bridge_style_payloads[#bridge_style_payloads + 1] = {
         show_top = show_top,
         show_name = show_name,
         show_level = show_level,
         show_distance = show_distance,
         show_iv = show_iv,
+        show_passives = show_passives,
+        iv_min = iv_min,
         gender_filter_id = gender_filter_id,
         lucky_filter_id = lucky_filter_id,
         boss_filter_id = boss_filter_id,
@@ -351,11 +373,16 @@ function bridge_actor:PalworldResourceESP_TogglePanel()
     panel_toggle_count = panel_toggle_count + 1
 end
 
+local request_toggle_during_monster_scan = false
 FindAllOf = function(class_name)
     if class_name == "PalPlayerCharacter" then
         return { player }
     end
     if class_name == "PalMonsterCharacter" then
+        if request_toggle_during_monster_scan then
+            request_toggle_during_monster_scan = false
+            panel_keybind()
+        end
         return monsters
     end
     return {}
@@ -398,14 +425,22 @@ assert(bridge_target_payloads[1].level == 1, "bridge level metadata did not matc
 assert(bridge_target_payloads[1].distance_meters == 1, "bridge distance metadata did not match the snapshot")
 panel_keybind()
 assert(panel_toggle_count == 0, "panel toggle ran inside the key callback")
-assert(#delayed_callbacks == 1, "panel toggle was not delayed out of key dispatch")
-table.remove(delayed_callbacks, 1)()
+assert(#delayed_callbacks == 0, "panel toggle scheduled a competing delayed GameThread callback")
+reconcile_loop()
 assert(panel_toggle_count == 1, "Shift+Y did not call the panel toggle bridge")
 panel_keybind()
 assert(panel_toggle_count == 1, "second panel toggle ran inside the key callback")
-assert(#delayed_callbacks == 1, "second panel toggle was not delayed out of key dispatch")
-table.remove(delayed_callbacks, 1)()
+assert(#delayed_callbacks == 0, "second panel toggle scheduled a competing delayed GameThread callback")
+reconcile_loop()
 assert(panel_toggle_count == 2, "second Shift+Y did not call the panel toggle bridge")
+
+fake_time = fake_time + 6
+request_toggle_during_monster_scan = true
+reconcile_loop()
+assert(panel_toggle_count == 2, "panel toggle dispatched inside synchronous reconciliation")
+assert(#delayed_callbacks == 0, "reconciliation-time toggle scheduled a delayed callback")
+reconcile_loop()
+assert(panel_toggle_count == 3, "reconciliation-time toggle was not consumed by the next runtime tick")
 
 local toggle_requested_found = false
 local toggle_completed_found = false
@@ -550,6 +585,8 @@ bridge_actor.ESP_ShowDistance = true
 bridge_actor.ESP_ControlRevision = 52
 reconcile_loop()
 bridge_actor.ESP_ShowIV = true
+bridge_actor.ESP_ShowPassiveSkills = true
+bridge_actor.ESP_IvMin = 75
 bridge_actor.ESP_ControlRevision = 521
 reconcile_loop()
 bridge_actor.ESP_GenderFilterId = 1
@@ -590,6 +627,8 @@ local metadata_shown_found = false
 local name_hidden_found = false
 local name_shown_found = false
 local iv_shown_found = false
+local passives_shown_found = false
+local iv_min_found = false
 local gender_male_found = false
 local gender_female_found = false
 local gender_clamped_found = false
@@ -610,6 +649,8 @@ for _, message in ipairs(runtime_logs) do
     name_hidden_found = name_hidden_found or message:match("DISPLAY_STYLE.*show_name=false") ~= nil
     name_shown_found = name_shown_found or message:match("DISPLAY_STYLE.*show_name=true") ~= nil
     iv_shown_found = iv_shown_found or message:match("DISPLAY_STYLE.*show_iv=true") ~= nil
+    passives_shown_found = passives_shown_found or message:match("DISPLAY_STYLE.*show_passives=true") ~= nil
+    iv_min_found = iv_min_found or message:match("DISPLAY_STYLE.*iv_min=75") ~= nil
     gender_male_found = gender_male_found or message:match("DISPLAY_STYLE.*gender_filter=male") ~= nil
     gender_female_found = gender_female_found or message:match("DISPLAY_STYLE.*gender_filter=female") ~= nil
     gender_clamped_found = gender_clamped_found
@@ -628,6 +669,8 @@ assert(top_guide_hidden_found and top_guide_shown_found, "panel top-guide style 
 assert(metadata_hidden_found and metadata_shown_found, "panel metadata styles did not round-trip")
 assert(name_hidden_found and name_shown_found, "panel name style did not round-trip")
 assert(iv_shown_found, "panel IV display style did not round-trip")
+assert(passives_shown_found, "panel passive-skill display style did not round-trip")
+assert(iv_min_found, "panel IV minimum did not round-trip")
 assert(gender_male_found and gender_female_found, "panel gender filters did not round-trip")
 assert(gender_clamped_found, "invalid gender filter was not clamped")
 assert(lucky_only_found and lucky_excluded_found, "panel Lucky filters did not round-trip")
@@ -643,6 +686,8 @@ assert(bridge_style_payloads[#bridge_style_payloads].element_filter_mask == 6, "
 assert(bridge_actor.ESP_ElementFilterMask == 6, "element mask was not synchronized to the passive bridge actor")
 assert(bridge_style_payloads[#bridge_style_payloads].show_name == true, "name style did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].show_iv == true, "IV style did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].show_passives == true, "passive-skill style did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].iv_min == 75, "IV minimum did not reach the bridge")
 print("Panel display styles passed")
 
 assert(type(load_map_pre_hook) == "function", "load-map pre-hook was not captured")
@@ -659,7 +704,7 @@ for _, message in ipairs(runtime_logs) do
 end
 reconcile_loop()
 assert(#runtime_settings_writes == 1, "stable settings changes were not coalesced into one append")
-assert(runtime_settings_writes[1]:match("^v5 "), "saved settings did not use the current versioned format")
+assert(runtime_settings_writes[1]:match("^v7 "), "saved settings did not use the current versioned format")
 assert(runtime_settings_writes[1]:match("show_name=true"), "saved settings omitted the name toggle")
 assert(runtime_settings_writes[1]:match("lucky=2"), "saved settings omitted the Lucky filter")
 assert(runtime_settings_writes[1]:match("boss=2"), "saved settings omitted the Boss filter")
@@ -667,6 +712,8 @@ assert(runtime_settings_writes[1]:match("element_fire=true"), "saved settings om
 assert(runtime_settings_writes[1]:match("element_water=true"), "saved settings omitted the Water element")
 assert(runtime_settings_writes[1]:match("element_dragon=false"), "saved settings omitted an unselected element")
 assert(runtime_settings_writes[1]:match("show_iv=true"), "saved settings omitted the IV toggle")
+assert(runtime_settings_writes[1]:match("iv_min=75"), "saved settings omitted the IV minimum")
+assert(runtime_settings_writes[1]:match("show_passives=true"), "saved settings omitted the passive-skill toggle")
 assert(#delayed_callbacks == 0, "periodic reconcile retained actors in delayed callbacks")
 local scan_done_count_after = 0
 for _, message in ipairs(runtime_logs) do
@@ -693,7 +740,7 @@ if (status !== lua.LUA_OK) {
 
 console.log(`Parsed Lua files: ${files.length}`);
 console.log("Pure core runtime-global check passed");
-console.log("Blueprint slider/name/outline/Lucky/Boss/element/IV source contract passed");
+console.log("Blueprint slider/name/outline/Lucky/Boss/element/IV/passive source contract passed");
 
 if (process.platform === "win32") {
   const performanceTests = path.join(root, "tests", "performance", "run-performance-tests.ps1");
