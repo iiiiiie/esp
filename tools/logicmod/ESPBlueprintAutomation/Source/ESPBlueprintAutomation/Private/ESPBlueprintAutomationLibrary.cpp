@@ -3926,8 +3926,12 @@ bool BuildPanelPassiveCatalog(
         Graph, UEditableTextBox::StaticClass(), TEXT("GetText"), X + 780, Y + 600);
     UK2Node_CallFunction* SearchTextToString = AddStaticCall(
         Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), X + 1040, Y + 600);
+    UK2Node_CallFunction* SearchTextIsEmpty = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("IsEmpty"), X + 1300, Y + 640);
     UK2Node_CallFunction* NameContainsSearch = AddStaticCall(
         Graph, UKismetStringLibrary::StaticClass(), TEXT("Contains"), X + 1300, Y + 520);
+    UK2Node_CallFunction* SearchQueryMatches = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), X + 1560, Y + 560);
     UK2Node_CallFunction* GetPassiveManager = AddStaticCall(Graph, PalUtilityClass, TEXT("GetPassiveSkillManager"), X, Y + 680);
     UK2Node_CallFunction* GetSkillData = AddStaticCall(Graph, PassiveSkillManagerClass, TEXT("GetSkillData"), X + 260, Y + 680);
     UK2Node_BreakStruct* BreakSkillData = NewObject<UK2Node_BreakStruct>(Graph);
@@ -3998,7 +4002,8 @@ bool BuildPanelPassiveCatalog(
     }
     if (!Self || !GetSortedSkills || !ForEachSkillId || !GetLocalizedSkillName || !LocalizedSkillNameToString
         || !SkillIdToString || !SkillIdNotNone || !NameNotEmpty || !NameNotNone || !SearchBoxGet
-        || !GetSearchText || !SearchTextToString || !NameContainsSearch || !GetPassiveManager
+        || !GetSearchText || !SearchTextToString || !SearchTextIsEmpty || !NameContainsSearch
+        || !SearchQueryMatches || !GetPassiveManager
         || !GetSkillData || !BreakSkillData || !NameValid || !IdAndDataValid || !NameAndSearchValid
         || !CatalogEntryValid || !CatalogEntryBranch || !DescIdToString || !SummaryIdToString
         || !DescIdAvailable || !SummaryIdAvailable || !AnyDescriptionId || !SelectDescriptionId
@@ -4024,10 +4029,13 @@ bool BuildPanelPassiveCatalog(
         || !SetPinDefault(NameNotNone, TEXT("B"), TEXT("None"))
         || !Link(SearchBoxGet, SearchBox->GetFName(), GetSearchText, UEdGraphSchema_K2::PN_Self)
         || !Link(GetSearchText, UEdGraphSchema_K2::PN_ReturnValue, SearchTextToString, TEXT("InText"))
+        || !Link(SearchTextToString, UEdGraphSchema_K2::PN_ReturnValue, SearchTextIsEmpty, TEXT("InString"))
         || !Link(LocalizedSkillNameToString, UEdGraphSchema_K2::PN_ReturnValue, NameContainsSearch, TEXT("SearchIn"))
         || !Link(SearchTextToString, UEdGraphSchema_K2::PN_ReturnValue, NameContainsSearch, TEXT("Substring"))
         || !SetPinDefault(NameContainsSearch, TEXT("bUseCase"), TEXT("false"))
         || !SetPinDefault(NameContainsSearch, TEXT("bSearchFromEnd"), TEXT("false"))
+        || !Link(SearchTextIsEmpty, UEdGraphSchema_K2::PN_ReturnValue, SearchQueryMatches, TEXT("A"))
+        || !Link(NameContainsSearch, UEdGraphSchema_K2::PN_ReturnValue, SearchQueryMatches, TEXT("B"))
         || !Link(Self, UEdGraphSchema_K2::PN_Self, GetPassiveManager, TEXT("WorldContextObject"))
         || !Link(GetPassiveManager, UEdGraphSchema_K2::PN_ReturnValue, GetSkillData, UEdGraphSchema_K2::PN_Self)
         || !Link(ForEachSkillId, TEXT("Array Element"), GetSkillData, TEXT("SkillName"))
@@ -4037,7 +4045,7 @@ bool BuildPanelPassiveCatalog(
         || !Link(SkillIdNotNone, UEdGraphSchema_K2::PN_ReturnValue, IdAndDataValid, TEXT("A"))
         || !Link(GetSkillData, UEdGraphSchema_K2::PN_ReturnValue, IdAndDataValid, TEXT("B"))
         || !Link(NameValid, UEdGraphSchema_K2::PN_ReturnValue, NameAndSearchValid, TEXT("A"))
-        || !Link(NameContainsSearch, UEdGraphSchema_K2::PN_ReturnValue, NameAndSearchValid, TEXT("B"))
+        || !Link(SearchQueryMatches, UEdGraphSchema_K2::PN_ReturnValue, NameAndSearchValid, TEXT("B"))
         || !Link(IdAndDataValid, UEdGraphSchema_K2::PN_ReturnValue, CatalogEntryValid, TEXT("A"))
         || !Link(NameAndSearchValid, UEdGraphSchema_K2::PN_ReturnValue, CatalogEntryValid, TEXT("B"))
         || !Link(ForEachSkillId, TEXT("LoopBody"), CatalogEntryBranch, UEdGraphSchema_K2::PN_Execute)

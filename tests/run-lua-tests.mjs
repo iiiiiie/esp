@@ -159,6 +159,8 @@ if (!generatorSource.includes('URichTextBlock')
 if (!generatorSource.includes('UEditableTextBox')
     || !generatorSource.includes('TEXT("ESP_PassiveSearchBox")')
     || !generatorSource.includes('TEXT("Contains")')
+    || !generatorSource.includes('TEXT("IsEmpty")')
+    || !generatorSource.includes('SearchQueryMatches')
     || !generatorSource.includes('CatalogEntryValid')
     || !generatorSource.includes('SummaryIdAvailable')
     || !generatorSource.includes('SetPinDefault(NameNotNone, TEXT("B"), TEXT("None"))')) {
