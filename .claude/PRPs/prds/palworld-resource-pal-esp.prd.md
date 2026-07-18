@@ -270,7 +270,7 @@ Direct memory reading cannot recover dynamic data the server never sent to the c
 - **Goal**: 覆盖核心捉宠工作流。
 - **Scope**: 所有 Must 级帕鲁筛选条件和组合语义。
 - **Success signal**: 已知测试样本能被准确包含或排除。
-- **Progress**: 2026-07-18 已实现等级、距离、性别、独立 Lucky、独立 Alpha/Boss 三态筛选，以及九类属性多选任一匹配；属性可用普通帕鲁验证，Lucky 与 Boss 的稀有样本验证继续等待维护者后续完成。
+- **Progress**: 2026-07-18 已实现等级、距离、性别、独立 Lucky、独立 Alpha/Boss 三态筛选，以及九类属性多选任一匹配；已加入 HP/攻击/防御个体值显示和独立开关，普通帕鲁数值验证通过后再加入三项最小阈值筛选。属性可用普通帕鲁验证，Lucky 与 Boss 的稀有样本验证继续等待维护者后续完成。
 
 **Phase 4: UI & I18n**
 

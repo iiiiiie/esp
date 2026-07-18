@@ -15,6 +15,7 @@ local function complete(overrides)
         show_name = true,
         show_level = true,
         show_distance = true,
+        show_iv = false,
         gender = 0,
         lucky = 0,
         boss = 0,
@@ -64,6 +65,7 @@ return {
             boss = 2,
             element_fire = true,
             element_water = true,
+            show_iv = true,
         })
         local parsed = assert(user_settings.parse_line(user_settings.serialize(input)))
         helper.equal(parsed.runtime_enabled, false)
@@ -76,34 +78,37 @@ return {
         helper.equal(parsed.element_fire, true)
         helper.equal(parsed.element_water, true)
         helper.equal(parsed.element_normal, false)
+        helper.equal(parsed.show_iv, true)
     end),
 
     helper.case("settings v1 snapshots remain readable with Lucky defaulted to all", function()
-        local v1 = user_settings.serialize(complete()):gsub("^v4 ", "v1 ")
+        local v1 = user_settings.serialize(complete()):gsub("^v5 ", "v1 ")
             :gsub(" lucky=0", ""):gsub(" boss=0", "")
-            :gsub(" element_[%a_]+=false", "")
+            :gsub(" element_[%a_]+=false", ""):gsub(" show_iv=false", "")
         local parsed, parse_error, version = user_settings.parse_line(v1)
         helper.equal(parse_error, nil)
         helper.equal(version, "v1")
         helper.equal(parsed.lucky, 0)
         helper.equal(parsed.boss, 0)
         helper.equal(parsed.element_fire, false)
+        helper.equal(parsed.show_iv, false)
     end),
 
     helper.case("settings v2 snapshots remain readable with Boss defaulted to all", function()
-        local v2 = user_settings.serialize(complete({ lucky = 2 })):gsub("^v4 ", "v2 ")
-            :gsub(" boss=0", ""):gsub(" element_[%a_]+=false", "")
+        local v2 = user_settings.serialize(complete({ lucky = 2 })):gsub("^v5 ", "v2 ")
+            :gsub(" boss=0", ""):gsub(" element_[%a_]+=false", ""):gsub(" show_iv=false", "")
         local parsed, parse_error, version = user_settings.parse_line(v2)
         helper.equal(parse_error, nil)
         helper.equal(version, "v2")
         helper.equal(parsed.lucky, 2)
         helper.equal(parsed.boss, 0)
         helper.equal(parsed.element_dragon, false)
+        helper.equal(parsed.show_iv, false)
     end),
 
     helper.case("settings v3 snapshots remain readable with elements defaulted to all", function()
-        local v3 = user_settings.serialize(complete({ boss = 1 })):gsub("^v4 ", "v3 ")
-            :gsub(" element_[%a_]+=false", "")
+        local v3 = user_settings.serialize(complete({ boss = 1 })):gsub("^v5 ", "v3 ")
+            :gsub(" element_[%a_]+=false", ""):gsub(" show_iv=false", "")
         local parsed, parse_error, version = user_settings.parse_line(v3)
         helper.equal(parse_error, nil)
         helper.equal(version, "v3")
@@ -117,6 +122,17 @@ return {
         helper.equal(parsed.element_earth, false)
         helper.equal(parsed.element_dark, false)
         helper.equal(parsed.element_dragon, false)
+        helper.equal(parsed.show_iv, false)
+    end),
+
+    helper.case("settings v4 snapshots remain readable with IV display disabled", function()
+        local v4 = user_settings.serialize(complete({ show_iv = true })):gsub("^v5 ", "v4 ")
+            :gsub(" show_iv=true", "")
+        local parsed, parse_error, version = user_settings.parse_line(v4)
+        helper.equal(parse_error, nil)
+        helper.equal(version, "v4")
+        helper.equal(parsed.show_iv, false)
+        helper.equal(parsed.element_normal, false)
     end),
 
     helper.case("settings parser rejects unknown or incomplete snapshots", function()
@@ -173,14 +189,15 @@ return {
                 }
             end,
         }
-        local ok = user_settings.append("memory.log", complete({ show_name = false }), backend)
+        local ok = user_settings.append("memory.log", complete({ show_name = false, show_iv = true }), backend)
         helper.truthy(ok)
-        helper.truthy(written:match("^v4 "))
+        helper.truthy(written:match("^v5 "))
         helper.truthy(written:match("show_name=false"))
         helper.truthy(written:match("lucky=0"))
         helper.truthy(written:match("boss=0"))
         helper.truthy(written:match("element_normal=false"))
         helper.truthy(written:match("element_dragon=false"))
+        helper.truthy(written:match("show_iv=true"))
         helper.truthy(written:match("\n$"))
     end),
 

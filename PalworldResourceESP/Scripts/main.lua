@@ -157,6 +157,7 @@ local state = {
     show_name = config.SHOW_NAME,
     show_level = config.SHOW_LEVEL,
     show_distance = config.SHOW_DISTANCE,
+    show_iv = config.SHOW_IV,
     gender_filter_id = 0,
     lucky_filter_id = 0,
     boss_filter_id = 0,
@@ -332,6 +333,7 @@ local SETTINGS_PROPERTIES = {
     { name = "show_name", property = "ESP_ShowName" },
     { name = "show_level", property = "ESP_ShowLevel" },
     { name = "show_distance", property = "ESP_ShowDistance" },
+    { name = "show_iv", property = "ESP_ShowIV" },
     { name = "gender", property = "ESP_GenderFilterId" },
     { name = "lucky", property = "ESP_LuckyFilterId" },
     { name = "boss", property = "ESP_BossFilterId" },
@@ -487,7 +489,7 @@ local function flush_user_settings_if_due()
     state.settings_pending = nil
     state.settings_save_due_at = nil
     state.settings_save_error_logged = false
-    debug_event("USER_SETTINGS_SAVED", "version=v4")
+    debug_event("USER_SETTINGS_SAVED", "version=v5")
 end
 
 local function safe_call_no_args(object, method_name)
@@ -2518,6 +2520,7 @@ local function apply_display_styles(
     show_name,
     show_level,
     show_distance,
+    show_iv,
     raw_gender_filter_id,
     raw_lucky_filter_id,
     raw_boss_filter_id,
@@ -2531,6 +2534,7 @@ local function apply_display_styles(
         and show_name == state.show_name
         and show_level == state.show_level
         and show_distance == state.show_distance
+        and show_iv == state.show_iv
         and gender_filter_id == state.gender_filter_id
         and lucky_filter_id == state.lucky_filter_id
         and boss_filter_id == state.boss_filter_id
@@ -2541,6 +2545,7 @@ local function apply_display_styles(
     state.show_name = show_name
     state.show_level = show_level
     state.show_distance = show_distance
+    state.show_iv = show_iv
     state.gender_filter_id = gender_filter_id
     state.lucky_filter_id = lucky_filter_id
     state.boss_filter_id = boss_filter_id
@@ -2554,6 +2559,7 @@ local function apply_display_styles(
         show_name,
         show_level,
         show_distance,
+        show_iv,
         gender_filter_id,
         lucky_filter_id,
         boss_filter_id,
@@ -2563,11 +2569,12 @@ local function apply_display_styles(
     local lucky_filter_names = { [0] = "all", [1] = "only_lucky", [2] = "exclude_lucky" }
     local boss_filter_names = { [0] = "all", [1] = "only_boss", [2] = "exclude_boss" }
     log_event("DISPLAY_STYLE", string.format(
-        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s gender_filter=%s lucky_filter=%s boss_filter=%s element_filter_mask=%d",
+        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s show_iv=%s gender_filter=%s lucky_filter=%s boss_filter=%s element_filter_mask=%d",
         tostring(show_top_guide_line),
         tostring(show_name),
         tostring(show_level),
         tostring(show_distance),
+        tostring(show_iv),
         gender_filter_names[gender_filter_id],
         lucky_filter_names[lucky_filter_id],
         boss_filter_names[boss_filter_id],
@@ -2624,6 +2631,7 @@ local function poll_panel_controls()
     local show_name = read_panel_boolean("ESP_ShowName")
     local show_level = read_panel_boolean("ESP_ShowLevel")
     local show_distance = read_panel_boolean("ESP_ShowDistance")
+    local show_iv = read_panel_boolean("ESP_ShowIV")
     local gender_filter_id = read_panel_number("ESP_GenderFilterId")
     local lucky_filter_id = read_panel_number("ESP_LuckyFilterId")
     local boss_filter_id = read_panel_number("ESP_BossFilterId")
@@ -2643,6 +2651,7 @@ local function poll_panel_controls()
         -- or level_min == nil or level_max == nil or distance_min == nil or distance_max == nil
         or level_min == nil or level_max == nil or distance_max == nil
         or show_top_guide_line == nil or show_name == nil or show_level == nil or show_distance == nil
+        or show_iv == nil
         or gender_filter_id == nil or lucky_filter_id == nil or boss_filter_id == nil
         or element_normal == nil or element_fire == nil or element_water == nil or element_leaf == nil
         or element_electricity == nil or element_ice == nil or element_earth == nil
@@ -2669,6 +2678,7 @@ local function poll_panel_controls()
         show_name,
         show_level,
         show_distance,
+        show_iv,
         gender_filter_id,
         lucky_filter_id,
         boss_filter_id,
@@ -2694,6 +2704,7 @@ local function poll_panel_controls()
         show_name = show_name,
         show_level = show_level,
         show_distance = show_distance,
+        show_iv = show_iv,
         gender = gender_filter_id,
         lucky = lucky_filter_id,
         boss = boss_filter_id,

@@ -50,6 +50,7 @@ config.SHOW_TOP_GUIDE_LINE = true
 config.SHOW_NAME = true
 config.SHOW_LEVEL = true
 config.SHOW_DISTANCE = true
+config.SHOW_IV = false
 config.LINE_COLOR = {
     R = 0.20,
     G = 0.95,

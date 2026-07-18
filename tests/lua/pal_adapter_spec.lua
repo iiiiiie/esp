@@ -29,5 +29,10 @@ return {
         helper.equal(fields.passive_skills.state, "unavailable")
         helper.equal(fields.elements.state, "bridge")
         helper.equal(fields.elements.reason, "blueprint_element_mask_adapter")
+        helper.equal(fields.iv_hp.state, "bridge")
+        helper.equal(fields.iv_attack.state, "bridge")
+        helper.equal(fields.iv_defense.state, "bridge")
+        helper.equal(fields.iv_hp.reason, "blueprint_save_parameter_talent_adapter")
+        helper.equal(fields.iv_melee.state, "unavailable")
     end),
 }

@@ -18,10 +18,10 @@ The first in-game deployment exposed an additional runtime constraint: UE4SS can
 
 ## Decision
 
-Persist panel preferences in `PalworldResourceESP/Scripts/user-settings.log` as an append-only sequence of complete versioned snapshots. New writes use `v4`; the reader accepts strict complete `v1`, `v2`, `v3`, and `v4` records.
+Persist panel preferences in `PalworldResourceESP/Scripts/user-settings.log` as an append-only sequence of complete versioned snapshots. New writes use `v5`; the reader accepts strict complete `v1`, `v2`, `v3`, `v4`, and `v5` records.
 
-- Every snapshot contains only a fixed whitelist of booleans and bounded integers: runtime/profile/preset, language, level endpoints, maximum distance, visible target limit, top guide, name/level/distance visibility, gender filter, Lucky filter, Boss filter, and nine element toggles.
-- A valid `v1` snapshot migrates in memory by defaulting Lucky and Boss to `all`; `v2` defaults Boss to `all`; `v1`, `v2`, and `v3` default all element toggles to unselected. Old records are never rewritten in place. The next stable user change appends a complete `v4` snapshot.
+- Every snapshot contains only a fixed whitelist of booleans and bounded integers: runtime/profile/preset, language, level endpoints, maximum distance, visible target limit, top guide, name/level/distance/IV visibility, gender filter, Lucky filter, Boss filter, and nine element toggles.
+- A valid `v1` snapshot migrates in memory by defaulting Lucky and Boss to `all`; `v2` defaults Boss to `all`; `v1`, `v2`, and `v3` default all element toggles to unselected; `v1` through `v4` default IV display to disabled. Old records are never rewritten in place. The next stable user change appends a complete `v5` snapshot.
 - Capture state, players, entities, names, IDs, and coordinates are never persisted.
 - Lua loads the last valid complete snapshot and ignores malformed, incomplete, unknown-version, or unknown-field lines.
 - Loaded values are clamped to the public UI limits and written once to the passive ModActor before the panel is initialized.
@@ -90,6 +90,7 @@ Follow-up considerations:
 - [x] Add strict `v1` read compatibility and `v2` writes for the Lucky selector.
 - [x] Add strict `v2` read compatibility and `v3` writes for the Boss selector.
 - [x] Add strict `v3` read compatibility and `v4` writes for the multi-select element toggles.
+- [x] Add strict `v4` read compatibility and `v5` writes for the IV visibility toggle.
 - [x] Add and runtime-stub test the `package.searchpath` fallback required by UE4SS when the debug source is unavailable.
 - [ ] Verify settings restoration after a full Palworld restart.
 - [ ] Verify a malformed final line falls back to the preceding valid line in the game environment.

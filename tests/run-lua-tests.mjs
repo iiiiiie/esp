@@ -90,6 +90,21 @@ if (!generatorSource.includes('TEXT("HasElementType")')
     || !generatorSource.includes('TEXT("ESP_ElementWaterToggle")')) {
   throw new Error("Blueprint element provider, match-any, or fail-closed filter contract is incomplete");
 }
+if (!generatorSource.includes('TEXT("GetSaveParameter")')
+    || !generatorSource.includes("UK2Node_BreakStruct")
+    || !generatorSource.includes('TEXT("Talent_HP")')
+    || !generatorSource.includes('TEXT("Talent_Shot")')
+    || !generatorSource.includes('TEXT("Talent_Defense")')
+    || !generatorSource.includes('TEXT("ESP_TargetIvHp")')
+    || !generatorSource.includes('TEXT("ESP_TargetIvAttack")')
+    || !generatorSource.includes('TEXT("ESP_TargetIvDefense")')
+    || !generatorSource.includes('SetPinDefault(AddIvHpItem, TEXT("NewItem"), TEXT("-1"))')
+    || !generatorSource.includes('TEXT("ESP_ShowIV")')
+    || !generatorSource.includes('TEXT("IV HP ")')
+    || !generatorSource.includes('TEXT(" / ATK ")')
+    || !generatorSource.includes('TEXT(" / DEF ")')) {
+  throw new Error("Blueprint IV provider, unknown sentinel, or display contract is incomplete");
+}
 
 const normalize = (value) => value.replaceAll("\\", "/");
 const packagePaths = [
@@ -287,6 +302,7 @@ local bridge_actor = {
     ESP_ShowName = true,
     ESP_ShowLevel = true,
     ESP_ShowDistance = true,
+    ESP_ShowIV = false,
     ESP_GenderFilterId = 0,
     ESP_LuckyFilterId = 0,
     ESP_BossFilterId = 0,
@@ -318,12 +334,13 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
     }
 end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
-function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, gender_filter_id, lucky_filter_id, boss_filter_id, element_filter_mask)
+function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, show_iv, gender_filter_id, lucky_filter_id, boss_filter_id, element_filter_mask)
     bridge_style_payloads[#bridge_style_payloads + 1] = {
         show_top = show_top,
         show_name = show_name,
         show_level = show_level,
         show_distance = show_distance,
+        show_iv = show_iv,
         gender_filter_id = gender_filter_id,
         lucky_filter_id = lucky_filter_id,
         boss_filter_id = boss_filter_id,
@@ -532,6 +549,9 @@ bridge_actor.ESP_ShowLevel = true
 bridge_actor.ESP_ShowDistance = true
 bridge_actor.ESP_ControlRevision = 52
 reconcile_loop()
+bridge_actor.ESP_ShowIV = true
+bridge_actor.ESP_ControlRevision = 521
+reconcile_loop()
 bridge_actor.ESP_GenderFilterId = 1
 bridge_actor.ESP_ControlRevision = 53
 reconcile_loop()
@@ -569,6 +589,7 @@ local metadata_hidden_found = false
 local metadata_shown_found = false
 local name_hidden_found = false
 local name_shown_found = false
+local iv_shown_found = false
 local gender_male_found = false
 local gender_female_found = false
 local gender_clamped_found = false
@@ -588,6 +609,7 @@ for _, message in ipairs(runtime_logs) do
         or message:match("DISPLAY_STYLE.*show_level=true.*show_distance=true") ~= nil
     name_hidden_found = name_hidden_found or message:match("DISPLAY_STYLE.*show_name=false") ~= nil
     name_shown_found = name_shown_found or message:match("DISPLAY_STYLE.*show_name=true") ~= nil
+    iv_shown_found = iv_shown_found or message:match("DISPLAY_STYLE.*show_iv=true") ~= nil
     gender_male_found = gender_male_found or message:match("DISPLAY_STYLE.*gender_filter=male") ~= nil
     gender_female_found = gender_female_found or message:match("DISPLAY_STYLE.*gender_filter=female") ~= nil
     gender_clamped_found = gender_clamped_found
@@ -605,6 +627,7 @@ end
 assert(top_guide_hidden_found and top_guide_shown_found, "panel top-guide style did not round-trip")
 assert(metadata_hidden_found and metadata_shown_found, "panel metadata styles did not round-trip")
 assert(name_hidden_found and name_shown_found, "panel name style did not round-trip")
+assert(iv_shown_found, "panel IV display style did not round-trip")
 assert(gender_male_found and gender_female_found, "panel gender filters did not round-trip")
 assert(gender_clamped_found, "invalid gender filter was not clamped")
 assert(lucky_only_found and lucky_excluded_found, "panel Lucky filters did not round-trip")
@@ -619,6 +642,7 @@ assert(bridge_style_payloads[#bridge_style_payloads].boss_filter_id == 2, "Boss 
 assert(bridge_style_payloads[#bridge_style_payloads].element_filter_mask == 6, "element mask did not reach the bridge")
 assert(bridge_actor.ESP_ElementFilterMask == 6, "element mask was not synchronized to the passive bridge actor")
 assert(bridge_style_payloads[#bridge_style_payloads].show_name == true, "name style did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].show_iv == true, "IV style did not reach the bridge")
 print("Panel display styles passed")
 
 assert(type(load_map_pre_hook) == "function", "load-map pre-hook was not captured")
@@ -635,13 +659,14 @@ for _, message in ipairs(runtime_logs) do
 end
 reconcile_loop()
 assert(#runtime_settings_writes == 1, "stable settings changes were not coalesced into one append")
-assert(runtime_settings_writes[1]:match("^v4 "), "saved settings did not use the current versioned format")
+assert(runtime_settings_writes[1]:match("^v5 "), "saved settings did not use the current versioned format")
 assert(runtime_settings_writes[1]:match("show_name=true"), "saved settings omitted the name toggle")
 assert(runtime_settings_writes[1]:match("lucky=2"), "saved settings omitted the Lucky filter")
 assert(runtime_settings_writes[1]:match("boss=2"), "saved settings omitted the Boss filter")
 assert(runtime_settings_writes[1]:match("element_fire=true"), "saved settings omitted the Fire element")
 assert(runtime_settings_writes[1]:match("element_water=true"), "saved settings omitted the Water element")
 assert(runtime_settings_writes[1]:match("element_dragon=false"), "saved settings omitted an unselected element")
+assert(runtime_settings_writes[1]:match("show_iv=true"), "saved settings omitted the IV toggle")
 assert(#delayed_callbacks == 0, "periodic reconcile retained actors in delayed callbacks")
 local scan_done_count_after = 0
 for _, message in ipairs(runtime_logs) do
@@ -668,7 +693,7 @@ if (status !== lua.LUA_OK) {
 
 console.log(`Parsed Lua files: ${files.length}`);
 console.log("Pure core runtime-global check passed");
-console.log("Blueprint slider/name/outline/Lucky/Boss/element source contract passed");
+console.log("Blueprint slider/name/outline/Lucky/Boss/element/IV source contract passed");
 
 if (process.platform === "win32") {
   const performanceTests = path.join(root, "tests", "performance", "run-performance-tests.ps1");
