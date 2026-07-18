@@ -189,6 +189,8 @@ const TArray<FPassiveDescriptionFallback> PassiveDescriptionFallbacks = {
     {TEXT("PAL_rude"), TEXT("攻击 +15%，工作速度 -10%"), TEXT("Attack +15%, Work Speed -10%")},
     {TEXT("CraftSpeed_up3"), TEXT("工作速度 +75%"), TEXT("Work Speed +75%")},
     {TEXT("PAL_ALLAttack_up3"), TEXT("攻击 +30%，防御 +5%"), TEXT("Attack +30%, Defense +5%")},
+    {TEXT("Noukin"), TEXT("攻击 +30%，工作速度 -50%"), TEXT("Attack +30%, Work Speed -50%")},
+    {TEXT("Legend"), TEXT("攻击 +20%，防御 +20%，移动速度 +20%"), TEXT("Attack +20%, Defense +20%, Movement Speed +20%")},
     {TEXT("Rare"), TEXT("攻击 +15%，工作速度 +15%"), TEXT("Attack +15%, Work Speed +15%")},
     {TEXT("MutationPal_ExplosionResist"), TEXT("免疫爆破伤害"), TEXT("Immune to explosion damage")},
     {TEXT("WorkSuitabilityAddRank_MonsterFarm_2"), TEXT("牧场工作适应性 +2"), TEXT("Farming work suitability +2")},

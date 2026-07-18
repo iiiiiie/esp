@@ -176,6 +176,8 @@ const passiveDescriptionFallbackIds = [
   "PAL_rude",
   "CraftSpeed_up3",
   "PAL_ALLAttack_up3",
+  "Noukin",
+  "Legend",
   "Rare",
   "MutationPal_ExplosionResist",
   "WorkSuitabilityAddRank_MonsterFarm_2",
