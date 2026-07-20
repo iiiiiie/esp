@@ -17,7 +17,13 @@
 
 ## 下载
 
-普通玩家请从 [GitHub Releases](https://github.com/iiiiiie/esp/releases) 下载标有 Steam PC 的完整安装 ZIP。源码仓库按项目 ADR 只保存 Lua、项目自有 Blueprint 资产和构建工具，不提交 Cook 生成的 `.pak`；预编译 Pak 只通过 Release、Nexus Mods 或 Steam 创意工坊分发。
+普通玩家可以从以下公开渠道获取：
+
+- [GitHub Releases](https://github.com/iiiiiie/esp/releases)：下载标有 Steam PC 的完整手动安装 ZIP
+- [Nexus Mods](https://www.nexusmods.com/palworld/mods/4055)：下载同一版本的完整手动安装 ZIP
+- [Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3768263317)：通过 Workshop Loader 自动安装
+
+源码仓库按项目 ADR 只保存 Lua、项目自有 Blueprint 资产和构建工具，不提交 Cook 生成的 `.pak`；预编译 Pak 只通过上述公开渠道分发。
 
 ## 已实现功能
 
@@ -65,6 +71,24 @@
 
 ## 安装
 
+### Steam 创意工坊
+
+1. 订阅 [`Palworld Resource ESP`](https://steamcommunity.com/sharedfiles/filedetails/?id=3768263317) 和页面列出的必需物品 [`UE4SS Experimental (Palworld)`](https://steamcommunity.com/sharedfiles/filedetails/?id=3625223587)。
+2. 在 Palworld 的 `Options -> Mod Management` 中启用两者。
+3. 完整重启游戏。Workshop Loader 会将订阅内容安装到：
+
+   ```text
+   Palworld\Mods\NativeMods\UE4SS\Mods\PalworldResourceESP\Scripts\main.lua
+   Palworld\Pal\Content\Paks\LogicMods\PalworldResourceESP.pak
+   Palworld\Mods\ManagedMods\PalworldResourceESP\InstallManifest.json
+   ```
+
+4. 进入存档后，附近帕鲁会自动出现引导线；按 `Shift+Y` 打开设置面板。
+
+创意工坊条目已声明 UE4SS 必需依赖。若 Steam 没有自动下载或启用该依赖，请先单独订阅并启用 UE4SS。
+
+### Release ZIP / 手动安装
+
 1. 安装并配置 `UE4SS_v3.0.1-1009-gc2ac2464`。
 2. 关闭游戏，将 Release ZIP 解压到 `Palworld` 游戏根目录；压缩包内的 `Pal` 目录应与游戏现有的 `Pal` 目录合并。
 3. 确认以下文件存在：
@@ -84,11 +108,11 @@ Palworld\Pal\Binaries\Win64\ue4ss\Mods\PalworldResourceESP
 Palworld\Pal\Content\Paks\LogicMods\PalworldResourceESP.pak
 ```
 
-Steam 创意工坊若不能自动安装 UE4SS 依赖，仍需用户先手动安装 UE4SS。
-
 ## 卸载
 
-关闭游戏后，移走或禁用以下内容：
+创意工坊安装应先在 `Options -> Mod Management` 中禁用本 Mod，再取消订阅。只有没有其他 Mod 依赖 UE4SS 时才禁用 UE4SS。
+
+手动安装应在关闭游戏后移走或禁用以下内容：
 
 ```text
 Pal\Binaries\Win64\ue4ss\Mods\PalworldResourceESP
