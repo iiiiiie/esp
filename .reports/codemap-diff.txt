@@ -1,0 +1,29 @@
+Generated: 2026-07-20
+Files scanned: 72 tracked files
+Baseline: no previous docs/CODEMAPS directory
+
+Codemaps added:
+- docs/CODEMAPS/architecture.md
+- docs/CODEMAPS/runtime.md
+- docs/CODEMAPS/frontend.md
+- docs/CODEMAPS/data.md
+- docs/CODEMAPS/dependencies.md
+
+Files added/removed/modified since last scan:
+- Initial scan; no previous codemap snapshot is available for percentage comparison.
+- Current release baseline is main commit a3f6fe8 / tag v0.1.0-beta.1.
+
+Dependencies detected:
+- Runtime: Palworld Steam PC, UE4SS_v3.0.1-1009-gc2ac2464, BPModLoader/LogicMods.
+- Build: UE 5.1.1, external no-Wwise PMK variant, VS 2022/MSVC 14.38, .NET 6.
+- Test: Node.js, fengari 0.1.5, luaparse 0.3.1, PowerShell; PresentMon is optional.
+
+Architecture changes represented:
+- Event-driven BeginPlay/readiness/lifecycle updates replaced periodic steady-state reconciliation.
+- Runtime-generated Pal species catalog and v12 persisted panel state are now first-class boundaries.
+- Public Beta distribution uses a complete Release ZIP; Cooked Pak remains outside Git.
+
+Staleness warnings:
+- No documentation file is older than 90 days.
+- ADR-0008 still described v10 writes although source writes v12; synchronize in this update.
+- docs/计划.txt is a historical feature sketch and must not be treated as current implementation status.

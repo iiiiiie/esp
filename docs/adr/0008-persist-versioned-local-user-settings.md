@@ -18,15 +18,15 @@ The first in-game deployment exposed an additional runtime constraint: UE4SS can
 
 ## Decision
 
-Persist panel preferences in `PalworldResourceESP/Scripts/user-settings.log` as an append-only sequence of complete versioned snapshots. New writes use `v10`; the reader accepts strict complete `v1` through `v10` records.
+Persist panel preferences in `PalworldResourceESP/Scripts/user-settings.log` as an append-only sequence of complete versioned snapshots. New writes use `v12`; the reader accepts strict complete `v1` through `v12` records.
 
-- Every snapshot contains a fixed whitelist of booleans, bounded integers, and two bounded passive-ID strings. The scalar fields cover runtime/profile/preset, language, level endpoints, maximum distance, visible target limit, top guide, name/level/distance/IV/passive visibility, legacy IV minimum, HP/attack/defense IV minima, gender filter, Lucky filter, Boss filter, collection-completion filter, nine element toggles, and eight passive-category expansion states.
-- Blueprint remains the owner of the include/exclude `TArray<FName>` values. It mirrors mutations into delimiter-safe `|SkillId|SkillId|` strings on the passive ModActor. Lua accepts only ASCII `[A-Za-z0-9_]+` IDs, deduplicates them, caps includes at four and excludes at 256, serializes an empty list as `-`, and never probes the Blueprint arrays.
-- A valid `v1` snapshot migrates in memory by defaulting Lucky and Boss to `all`; `v2` defaults Boss to `all`; `v1`, `v2`, and `v3` default all element toggles to unselected; `v1` through `v4` default IV display to disabled; `v1` through `v5` default the legacy IV minimum to zero; and `v1` through `v6` default passive-skill display to disabled. For `v1` through `v7`, the legacy IV minimum migrates into all three dimensional minima. `v1` through `v8` default passive selections to empty and all passive categories to collapsed. `v1` through `v9` default collection completion to `all`. Old records are never rewritten in place. The next stable user change appends a complete `v10` snapshot.
-- Capture state, players, entities, names, IDs, and coordinates are never persisted.
+- Every snapshot contains a fixed whitelist of booleans, bounded integers, and three bounded ID strings. The scalar fields cover runtime/profile/preset, language, level endpoints, maximum distance, visible target limit, top guide, name/level/distance/IV/passive visibility, legacy IV minimum, HP/attack/defense IV minima, gender filter, Lucky filter, Boss filter, collection-completion filter, nine element toggles, eight passive-category expansion states, and the last primary/nested panel pages.
+- Blueprint remains the owner of passive include/exclude and selected-species `TArray<FName>` values. It mirrors mutations into delimiter-safe `|Id|Id|` strings on the passive ModActor. Lua accepts only ASCII `[A-Za-z0-9_]+` IDs, deduplicates them, caps passive includes at four, passive excludes at 256, and species selections at 512, serializes an empty list as `-`, and never probes the Blueprint arrays.
+- A valid `v1` snapshot migrates in memory by defaulting Lucky and Boss to `all`; `v2` defaults Boss to `all`; `v1`, `v2`, and `v3` default all element toggles to unselected; `v1` through `v4` default IV display to disabled; `v1` through `v5` default the legacy IV minimum to zero; and `v1` through `v6` default passive-skill display to disabled. For `v1` through `v7`, the legacy IV minimum migrates into all three dimensional minima. `v1` through `v8` default passive selections to empty and all passive categories to collapsed. `v1` through `v9` default collection completion to `all`; `v1` through `v10` default selected species to empty; `v1` through `v11` default both panel pages. Old records are never rewritten in place. The next stable user change appends a complete `v12` snapshot.
+- Capture state, player/entity identities, actor names, coordinates, catalog rows, and hover data are never persisted. Only whitelisted passive/species selection IDs are stored.
 - Lua loads the last valid complete snapshot and ignores malformed, incomplete, unknown-version, or unknown-field lines.
-- Loaded values are clamped to the public UI limits and written once to the passive ModActor before the panel is initialized. Lua then invokes `PalworldResourceESP_ApplyPersistedPanelState`; Blueprint parses the two mirrors, rebuilds both `TArray<FName>` values, and increments the passive filter revision.
-- UE4SS exposes a Blueprint `FString` property as userdata on the validated build. The reader therefore accepts a plain Lua string or, only for these two project-owned properties, userdata that reports type `FString` and returns a Lua string from `ToString()`. Arbitrary userdata conversion remains prohibited.
+- Loaded values are clamped to the public UI limits and written once to the passive ModActor before the panel is initialized. Lua then invokes `PalworldResourceESP_ApplyPersistedPanelState`; Blueprint parses the three mirrors, rebuilds the passive and species `TArray<FName>` values, restores the page state, and increments the relevant revisions.
+- UE4SS exposes a Blueprint `FString` property as userdata on the validated build. The reader therefore accepts a plain Lua string or, only for these three project-owned properties, userdata that reports type `FString` and returns a Lua string from `ToString()`. Arbitrary userdata conversion remains prohibited.
 - Runtime changes update the normalized in-memory snapshot immediately and are coalesced for 750 ms before one complete snapshot is appended. A new ModActor created during a save transition therefore receives the latest stable panel state even before the debounced disk append completes. Slider preview changes do not change the ModActor and therefore do not schedule writes.
 - Storage failures are logged and retried without disabling ESP behavior.
 - Resolve the settings location from a valid `debug.getinfo()` source when available. Otherwise use `package.searchpath("config", package.path)` to locate the already loaded sibling `config.lua`, then place `user-settings.log` in that directory. If neither source resolves, log the specific resolution failure and continue with defaults.
@@ -80,7 +80,7 @@ Negative effects:
 - Append-only history has unbounded theoretical growth.
 - Schema changes require a new parser version or an explicit migration.
 - Supporting older strict schemas adds a small compatibility surface to the parser.
-- Passive selections depend on stable game-internal skill IDs; removed or renamed IDs are discarded instead of guessed.
+- Passive and species selections depend on stable game-internal IDs; removed or renamed IDs are discarded instead of guessed.
 
 Follow-up considerations:
 - Do not accept this ADR until a real restart proves restoration and normal exit.
@@ -99,6 +99,8 @@ Follow-up considerations:
 - [x] Add strict `v7` read compatibility and `v8` writes for independent HP/attack/defense IV minima.
 - [x] Add strict `v8` read compatibility and `v9` writes for passive include/exclude IDs and eight category expansion states.
 - [x] Add strict `v9` read compatibility and `v10` writes for the three-state local collection-completion filter.
+- [x] Add strict `v10` read compatibility and `v11` writes for selected Pal species IDs.
+- [x] Add strict `v11` read compatibility and `v12` writes for the last primary and nested filter pages.
 - [x] Rebuild Blueprint-owned passive arrays from persisted mirrors without moving entity, player, or coordinate data into Lua.
 - [x] Add and runtime-stub test the `package.searchpath` fallback required by UE4SS when the debug source is unavailable.
 - [ ] Verify settings restoration after a full Palworld restart.
