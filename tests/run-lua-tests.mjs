@@ -41,6 +41,14 @@ const generatorPath = path.join(
   "ESPBlueprintAutomationLibrary.cpp",
 );
 const generatorSource = fs.readFileSync(generatorPath, "utf8");
+const mainSource = fs.readFileSync(path.join(runtimeRoot, "main.lua"), "utf8");
+if (!generatorSource.includes('TEXT("PalworldResourceESP_WidgetRemoveTarget")')
+    || !generatorSource.includes('TEXT("PalworldResourceESP_RemoveTarget")')
+    || !generatorSource.includes('TEXT("Array_Find")')
+    || !generatorSource.includes('TEXT("Array_Remove")')
+    || !mainSource.includes('BRIDGE_METHOD_REMOVE_TARGET = "PalworldResourceESP_RemoveTarget"')) {
+  throw new Error("Event-driven single-target removal contract is incomplete");
+}
 const numericStart = generatorSource.indexOf("bool BuildPanelNumericEventV2(");
 const numericEnd = generatorSource.indexOf("bool BuildPanelInitializeControlsV2(", numericStart);
 const numericSource = generatorSource.slice(numericStart, numericEnd);
@@ -120,9 +128,14 @@ if (!generatorSource.includes('TEXT("GetSaveParameter")')
     || !generatorSource.includes("IvHpMeetsMinimum")
     || !generatorSource.includes("IvAttackMeetsMinimum")
     || !generatorSource.includes("IvDefenseMeetsMinimum")
+    || !generatorSource.includes('TEXT("个体值 生命 ")')
+    || !generatorSource.includes('TEXT(" / 攻击 ")')
+    || !generatorSource.includes('TEXT(" / 防御 ")')
     || !generatorSource.includes('TEXT("IV HP ")')
     || !generatorSource.includes('TEXT(" / ATK ")')
-    || !generatorSource.includes('TEXT(" / DEF ")')) {
+    || !generatorSource.includes('TEXT(" / DEF ")')
+    || !generatorSource.includes("OverlayLanguageIdVariableName")
+    || !generatorSource.includes("LanguageIsEnglish")) {
   throw new Error("Blueprint IV provider, unknown sentinel, or display contract is incomplete");
 }
 if (!generatorSource.includes('TEXT("GetPassiveSkillList")')
@@ -146,7 +159,8 @@ if (!generatorSource.includes('TEXT("GetSortedPassiveSkillNameArray")')
     || !generatorSource.includes("ForEachPassiveFilterId")
     || !generatorSource.includes("PassiveFilterMatchAnd")
     || !generatorSource.includes('SetPinDefault(HasCapacity, TEXT("B"), TEXT("4"))')
-    || !generatorSource.includes("SetWidthOverride(1180.0f)")
+    || !generatorSource.includes("SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f)")
+    || !generatorSource.includes("SetOffsets(FMargin(16.0f))")
     || !generatorSource.includes("UWidgetSwitcher")
     || !generatorSource.includes('/Game/Mods/PalworldResourceESP/WBP_ESPPassiveEntry')) {
   throw new Error("Blueprint passive AND-filter, tooltip catalog, or tabbed-panel contract is incomplete");
@@ -159,15 +173,194 @@ if (!generatorSource.includes('FSlateColor::UseForeground()')
     || generatorSource.includes('FCoreStyle::GetDefaultFont()')) {
   throw new Error("Passive entry labels do not define readable unchecked and checked foreground colors");
 }
+const passiveEntrySource = generatorSource.slice(
+  generatorSource.indexOf('bool BuildPassiveEntry('),
+  generatorSource.indexOf('bool BuildPalEntry('),
+);
+const passiveTooltipSource = generatorSource.slice(
+  generatorSource.indexOf('bool BuildPassiveTooltip('),
+  generatorSource.indexOf('bool BuildPassiveEntry('),
+);
+const palEntrySource = generatorSource.slice(
+  generatorSource.indexOf('bool BuildPalEntry('),
+  generatorSource.indexOf('bool BuildPanelPalCatalog('),
+);
+const palCatalogSource = generatorSource.slice(
+  generatorSource.indexOf('bool BuildPanelPalCatalog('),
+  generatorSource.indexOf('bool BuildPanelPassiveCatalog('),
+);
+const expectedPalWorkFields = [
+  "WorkSuitability_EmitFlame",
+  "WorkSuitability_Watering",
+  "WorkSuitability_Seeding",
+  "WorkSuitability_GenerateElectricity",
+  "WorkSuitability_Handcraft",
+  "WorkSuitability_Collection",
+  "WorkSuitability_Deforest",
+  "WorkSuitability_Mining",
+  "WorkSuitability_ProductMedicine",
+  "WorkSuitability_Cool",
+  "WorkSuitability_Transport",
+  "WorkSuitability_MonsterFarm",
+];
+if (!generatorSource.includes('/Game/Pal/DataTable/Character/DT_PalMonsterParameter')
+    || !palCatalogSource.includes('TEXT("GetDataTableRowNames")')
+    || !palCatalogSource.includes('TEXT("IsPal")')
+    || !palCatalogSource.includes('TEXT("IsTowerBoss")')
+    || !palCatalogSource.includes('TEXT("IsRaidBoss")')
+    || !palCatalogSource.includes('CatalogIdAlreadyAdded')
+    || !palCatalogSource.includes('ExistingCatalogIdsForDuplicate')
+    || !palCatalogSource.includes('TEXT("GetLocalizedCharacterName")')
+    || !palCatalogSource.includes('TEXT("GetPalElementTypeName")')
+    || !palCatalogSource.includes('TEXT("GetWorkSuitabilityName")')
+    || !palCatalogSource.includes('ElementToggles.Num() != 9')
+    || !palCatalogSource.includes('WorkToggles.Num() != GetPalWorkDefinitions().Num()')
+    || expectedPalWorkFields.some((field) => !generatorSource.includes(`TEXT("${field}")`))
+    || /^\s*\{TEXT\("OilExtraction"\)/m.test(generatorSource)
+    || !palCatalogSource.includes('ElementQueryAccepted')
+    || !palCatalogSource.includes('WorkQueryAccepted')
+    || !palCatalogSource.includes('TEXT("GetDropItemData")')
+    || !palCatalogSource.includes('TEXT("GetItemName")')
+    || !palCatalogSource.includes('PalCatalogSuppressEventsVariableName')
+    || !generatorSource.includes('TEXT("GetCharacterIconTexture")')
+    || !generatorSource.includes('PalEntryInitializingVariableName')
+    || ["SheepBall", "Kitsunebi", "Anubis"].some((id) => palCatalogSource.includes(`TEXT("${id}")`))) {
+  throw new Error("Runtime Pal catalog, match-all query, details, or snapshot-free contract is incomplete");
+}
+if (!palCatalogSource.includes('TEXT("Array_Insert")')
+    || !palCatalogSource.includes("InsertZukanIndex")
+    || !palCatalogSource.includes("InsertCatalogId")
+    || !palCatalogSource.includes("NewSortKeyLessThanExisting")
+    || !palCatalogSource.includes("PalCatalogSortModeVariableName")
+    || !palCatalogSource.includes("PalCatalogSortDescendingVariableName")
+    || !palCatalogSource.includes("PalCatalogSortKeysVariableName")
+    || !palCatalogSource.includes('Link(BreakCatalogRow, TEXT("RunSpeed"), SelectRunSpeed, TEXT("A"))')
+    || !palCatalogSource.includes('Link(BreakCatalogRow, TEXT("ZukanIndex"), SelectRunSpeed, TEXT("B"))')
+    || !palCatalogSource.includes('SortModeIsWork')
+    || !palCatalogSource.includes('SelectWork')
+    || !palCatalogSource.includes('FString::FromInt(Index + 2)')
+    || !palCatalogSource.includes('FinalSortKey')
+    || !palCatalogSource.includes("NameWithVariant")
+    || !palCatalogSource.includes('TEXT(" [ID: ")')
+    || !palCatalogSource.includes('TEXT("B"), TEXT(" "))')
+    || !palCatalogSource.includes('Index + 1 < WorkDefinitions.Num() ? TEXT(" | ") : TEXT("")')
+    || !palCatalogSource.includes("NameContainsSearch")
+    || !palCatalogSource.includes("NumberContainsSearch")
+    || !palCatalogSource.includes('TEXT("GetFormatedFirstActivatedInfoTextFixedRank")')
+    || !palCatalogSource.includes('TEXT("outFormatedText")')
+    || !palCatalogSource.includes('SetPinDefault(GetPartnerDescription, TEXT("Rank"), TEXT("1"))')
+    || palCatalogSource.includes('TEXT("PartnerSkillAppendText")')
+    || palCatalogSource.includes('TEXT("PalLongDescription")')
+    || !palCatalogSource.includes("PalCatalogSelectedNamesVariableName")
+    || !generatorSource.includes('TEXT("已选中：无")')
+    || !generatorSource.includes("PanelV2Style::Accent, 3.0f")) {
+  throw new Error("Pal catalog ordering, search, selected-state, summary, or partner-effect contract is incomplete");
+}
+const panelV2Start = generatorSource.indexOf("bool BuildPanel(\n");
+const panelV2End = generatorSource.indexOf("bool BuildModActor(", panelV2Start);
+const panelV2Source = generatorSource.slice(panelV2Start, panelV2End);
+if (panelV2Start < 0 || panelV2End < 0
+    || !panelV2Source.includes("FilterSubSwitcher->AddChild(FilterPage)")
+    || !panelV2Source.includes("FilterSubSwitcher->AddChild(PalPage)")
+    || !panelV2Source.includes("FilterRoot->AddChild(FilterActions)")
+    || !panelV2Source.includes('AddPanelButtonV2(Blueprint, FilterActions, TEXT("ESP_ClearAllFiltersButton")')
+    || panelV2Source.includes("\n    Switcher->AddChild(PalPage)")
+    || !panelV2Source.includes('TEXT("ESP_FilterPalTabButton")')
+    || !panelV2Source.includes('{TEXT("ESP_EnglishText"), TEXT("英文"), TEXT("English")}')) {
+  throw new Error("Pal species filtering is not nested under Filters or default localization is mixed");
+}
+if (!generatorSource.includes('TEXT("DisableInput")')
+    || !generatorSource.includes('TEXT("EnableInput")')
+    || !generatorSource.includes('TEXT("SetDisableInputFlag")')
+    || !generatorSource.includes('TEXT("PalworldResourceESP_Panel")')
+    || !generatorSource.includes('BuildHandledKeyOverride(Blueprint, TEXT("OnKeyDown"))')
+    || !generatorSource.includes('BuildHandledKeyOverride(Blueprint, TEXT("OnKeyUp"))')
+    || !generatorSource.includes('UWidgetBlueprintLibrary::StaticClass(), TEXT("Handled")')
+    || !generatorSource.includes("bRefreshCatalogs")
+    || !generatorSource.includes("RefreshPalCatalog")) {
+  throw new Error("Panel input isolation or language-triggered catalog refresh contract is incomplete");
+}
 if (!generatorSource.includes('URichTextBlock')
     || !generatorSource.includes('DT_ESPRichTextStyle')
     || !generatorSource.includes('WBP_ESPPassiveTooltip')
     || !generatorSource.includes('PassiveTooltipInitializeEventName')
     || !generatorSource.includes('TEXT("NumRed_13")')
     || !generatorSource.includes('TEXT("NumBlue_13")')
-    || !generatorSource.includes('TEXT("SetToolTip")')
-    || generatorSource.includes('TEXT("SetToolTipText")')) {
+    || !passiveEntrySource.includes('TEXT("SetToolTip")')
+    || passiveEntrySource.includes('TEXT("SetToolTipText")')) {
   throw new Error("Passive tooltips do not use the project-owned rich-text rendering contract");
+}
+const expectedGameRichTextDecorators = [
+  "BP_PalRichTextIconDecorator",
+  "BP_PalRichTextDecorator_ItemName",
+  "BP_PalRichTextDecorator_CharacterName",
+  "BP_PalRichTextDecorator_MapObject",
+  "BP_PalRichTextDecorator_ActiveSkillName",
+  "BP_PalRichTextDecorator_UICommon",
+];
+if (!passiveTooltipSource.includes('TEXT("SetDecorators")')
+    || !passiveTooltipSource.includes('TEXT("LoadClassAsset_Blocking")')
+    || !passiveTooltipSource.includes('AddPureClassDynamicCast')
+    || expectedGameRichTextDecorators.some((name) => !passiveTooltipSource.includes(name))
+    || !palEntrySource.includes('TEXT("SetToolTip")')
+    || !palEntrySource.includes('PassiveTooltipInitializeEventName')
+    || palEntrySource.includes('TEXT("SetToolTipText")')) {
+  throw new Error("Pal partner-effect tooltips do not use the current game's rich-text decorators");
+}
+if (!passiveTooltipSource.includes('TEXT("Conv_TextToString")')
+    || !passiveTooltipSource.includes('NormalizeStyleAttributePair')
+    || !passiveTooltipSource.includes('SetPinDefault(NormalizeStyleAttributePair, TEXT("From"), TEXT("| style=|"))')
+    || !passiveTooltipSource.includes('SetPinDefault(NormalizeAttributeOpen, TEXT("From"), TEXT("=|"))')
+    || !passiveTooltipSource.includes('SetPinDefault(NormalizeSelfClosingAttribute, TEXT("From"), TEXT("|/>"))')
+    || !passiveTooltipSource.includes('TEXT("Conv_StringToText")')
+    || passiveTooltipSource.includes('Link(Initialize, TEXT("Description"), SetText, TEXT("InText"))')) {
+  throw new Error("Pal pipe-delimited rich-text attributes are not normalized before Unreal parses the tooltip");
+}
+const normalizePalRichTextFixture = (value) => value
+  .replaceAll('| style=|', '" style="')
+  .replaceAll('=|', '="')
+  .replaceAll('|/>', '"/>');
+const palRichTextFixture = 'HP 70 | ATK 70\n<itemName id=|Wool| style=|Status_Keyword|/>';
+const normalizedPalRichTextFixture = normalizePalRichTextFixture(palRichTextFixture);
+if (!normalizedPalRichTextFixture.startsWith('HP 70 | ATK 70\n')
+    || !normalizedPalRichTextFixture.endsWith('<itemName id="Wool" style="Status_Keyword"/>')) {
+  throw new Error("Pal rich-text normalization corrupts visible pipe separators or misses audited attributes");
+}
+const gameRichTextStylePath = "/Game/Pal/DataTable/Text/RchTextData/DT_PalRichTextStyle.DT_PalRichTextStyle";
+const styleLoadIndex = passiveTooltipSource.indexOf('TEXT("LoadAsset_Blocking")');
+const setStyleIndex = passiveTooltipSource.indexOf('TEXT("SetTextStyleSet")');
+const setDecoratorsIndex = passiveTooltipSource.indexOf('TEXT("SetDecorators")');
+if (!generatorSource.includes(gameRichTextStylePath)
+    || !passiveTooltipSource.includes('TEXT("SelectObject")')
+    || !passiveTooltipSource.includes('FallbackStylePin->DefaultObject = RichTextStyle')
+    || styleLoadIndex < 0
+    || setStyleIndex <= styleLoadIndex
+    || setDecoratorsIndex <= setStyleIndex) {
+  throw new Error("Partner tooltips do not prefer the running game's full rich-text style table before decorators");
+}
+if (!generatorSource.includes('constexpr bool EnablePartnerRichTextAudit = false')
+    || !generatorSource.includes('RichTextAuditBufferVariableName(TEXT("ESP_RichTextAuditBuffer"))')
+    || !generatorSource.includes('EnsureMemberVariable(Blueprint, RichTextAuditBufferVariableName, StringPin())')
+    || !palEntrySource.includes('AuditBufferGet = AddExternalVariableGet')
+    || !palEntrySource.includes('AuditBufferSet = AddExternalVariableSet')
+    || !palEntrySource.includes('TEXT("PrintString")')
+    || !palEntrySource.includes('TEXT("bPrintToScreen"), TEXT("false")')
+    || !palEntrySource.includes('TEXT("bPrintToLog"), TEXT("true")')
+    || !mainSource.includes('read_panel_string("ESP_RichTextAuditBuffer")')
+    || !mainSource.includes('log_event("RICH_TEXT_AUDIT", line)')
+    || !mainSource.includes('-- drain_rich_text_audit()')) {
+  throw new Error("Completed partner rich-text audit is not disabled with its reversible diagnostic path retained");
+}
+const richTextScopedBuildSource = generatorSource.slice(
+  generatorSource.indexOf('bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPRichTextAssets()'),
+  generatorSource.indexOf('#if 0', generatorSource.indexOf('bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPRichTextAssets()')),
+);
+if (!richTextScopedBuildSource.includes('BuildPassiveTooltip(PassiveTooltip)')
+    || !richTextScopedBuildSource.includes('TArray<UPackage*> Packages{PassiveTooltip->GetOutermost()}')
+    || !richTextScopedBuildSource.includes('TEXT("[ESP_AUTOMATION] rich-text tooltip-only build saved=%s packages=%d")')
+    || richTextScopedBuildSource.includes('PrepareModActorControls')
+    || richTextScopedBuildSource.includes('BuildPalEntry(')) {
+  throw new Error("Rich-text scoped generation is not isolated from startup-path assets");
 }
 const passiveDescriptionFallbackIds = [
   "Deffence_down2",
@@ -333,7 +526,13 @@ PalworldResourceESPSettingsIO = {
 }
 
 local classes = {}
+local static_objects = {}
+local static_actor_find_count = 0
 StaticFindObject = function(path)
+    if static_objects[path] ~= nil then
+        static_actor_find_count = static_actor_find_count + 1
+        return static_objects[path]
+    end
     classes[path] = classes[path] or { path = path }
     return classes[path]
 end
@@ -347,7 +546,11 @@ local monster_notification = nil
 NotifyOnNewObject = function(_, callback)
     monster_notification = callback
 end
-RegisterHook = function() return 1, 2 end
+local registered_hooks = {}
+RegisterHook = function(path, callback)
+    registered_hooks[path] = callback
+    return 1, 2
+end
 local panel_keybind = nil
 local panel_key = nil
 local panel_modifiers = nil
@@ -389,6 +592,10 @@ FindFirstOf = function()
 end
 
 local monsters = {}
+local pal_runtime_class = {}
+function pal_runtime_class:GetFullName()
+    return "Class /Script/Pal.PalMonsterCharacter"
+end
 for index = 1, 4 do
     local component = { Trainer = nil, NPCSpawnedOtomoTrainer = nil }
     function component:IsDead()
@@ -406,6 +613,12 @@ for index = 1, 4 do
     end
 
     local actor = {}
+    function actor:GetFullName()
+        return "PalMonsterCharacter /Game/Test.PersistentLevel.Pal_" .. tostring(index)
+    end
+    function actor:GetClass()
+        return pal_runtime_class
+    end
     function actor:IsA(class_object)
         return class_object.path == "/Script/Pal.PalMonsterCharacter"
     end
@@ -435,6 +648,12 @@ function event_parameter:GetLevel()
     return 5
 end
 local event_actor = {}
+function event_actor:GetFullName()
+    return "PalMonsterCharacter /Game/Test.PersistentLevel.EventPal_1"
+end
+function event_actor:GetClass()
+    return pal_runtime_class
+end
 function event_actor:IsA(class_object)
     return class_object.path == "/Script/Pal.PalMonsterCharacter"
 end
@@ -447,6 +666,56 @@ end
 function event_actor:K2_GetActorLocation()
     return { X = 500, Y = 0, Z = 0 }
 end
+
+local delayed_event_ready = false
+local delayed_event_actor = {}
+function delayed_event_actor:GetFullName()
+    return "PalMonsterCharacter /Game/Test.PersistentLevel.DelayedEventPal_1"
+end
+function delayed_event_actor:GetClass()
+    return pal_runtime_class
+end
+function delayed_event_actor:IsA(class_object)
+    return class_object.path == "/Script/Pal.PalMonsterCharacter"
+end
+function delayed_event_actor:GetCharacterParameterComponent()
+    return event_component
+end
+function delayed_event_actor:GetIndividualParameter()
+    if delayed_event_ready then
+        return event_parameter
+    end
+    return nil
+end
+function delayed_event_actor:K2_GetActorLocation()
+    return { X = 600, Y = 0, Z = 0 }
+end
+static_objects["/Game/Test.PersistentLevel.DelayedEventPal_1"] = delayed_event_actor
+
+local cancelled_event_ready = false
+local cancelled_event_actor = {}
+function cancelled_event_actor:GetFullName()
+    return "PalMonsterCharacter /Game/Test.PersistentLevel.CancelledEventPal_1"
+end
+function cancelled_event_actor:GetClass()
+    return pal_runtime_class
+end
+function cancelled_event_actor:IsA(class_object)
+    return class_object.path == "/Script/Pal.PalMonsterCharacter"
+end
+function cancelled_event_actor:GetCharacterParameterComponent()
+    return event_component
+end
+function cancelled_event_actor:GetIndividualParameter()
+    if cancelled_event_ready then
+        return event_parameter
+    end
+    return nil
+end
+function cancelled_event_actor:K2_GetActorLocation()
+    return { X = 700, Y = 0, Z = 0 }
+end
+static_objects["/Game/Test.PersistentLevel.CancelledEventPal_1"] = cancelled_event_actor
 
 local bridge_class = {}
 function bridge_class:GetFullName()
@@ -490,6 +759,7 @@ local bridge_actor = {
     ESP_LuckyFilterId = 0,
     ESP_BossFilterId = 0,
     ESP_CollectionFilterId = 0,
+    ESP_SpeciesFilterText = "",
     ESP_ElementNormal = false,
     ESP_ElementFire = false,
     ESP_ElementWater = false,
@@ -505,6 +775,7 @@ local bridge_actor = {
 }
 local bridge_target_payloads = {}
 local bridge_style_payloads = {}
+local bridge_removed_targets = {}
 function bridge_actor:GetClass()
     return bridge_class
 end
@@ -518,12 +789,18 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
     }
 end
 function bridge_actor:PalworldResourceESP_ClearTarget() end
+function bridge_actor:PalworldResourceESP_RemoveTarget(actor, session_index)
+    bridge_removed_targets[#bridge_removed_targets + 1] = {
+        actor = actor,
+        session_index = session_index,
+    }
+end
 local persisted_panel_restore_count = 0
 function bridge_actor:PalworldResourceESP_ApplyPersistedPanelState()
     persisted_panel_restore_count = persisted_panel_restore_count + 1
     self.ESP_PassiveFilterRevision = self.ESP_PassiveFilterRevision + 1
 end
-function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, show_iv, show_passives, iv_min, iv_hp_min, iv_attack_min, iv_defense_min, passive_filter_revision, gender_filter_id, lucky_filter_id, boss_filter_id, collection_filter_id, element_filter_mask)
+function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, show_level, show_distance, show_iv, show_passives, iv_min, iv_hp_min, iv_attack_min, iv_defense_min, passive_filter_revision, gender_filter_id, lucky_filter_id, boss_filter_id, collection_filter_id, species_filter_text, element_filter_mask, language_id)
     bridge_style_payloads[#bridge_style_payloads + 1] = {
         show_top = show_top,
         show_name = show_name,
@@ -540,7 +817,9 @@ function bridge_actor:PalworldResourceESP_SetDisplayStyle(show_top, show_name, s
         lucky_filter_id = lucky_filter_id,
         boss_filter_id = boss_filter_id,
         collection_filter_id = collection_filter_id,
+        species_filter_text = species_filter_text,
         element_filter_mask = element_filter_mask,
+        language_id = language_id,
     }
 end
 function bridge_actor:PalworldResourceESP_TogglePanel()
@@ -548,11 +827,13 @@ function bridge_actor:PalworldResourceESP_TogglePanel()
 end
 
 local request_toggle_during_monster_scan = false
+local monster_find_all_count = 0
 FindAllOf = function(class_name)
     if class_name == "PalPlayerCharacter" then
         return { player }
     end
     if class_name == "PalMonsterCharacter" then
+        monster_find_all_count = monster_find_all_count + 1
         if request_toggle_during_monster_scan then
             request_toggle_during_monster_scan = false
             panel_keybind()
@@ -574,8 +855,11 @@ assert(runtime_settings_open_path == [[${normalize(path.join(runtimeRoot, "user-
     "runtime did not resolve user settings beside config.lua")
 
 assert(type(reconcile_loop) == "function", "reconcile loop was not captured")
+local startup_callbacks = delayed_callbacks
 delayed_callbacks = {}
-reconcile_loop()
+for _, callback in ipairs(startup_callbacks) do
+    callback()
+end
 assert(#delayed_callbacks == 0, "safe reconcile retained actors in delayed callbacks")
 
 local found_safe_result = false
@@ -609,13 +893,20 @@ assert(#delayed_callbacks == 0, "second panel toggle scheduled a competing delay
 reconcile_loop()
 assert(panel_toggle_count == 2, "second Shift+Y did not call the panel toggle bridge")
 
-fake_time = fake_time + 6
+reconcile_loop()
+local scans_after_bootstrap = monster_find_all_count
+for _ = 1, 3 do
+    fake_time = fake_time + 6
+    reconcile_loop()
+end
+assert(monster_find_all_count == scans_after_bootstrap,
+    "event-driven steady state performed a periodic FindAllOf scan")
+panel_keybind()
+reconcile_loop()
+assert(panel_toggle_count == 3, "event-driven runtime tick did not consume the third panel toggle")
+--[[ __DEPRECATED_20260720__ Periodic reconciliation no longer exists, so a key request cannot race its scan.
 request_toggle_during_monster_scan = true
-reconcile_loop()
-assert(panel_toggle_count == 2, "panel toggle dispatched inside synchronous reconciliation")
-assert(#delayed_callbacks == 0, "reconciliation-time toggle scheduled a delayed callback")
-reconcile_loop()
-assert(panel_toggle_count == 3, "reconciliation-time toggle was not consumed by the next runtime tick")
+]]
 
 local toggle_requested_found = false
 local toggle_completed_found = false
@@ -644,10 +935,73 @@ bridge_actor.ESP_ProfileId = 3
 bridge_actor.ESP_ControlRevision = 4
 reconcile_loop()
 assert(#delayed_callbacks == 0, "profile entry retained actors in delayed callbacks")
-monsters[#monsters + 1] = event_actor
+bridge_actor.ESP_DisplayTargetLimit = 5
+bridge_actor.ESP_ControlRevision = 5
+reconcile_loop()
+local scans_before_notification = monster_find_all_count
 monster_notification(event_actor)
 assert(#delayed_callbacks == 0, "event-first notification retained a UObject wrapper")
 reconcile_loop()
+assert(monster_find_all_count == scans_before_notification,
+    "construction notification requested a full snapshot")
+local payload_count_before_begin_play = #bridge_target_payloads
+bridge_begin_play_hook(event_actor)
+assert(#bridge_target_payloads == payload_count_before_begin_play + 1,
+    "BeginPlay did not append exactly one event target")
+
+local capture_hook = registered_hooks["/Script/Pal.PalUtility:PalCaptureSuccess"]
+local dead_hook = registered_hooks["/Script/Pal.PalCharacter:OnDeadCharacter"]
+local end_play_hook = registered_hooks["/Script/Engine.Actor:ReceiveEndPlay"]
+assert(type(capture_hook) == "function" and type(dead_hook) == "function" and type(end_play_hook) == "function",
+    "target lifecycle hooks were not registered")
+
+local payload_count_before_delayed = #bridge_target_payloads
+local scans_before_delayed = monster_find_all_count
+bridge_begin_play_hook(delayed_event_actor)
+assert(#bridge_target_payloads == payload_count_before_delayed,
+    "not-ready BeginPlay target was admitted before its parameter existed")
+assert(#delayed_callbacks == 1,
+    "not-ready BeginPlay target did not schedule one path-based retry")
+delayed_event_ready = true
+local readiness_callbacks = delayed_callbacks
+delayed_callbacks = {}
+for _, callback in ipairs(readiness_callbacks) do
+    callback()
+end
+assert(#bridge_target_payloads == payload_count_before_delayed + 1,
+    "path-based readiness retry did not append the initialized target")
+assert(static_actor_find_count == 1,
+    "readiness retry did not resolve the target exactly once by object path")
+assert(monster_find_all_count == scans_before_delayed,
+    "readiness retry performed a global FindAllOf scan")
+assert(#bridge_removed_targets == 1,
+    "full event window did not evict exactly one older target")
+
+local payload_count_before_cancel = #bridge_target_payloads
+bridge_begin_play_hook(cancelled_event_actor)
+assert(#delayed_callbacks == 1,
+    "second not-ready target did not schedule a readiness retry")
+dead_hook(cancelled_event_actor)
+cancelled_event_ready = true
+local cancelled_callbacks = delayed_callbacks
+delayed_callbacks = {}
+for _, callback in ipairs(cancelled_callbacks) do
+    callback()
+end
+assert(#bridge_target_payloads == payload_count_before_cancel,
+    "death did not cancel a pending readiness retry")
+
+local lifecycle_removals_before = #bridge_removed_targets
+capture_hook(nil, nil, event_actor)
+assert(#bridge_removed_targets == lifecycle_removals_before + 1, "capture did not remove the event target")
+bridge_begin_play_hook(event_actor)
+dead_hook(event_actor)
+assert(#bridge_removed_targets == lifecycle_removals_before + 2, "death did not remove the event target")
+bridge_begin_play_hook(event_actor)
+end_play_hook(event_actor)
+assert(#bridge_removed_targets == lifecycle_removals_before + 3, "EndPlay did not remove the event target")
+bridge_begin_play_hook(event_actor)
+monsters[#monsters + 1] = event_actor
 
 local capture_start_found = false
 local capture_mode_found = false
@@ -657,11 +1011,11 @@ for _, message in ipairs(runtime_logs) do
     capture_start_found = capture_start_found or message:match("PERF_SESSION_START") ~= nil
     capture_mode_found = capture_mode_found or message:match("PERF_MODE_CHANGED.*profile=off") ~= nil
     capture_stop_found = capture_stop_found or message:match("PERF_SESSION_STOP") ~= nil
-    event_admission_found = event_admission_found or message:match("ENTITY_SNAPSHOT.*source=notify_integrity.*admitted=5") ~= nil
+    event_admission_found = event_admission_found or message:match("EVENT_TARGET_ADDED.*source=begin_play") ~= nil
 end
 assert(capture_start_found and capture_mode_found and capture_stop_found, "capture markers were incomplete")
-assert(event_admission_found, "event-first safe snapshot did not admit the new actor")
-print("Panel controls and event-first safe snapshot passed")
+assert(event_admission_found, "event-driven BeginPlay did not admit the new actor")
+print("Panel controls and event-driven lifecycle passed")
 
 bridge_actor.ESP_RuntimeEnabled = true
 bridge_actor.ESP_ProfileId = 3
@@ -813,9 +1167,12 @@ reconcile_loop()
 bridge_actor.ESP_CollectionFilterId = 99
 bridge_actor.ESP_ControlRevision = 64
 reconcile_loop()
+bridge_actor.ESP_SpeciesFilterText = "|SheepBall|Kitsunebi|"
+bridge_actor.ESP_ControlRevision = 65
+reconcile_loop()
 bridge_actor.ESP_ElementFire = true
 bridge_actor.ESP_ElementWater = true
-bridge_actor.ESP_ControlRevision = 65
+bridge_actor.ESP_ControlRevision = 66
 reconcile_loop()
 local top_guide_hidden_found = false
 local top_guide_shown_found = false
@@ -838,6 +1195,7 @@ local boss_clamped_found = false
 local collection_incomplete_found = false
 local collection_complete_found = false
 local collection_clamped_found = false
+local species_filter_found = false
 local element_mask_found = false
 for _, message in ipairs(runtime_logs) do
     top_guide_hidden_found = top_guide_hidden_found or message:match("DISPLAY_STYLE.*top_guide_line=false") ~= nil
@@ -870,6 +1228,8 @@ for _, message in ipairs(runtime_logs) do
         or message:match("DISPLAY_STYLE.*collection_filter=complete") ~= nil
     collection_clamped_found = collection_clamped_found
         or message:match("DISPLAY_STYLE.*collection_filter=complete") ~= nil
+    species_filter_found = species_filter_found
+        or message:match("DISPLAY_STYLE.*species_filter_count=2") ~= nil
     element_mask_found = element_mask_found or message:match("DISPLAY_STYLE.*element_filter_mask=6") ~= nil
 end
 assert(top_guide_hidden_found and top_guide_shown_found, "panel top-guide style did not round-trip")
@@ -886,13 +1246,16 @@ assert(boss_only_found and boss_excluded_found, "panel Boss filters did not roun
 assert(boss_clamped_found, "invalid Boss filter was not clamped")
 assert(collection_incomplete_found and collection_complete_found, "panel collection filters did not round-trip")
 assert(collection_clamped_found, "invalid collection filter was not clamped")
+assert(species_filter_found, "species filter mirror did not reach the display-style bridge")
 assert(element_mask_found, "panel element toggles did not produce the Fire-or-Water mask")
 assert(#bridge_style_payloads >= 4, "display styles were not sent through the actor-free bridge event")
 assert(bridge_style_payloads[#bridge_style_payloads].gender_filter_id == 2, "gender filter clamp did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].lucky_filter_id == 2, "Lucky filter clamp did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].boss_filter_id == 2, "Boss filter clamp did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].collection_filter_id == 2, "collection filter clamp did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].species_filter_text == "|SheepBall|Kitsunebi|", "species filter mirror did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].element_filter_mask == 6, "element mask did not reach the bridge")
+assert(bridge_style_payloads[#bridge_style_payloads].language_id == 0, "Chinese language id did not reach the bridge")
 assert(bridge_actor.ESP_ElementFilterMask == 6, "element mask was not synchronized to the passive bridge actor")
 assert(bridge_style_payloads[#bridge_style_payloads].show_name == true, "name style did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].show_iv == true, "IV style did not reach the bridge")
@@ -901,6 +1264,14 @@ assert(bridge_style_payloads[#bridge_style_payloads].iv_hp_min == 75, "HP IV min
 assert(bridge_style_payloads[#bridge_style_payloads].iv_attack_min == 76, "attack IV minimum did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].iv_defense_min == 77, "defense IV minimum did not reach the bridge")
 assert(bridge_style_payloads[#bridge_style_payloads].passive_filter_revision == 1, "passive filter revision did not reach the bridge")
+bridge_actor.ESP_LanguageId = 1
+bridge_actor.ESP_ControlRevision = 67
+reconcile_loop()
+assert(bridge_style_payloads[#bridge_style_payloads].language_id == 1, "English language id did not reach the bridge")
+bridge_actor.ESP_LanguageId = 0
+bridge_actor.ESP_ControlRevision = 68
+reconcile_loop()
+assert(bridge_style_payloads[#bridge_style_payloads].language_id == 0, "Chinese language id was not restored through the bridge")
 print("Panel display styles passed")
 
 assert(type(load_map_pre_hook) == "function", "load-map pre-hook was not captured")
@@ -917,11 +1288,12 @@ for _, message in ipairs(runtime_logs) do
 end
 reconcile_loop()
 assert(#runtime_settings_writes == 1, "stable settings changes were not coalesced into one append")
-assert(runtime_settings_writes[1]:match("^v10 "), "saved settings did not use the current versioned format")
+assert(runtime_settings_writes[1]:match("^v12 "), "saved settings did not use the current versioned format")
 assert(runtime_settings_writes[1]:match("show_name=true"), "saved settings omitted the name toggle")
 assert(runtime_settings_writes[1]:match("lucky=2"), "saved settings omitted the Lucky filter")
 assert(runtime_settings_writes[1]:match("boss=2"), "saved settings omitted the Boss filter")
 assert(runtime_settings_writes[1]:match("collection=2"), "saved settings omitted the collection filter")
+assert(runtime_settings_writes[1]:match("species_filters=|SheepBall|Kitsunebi|"), "saved settings omitted selected species")
 assert(runtime_settings_writes[1]:match("element_fire=true"), "saved settings omitted the Fire element")
 assert(runtime_settings_writes[1]:match("element_water=true"), "saved settings omitted the Water element")
 assert(runtime_settings_writes[1]:match("element_dragon=false"), "saved settings omitted an unselected element")
@@ -948,6 +1320,7 @@ bridge_actor.ESP_PassiveExcludeText = ""
 bridge_actor.ESP_PassiveLegendExpanded = false
 bridge_actor.ESP_PassiveNegative1Expanded = false
 bridge_actor.ESP_CollectionFilterId = 0
+bridge_actor.ESP_SpeciesFilterText = ""
 bridge_actor.ESP_ControlRevision = 0
 bridge_begin_play_hook(bridge_actor)
 assert(bridge_actor.ESP_ProfileId == 2, "save transition restored the startup profile instead of the latest profile")
@@ -962,16 +1335,20 @@ assert(bridge_actor.ESP_PassiveExcludeText == "|PAL_Coward|", "save transition d
 assert(bridge_actor.ESP_PassiveLegendExpanded == true, "save transition did not restore Legend expansion")
 assert(bridge_actor.ESP_PassiveNegative1Expanded == true, "save transition did not restore negative-I expansion")
 assert(bridge_actor.ESP_CollectionFilterId == 2, "save transition did not restore the collection filter")
+assert(bridge_actor.ESP_SpeciesFilterText == "|SheepBall|Kitsunebi|", "save transition did not restore selected species")
 assert(persisted_panel_restore_count == persisted_panel_restore_count_before_transition + 1, "save transition did not rebuild passive panel state")
 print("Latest in-memory settings survive save transitions")
-assert(#delayed_callbacks == 0, "periodic reconcile retained actors in delayed callbacks")
+assert(#delayed_callbacks == 0, "event-driven teardown retained actors in delayed callbacks")
 local scan_done_count_after = 0
 for _, message in ipairs(runtime_logs) do
     if message:match("SCAN_DONE") then
         scan_done_count_after = scan_done_count_after + 1
     end
 end
-assert(scan_done_count_after == scan_done_count_before + 1, "periodic safe reconcile did not complete inline")
+assert(scan_done_count_after == scan_done_count_before,
+    "event-driven steady state scanned during save transition")
+-- __DEPRECATED_20260720__ assert(scan_done_count_after == scan_done_count_before + 1,
+--     "periodic safe reconcile did not complete inline")
 assert(#delayed_callbacks == 0, "map teardown left a stale actor callback")
 print("Wrapper-safe map teardown passed")
 `;

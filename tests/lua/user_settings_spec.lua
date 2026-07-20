@@ -25,6 +25,9 @@ local function complete(overrides)
         lucky = 0,
         boss = 0,
         collection = 0,
+        species_filters = "",
+        panel_main_page = 0,
+        panel_filter_page = 0,
         element_normal = false,
         element_fire = false,
         element_water = false,
@@ -52,14 +55,23 @@ local function complete(overrides)
 end
 
 local function legacy_snapshot(values, version)
-    local snapshot = user_settings.serialize(values):gsub("^v10 ", version .. " ")
-        :gsub(" collection=%-?%d+", "")
-    if version ~= "v9" then
+    local snapshot = user_settings.serialize(values):gsub("^v12 ", version .. " ")
+    if version ~= "v11" and version ~= "v12" then
+        snapshot = snapshot:gsub(" species_filters=[^ ]+", "")
+    end
+    if version ~= "v12" then
+        snapshot = snapshot:gsub(" panel_main_page=[^ ]+", "")
+            :gsub(" panel_filter_page=[^ ]+", "")
+    end
+    if version ~= "v10" and version ~= "v11" and version ~= "v12" then
+        snapshot = snapshot:gsub(" collection=%-?%d+", "")
+    end
+    if version ~= "v9" and version ~= "v10" and version ~= "v11" and version ~= "v12" then
         snapshot = snapshot:gsub(" passive_includes=[^ ]+", "")
             :gsub(" passive_excludes=[^ ]+", "")
             :gsub(" expand_[%a%d_]+=[^ ]+", "")
     end
-    if version ~= "v8" and version ~= "v9" then
+    if version ~= "v8" and version ~= "v9" and version ~= "v10" and version ~= "v11" and version ~= "v12" then
         snapshot = snapshot:gsub(" iv_hp_min=%-?%d+", "")
             :gsub(" iv_attack_min=%-?%d+", "")
             :gsub(" iv_defense_min=%-?%d+", "")
@@ -96,6 +108,7 @@ return {
             lucky = 1,
             boss = 2,
             collection = 2,
+            species_filters = "|SheepBall|Kitsunebi|",
             element_fire = true,
             element_water = true,
             show_iv = true,
@@ -117,6 +130,7 @@ return {
         helper.equal(parsed.lucky, 1)
         helper.equal(parsed.boss, 2)
         helper.equal(parsed.collection, 2)
+        helper.equal(parsed.species_filters, "|SheepBall|Kitsunebi|")
         helper.equal(parsed.element_fire, true)
         helper.equal(parsed.element_water, true)
         helper.equal(parsed.element_normal, false)
@@ -129,6 +143,18 @@ return {
         helper.equal(parsed.passive_excludes, "|PAL_Coward|CraftSpeed_down1|")
         helper.equal(parsed.expand_legend, true)
         helper.equal(parsed.expand_negative1, true)
+    end),
+
+    helper.case("settings v10 snapshots default selected species to empty", function()
+        local v10 = legacy_snapshot(complete({
+            collection = 2,
+            species_filters = "|SheepBall|",
+        }), "v10")
+        local parsed, parse_error, version = user_settings.parse_line(v10)
+        helper.equal(parse_error, nil)
+        helper.equal(version, "v10")
+        helper.equal(parsed.collection, 2)
+        helper.equal(parsed.species_filters, "")
     end),
 
     helper.case("settings v9 snapshots default collection filter to all", function()
@@ -163,6 +189,16 @@ return {
         }))
         helper.equal(normalized.passive_includes, "|Legend|Rare|PAL_FastRunner|PAL_CraftSpeed1|")
         helper.equal(normalized.passive_excludes, "|PAL_Coward|CraftSpeed_down1|")
+    end),
+
+    helper.case("species ID normalization is delimiter-safe and unique", function()
+        local normalized = user_settings.normalize(complete({
+            species_filters = "|SheepBall|Kitsunebi|SheepBall|",
+        }))
+        helper.equal(normalized.species_filters, "|SheepBall|Kitsunebi|")
+        helper.equal(user_settings.normalize(complete({
+            species_filters = "|SheepBall|bad-id|",
+        })).species_filters, "")
     end),
 
     helper.case("settings v1 snapshots remain readable with Lucky defaulted to all", function()
@@ -272,6 +308,7 @@ return {
         helper.equal(user_settings.parse_line(serialized:gsub("show_name=true", "show_name=maybe")), nil)
         helper.equal(user_settings.parse_line(serialized:gsub("passive_includes=%-", "passive_includes=|Legend|bad-id|")), nil)
         helper.equal(user_settings.parse_line(serialized:gsub("passive_excludes=%-", "passive_excludes=Legend")), nil)
+        helper.equal(user_settings.parse_line(serialized:gsub("species_filters=%-", "species_filters=|bad-id|")), nil)
     end),
 
     helper.case("settings normalization clamps numeric bounds", function()
@@ -342,9 +379,10 @@ return {
             passive_excludes = "|PAL_Coward|",
             expand_legend = true,
             collection = 1,
+            species_filters = "|SheepBall|Kitsunebi|",
         }), backend)
         helper.truthy(ok)
-        helper.truthy(written:match("^v10 "))
+        helper.truthy(written:match("^v12 "))
         helper.truthy(written:match("show_name=false"))
         helper.truthy(written:match("lucky=0"))
         helper.truthy(written:match("boss=0"))
@@ -360,6 +398,7 @@ return {
         helper.truthy(written:match("expand_legend=true"))
         helper.truthy(written:match("expand_rainbow=false"))
         helper.truthy(written:match("collection=1"))
+        helper.truthy(written:match("species_filters=|SheepBall|Kitsunebi|"))
         helper.truthy(written:match("\n$"))
     end),
 

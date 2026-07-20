@@ -23,17 +23,20 @@ local profile_names = {
 local presets = {
     [runtime_profiles.PRESET.LOW] = {
         name = "low",
-        reconcile_interval_ms = 30000,
+        -- __DEPRECATED_20260720__ [reason: presets control display budget only; steady-state discovery is event-driven]
+        -- reconcile_interval_ms = 30000,
         max_display_targets = 32,
     },
     [runtime_profiles.PRESET.BALANCED] = {
         name = "balanced",
-        reconcile_interval_ms = 15000,
+        -- __DEPRECATED_20260720__ [reason: presets control display budget only; steady-state discovery is event-driven]
+        -- reconcile_interval_ms = 15000,
         max_display_targets = 64,
     },
     [runtime_profiles.PRESET.QUALITY] = {
         name = "quality",
-        reconcile_interval_ms = 5000,
+        -- __DEPRECATED_20260720__ [reason: presets control display budget only; steady-state discovery is event-driven]
+        -- reconcile_interval_ms = 5000,
         max_display_targets = 128,
     },
 }
@@ -73,17 +76,15 @@ function runtime_profiles.resolve(profile_value, preset_value)
         preset_name = preset.name,
         runtime_enabled = profile_id ~= runtime_profiles.PROFILE.OFF,
         scan_on_enter = profile_id ~= runtime_profiles.PROFILE.OFF,
-        event_admission = profile_id == runtime_profiles.PROFILE.EVENT_FIRST,
+        event_admission = profile_id == runtime_profiles.PROFILE.CHUNKED_CURRENT
+            or profile_id == runtime_profiles.PROFILE.EVENT_FIRST,
         reconcile_interval_ms = 0,
         batch_size = 2,
         batch_delay_ms = 16,
         max_display_targets = preset.max_display_targets,
     }
 
-    if profile_id == runtime_profiles.PROFILE.CHUNKED_CURRENT then
-        profile.reconcile_interval_ms = 5000
-    elseif profile_id == runtime_profiles.PROFILE.EVENT_FIRST then
-        profile.reconcile_interval_ms = 30000
+    if profile_id == runtime_profiles.PROFILE.EVENT_FIRST then
         profile.batch_size = 1
     end
 

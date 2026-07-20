@@ -4,12 +4,15 @@ config.ENABLED = true
 config.DEBUG = true
 
 config.BOOTSTRAP_DELAY_MS = 3000
-config.RECONCILE_INTERVAL_MS = 5000
+-- __DEPRECATED_20260720__ [reason: active profiles no longer perform periodic reconciliation]
+-- config.RECONCILE_INTERVAL_MS = 5000
 config.RECONCILE_BATCH_SIZE = 2
 config.RECONCILE_BATCH_DELAY_MS = 16
 config.RUNTIME_TICK_INTERVAL_MS = 250
 config.PANEL_TOGGLE_DELAY_MS = 50
 config.EVENT_QUEUE_DELAY_MS = 16
+config.EVENT_READINESS_RETRY_DELAY_MS = 250
+config.MAX_EVENT_READINESS_ATTEMPTS = 8
 config.MAX_EVENT_QUEUE = 512
 config.METRIC_INTERVAL_SECONDS = 30
 

@@ -11,4 +11,7 @@ class ESPBLUEPRINTAUTOMATION_API UESPBlueprintAutomationLibrary : public UBluepr
 public:
     UFUNCTION(BlueprintCallable, Category="ESP Automation")
     static bool BuildPalworldResourceESPAssets();
+
+    UFUNCTION(BlueprintCallable, Category="ESP Automation")
+    static bool BuildPalworldResourceESPRichTextAssets();
 };

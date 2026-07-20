@@ -1,6 +1,6 @@
 local user_settings = {}
 
-local VERSION = "v10"
+local VERSION = "v12"
 
 local v1_fields = {
     { name = "runtime_enabled", kind = "boolean", default = true },
@@ -86,6 +86,19 @@ for _, field in ipairs(fields) do
 end
 fields[#fields + 1] = { name = "collection", kind = "integer", min = 0, max = 2, default = 0 }
 
+local v10_fields = {}
+for _, field in ipairs(fields) do
+    v10_fields[#v10_fields + 1] = field
+end
+fields[#fields + 1] = { name = "species_filters", kind = "passive_ids", max_count = 512, default = "" }
+
+local v11_fields = {}
+for _, field in ipairs(fields) do
+    v11_fields[#v11_fields + 1] = field
+end
+fields[#fields + 1] = { name = "panel_main_page", kind = "integer", min = 0, max = 1, default = 0 }
+fields[#fields + 1] = { name = "panel_filter_page", kind = "integer", min = 0, max = 1, default = 0 }
+
 local schemas = {
     v1 = v1_fields,
     v2 = v2_fields,
@@ -96,7 +109,9 @@ local schemas = {
     v7 = v7_fields,
     v8 = v8_fields,
     v9 = v9_fields,
-    v10 = fields,
+    v10 = v10_fields,
+    v11 = v11_fields,
+    v12 = fields,
 }
 
 local fields_by_version = {}
@@ -221,10 +236,10 @@ function user_settings.parse_line(line)
     if version == "v1" then
         normalized.lucky = 0
     end
-    if version ~= "v3" and version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" then
+    if version ~= "v3" and version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" and version ~= "v11" and version ~= "v12" then
         normalized.boss = 0
     end
-    if version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" then
+    if version ~= "v4" and version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" and version ~= "v11" and version ~= "v12" then
         normalized.element_normal = false
         normalized.element_fire = false
         normalized.element_water = false
@@ -235,21 +250,21 @@ function user_settings.parse_line(line)
         normalized.element_dark = false
         normalized.element_dragon = false
     end
-    if version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" then
+    if version ~= "v5" and version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" and version ~= "v11" and version ~= "v12" then
         normalized.show_iv = false
     end
-    if version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" then
+    if version ~= "v6" and version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" and version ~= "v11" and version ~= "v12" then
         normalized.iv_min = 0
     end
-    if version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" then
+    if version ~= "v7" and version ~= "v8" and version ~= "v9" and version ~= "v10" and version ~= "v11" and version ~= "v12" then
         normalized.show_passives = false
     end
-    if version ~= "v8" and version ~= "v9" and version ~= "v10" then
+    if version ~= "v8" and version ~= "v9" and version ~= "v10" and version ~= "v11" and version ~= "v12" then
         normalized.iv_hp_min = normalized.iv_min or 0
         normalized.iv_attack_min = normalized.iv_min or 0
         normalized.iv_defense_min = normalized.iv_min or 0
     end
-    if version ~= "v9" and version ~= "v10" then
+    if version ~= "v9" and version ~= "v10" and version ~= "v11" and version ~= "v12" then
         normalized.passive_includes = ""
         normalized.passive_excludes = ""
         normalized.expand_rainbow = false
@@ -261,8 +276,15 @@ function user_settings.parse_line(line)
         normalized.expand_negative2 = false
         normalized.expand_negative3 = false
     end
-    if version ~= "v10" then
+    if version ~= "v10" and version ~= "v11" and version ~= "v12" then
         normalized.collection = 0
+    end
+    if version ~= "v11" and version ~= "v12" then
+        normalized.species_filters = ""
+    end
+    if version ~= "v12" then
+        normalized.panel_main_page = 0
+        normalized.panel_filter_page = 0
     end
     return normalized, nil, version
 end

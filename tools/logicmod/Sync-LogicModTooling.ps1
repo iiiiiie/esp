@@ -24,6 +24,7 @@ $files = @(
     @{ Source = "ESPBlueprintAutomation\Source\ESPBlueprintAutomation\Public\ESPBlueprintAutomationLibrary.h"; Destination = "Plugins\ESPBlueprintAutomation\Source\ESPBlueprintAutomation\Public\ESPBlueprintAutomationLibrary.h" },
     @{ Source = "automation\create_base_assets.py"; Destination = "Automation\create_base_assets.py" },
     @{ Source = "automation\build_esp_assets.py"; Destination = "Automation\build_esp_assets.py" },
+    @{ Source = "automation\build_esp_rich_text_assets.py"; Destination = "Automation\build_esp_rich_text_assets.py" },
     @{ Source = "automation\create_primary_asset_label.py"; Destination = "Automation\create_primary_asset_label.py" }
 )
 

@@ -7,6 +7,7 @@
 #include "BlueprintGraph/Classes/K2Node_CallFunction.h"
 #include "BlueprintGraph/Classes/K2Node_CallArrayFunction.h"
 #include "BlueprintGraph/Classes/K2Node_BreakStruct.h"
+#include "BlueprintGraph/Classes/K2Node_ClassDynamicCast.h"
 #include "BlueprintGraph/Classes/K2Node_ComponentBoundEvent.h"
 #include "BlueprintGraph/Classes/K2Node_CustomEvent.h"
 #include "BlueprintGraph/Classes/K2Node_DynamicCast.h"
@@ -15,7 +16,9 @@
 #include "BlueprintGraph/Classes/K2Node_FunctionEntry.h"
 #include "BlueprintGraph/Classes/K2Node_FunctionResult.h"
 #include "BlueprintGraph/Classes/K2Node_IfThenElse.h"
+#include "BlueprintGraph/Classes/K2Node_GetDataTableRow.h"
 #include "BlueprintGraph/Classes/K2Node_MacroInstance.h"
+#include "BlueprintGraph/Classes/K2Node_MakeArray.h"
 #include "BlueprintGraph/Classes/K2Node_Self.h"
 #include "BlueprintGraph/Classes/K2Node_SwitchEnum.h"
 #include "BlueprintGraph/Classes/K2Node_VariableGet.h"
@@ -33,6 +36,7 @@
 #include "Components/Image.h"
 #include "Components/ScrollBox.h"
 #include "Components/RichTextBlock.h"
+#include "Components/RichTextBlockDecorator.h"
 #include "Components/SizeBox.h"
 #include "Components/Slider.h"
 #include "Components/SpinBox.h"
@@ -41,6 +45,7 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/WidgetSwitcher.h"
+#include "Components/Widget.h"
 #include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
@@ -48,6 +53,7 @@
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraphSchema_K2.h"
 #include "Engine/DataTable.h"
+#include "Engine/Texture2D.h"
 #include "FileHelpers.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
@@ -59,6 +65,7 @@
 #include "Kismet/KismetStringLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/KismetTextLibrary.h"
+#include "Kismet/DataTableFunctionLibrary.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UObject/Package.h"
@@ -80,6 +87,7 @@ const FName OverlayTargetGendersVariableName(TEXT("ESP_TargetGenders"));
 const FName OverlayTargetLuckyStatesVariableName(TEXT("ESP_TargetLuckyStates"));
 const FName OverlayTargetBossStatesVariableName(TEXT("ESP_TargetBossStates"));
 const FName OverlayTargetCaptureCountsVariableName(TEXT("ESP_TargetCaptureCounts"));
+const FName OverlayTargetCharacterIdsVariableName(TEXT("ESP_TargetCharacterIds"));
 const FName OverlayTargetElementMasksVariableName(TEXT("ESP_TargetElementMasks"));
 const FName OverlayTargetIvHpVariableName(TEXT("ESP_TargetIvHp"));
 const FName OverlayTargetIvAttackVariableName(TEXT("ESP_TargetIvAttack"));
@@ -93,11 +101,13 @@ const FName OverlayCaptureCountBuildVariableName(TEXT("ESP_CaptureCountBuild"));
 const FName OverlayPassiveFilterIdsVariableName(TEXT("ESP_PassiveFilterIds"));
 const FName OverlayPassiveFilterMatchVariableName(TEXT("ESP_PassiveFilterMatch"));
 const FName OverlayPassiveExcludeIdsVariableName(TEXT("ESP_PassiveExcludeIds"));
+const FName OverlaySpeciesFilterIdsVariableName(TEXT("ESP_SpeciesFilterIds"));
 const FName OverlayPassiveExcludeMatchVariableName(TEXT("ESP_PassiveExcludeMatch"));
 const FName OverlayGenderLoggedVariableName(TEXT("ESP_GenderLogged"));
 const FName OverlayGenderDiagnosticVariableName(TEXT("ESP_GenderDiagnostic"));
 const FName OverlayGenderDiagnosticCodeVariableName(TEXT("ESP_GenderDiagnosticCode"));
 const FName OverlayTopGuideEnabledVariableName(TEXT("ESP_ShowTopGuideLine"));
+const FName OverlayLanguageIdVariableName(TEXT("ESP_LanguageId"));
 const FName OverlayShowNameVariableName(TEXT("ESP_ShowName"));
 const FName OverlayShowLevelVariableName(TEXT("ESP_ShowLevel"));
 const FName OverlayShowDistanceVariableName(TEXT("ESP_ShowDistance"));
@@ -113,6 +123,7 @@ const FName OverlayBossFilterIdVariableName(TEXT("ESP_BossFilterId"));
 const FName OverlayCollectionFilterIdVariableName(TEXT("ESP_CollectionFilterId"));
 const FName OverlayElementFilterMaskVariableName(TEXT("ESP_ElementFilterMask"));
 const FName OverlayAddTargetEventName(TEXT("PalworldResourceESP_WidgetAddTarget"));
+const FName OverlayRemoveTargetEventName(TEXT("PalworldResourceESP_WidgetRemoveTarget"));
 const FName OverlayClearTargetsEventName(TEXT("PalworldResourceESP_WidgetClearTargets"));
 const FName PanelBridgeVariableName(TEXT("ESP_Bridge"));
 const FName PanelVariableName(TEXT("ESP_PanelWidget"));
@@ -142,6 +153,10 @@ const FName PassiveExcludeIdsVariableName(TEXT("ESP_PassiveExcludeIds"));
 const FName PassiveIncludeTextVariableName(TEXT("ESP_PassiveIncludeText"));
 const FName PassiveExcludeTextVariableName(TEXT("ESP_PassiveExcludeText"));
 const FName PassiveFilterRevisionVariableName(TEXT("ESP_PassiveFilterRevision"));
+const FName SpeciesFilterIdsVariableName(TEXT("ESP_SpeciesFilterIds"));
+const FName SpeciesFilterTextVariableName(TEXT("ESP_SpeciesFilterText"));
+const FName PanelMainPageVariableName(TEXT("ESP_PanelMainPage"));
+const FName PanelFilterPageVariableName(TEXT("ESP_PanelFilterPage"));
 const FName PassiveRainbowExpandedVariableName(TEXT("ESP_PassiveRainbowExpanded"));
 const FName PassiveLegendExpandedVariableName(TEXT("ESP_PassiveLegendExpanded"));
 const FName PassiveGold3ExpandedVariableName(TEXT("ESP_PassiveGold3Expanded"));
@@ -166,8 +181,11 @@ const FName ElementDragonVariableName(TEXT("ESP_ElementDragon"));
 const FName DisplayTargetLimitVariableName(TEXT("ESP_DisplayTargetLimit"));
 const FName PanelInitializeControlsEventName(TEXT("PalworldResourceESP_InitializeControls"));
 const FName PanelInitializeControlsV2EventName(TEXT("PalworldResourceESP_InitializeControlsV2"));
+const FName PanelSetPageStateEventName(TEXT("PalworldResourceESP_SetPageState"));
 const FName PanelInitializeLanguageEventName(TEXT("PalworldResourceESP_InitializeLanguage"));
 const FName PanelPopulatePassiveCatalogEventName(TEXT("PalworldResourceESP_PopulatePassiveCatalog"));
+const FName PanelPopulatePalCatalogEventName(TEXT("PalworldResourceESP_PopulatePalCatalog"));
+const FName PanelRenderPalCatalogEventName(TEXT("PalworldResourceESP_RenderPalCatalog"));
 const FName ApplyPersistedPanelStateEventName(TEXT("PalworldResourceESP_ApplyPersistedPanelState"));
 const FName PassiveTooltipInitializeEventName(TEXT("PalworldResourceESP_InitializePassiveTooltip"));
 const FName PassiveEntryInitializeEventName(TEXT("PalworldResourceESP_InitializePassiveEntry"));
@@ -176,7 +194,61 @@ const FName PassiveEntrySkillIdVariableName(TEXT("ESP_SkillId"));
 const FName PassiveEntrySkillNameVariableName(TEXT("ESP_SkillName"));
 const FName PassiveEntrySelectedVariableName(TEXT("ESP_Selected"));
 const FName PassiveEntryExcludedVariableName(TEXT("ESP_Excluded"));
+const FName PalEntryInitializeEventName(TEXT("PalworldResourceESP_InitializePalEntry"));
+const FName PalEntryBridgeVariableName(TEXT("ESP_Bridge"));
+const FName PalEntryCharacterIdVariableName(TEXT("ESP_CharacterId"));
+const FName PalEntryDisplayNameVariableName(TEXT("ESP_DisplayName"));
+const FName PalEntrySelectionSummaryVariableName(TEXT("ESP_SelectionSummary"));
+const FName PalEntrySelectedVariableName(TEXT("ESP_Selected"));
+const FName PalEntryInitializingVariableName(TEXT("ESP_Initializing"));
+const FName PalCatalogLoadedVariableName(TEXT("ESP_PalCatalogLoaded"));
+const FName PalCatalogIdsVariableName(TEXT("ESP_PalCatalogIds"));
+const FName PalCatalogZukanIndicesVariableName(TEXT("ESP_PalCatalogZukanIndices"));
+const FName PalCatalogTableVariableName(TEXT("ESP_PalCatalogTable"));
+const FName PalCatalogElementQueryVariableName(TEXT("ESP_PalCatalogElementQuery"));
+const FName PalCatalogWorkQueryVariableName(TEXT("ESP_PalCatalogWorkQuery"));
+const FName PalCatalogResultCountVariableName(TEXT("ESP_PalCatalogResultCount"));
+const FName PalCatalogSuppressEventsVariableName(TEXT("ESP_PalCatalogSuppressEvents"));
+const FName PalCatalogInsertIndexVariableName(TEXT("ESP_PalCatalogInsertIndex"));
+const FName PalCatalogInsertFoundVariableName(TEXT("ESP_PalCatalogInsertFound"));
+const FName PalCatalogSelectedNamesVariableName(TEXT("ESP_PalCatalogSelectedNames"));
+const FName PalCatalogSelectedCountVariableName(TEXT("ESP_PalCatalogSelectedCount"));
+const FName PalCatalogSortKeysVariableName(TEXT("ESP_PalCatalogSortKeys"));
+const FName PalCatalogSortModeVariableName(TEXT("ESP_PalCatalogSortMode"));
+const FName PalCatalogSortDescendingVariableName(TEXT("ESP_PalCatalogSortDescending"));
+const FName RichTextAuditBufferVariableName(TEXT("ESP_RichTextAuditBuffer"));
 const TCHAR* PassiveRichTextStylePath = TEXT("/Game/Mods/PalworldResourceESP/DT_ESPRichTextStyle.DT_ESPRichTextStyle");
+const TCHAR* GameRichTextStylePath = TEXT("/Game/Pal/DataTable/Text/RchTextData/DT_PalRichTextStyle.DT_PalRichTextStyle");
+const TCHAR* PalMonsterParameterTablePath = TEXT("/Game/Pal/DataTable/Character/DT_PalMonsterParameter.DT_PalMonsterParameter");
+const TCHAR* PanelInputDisableFlag = TEXT("PalworldResourceESP_Panel");
+constexpr bool EnablePartnerRichTextAudit = false;
+
+struct FPalWorkDefinition {
+    FName EnumName;
+    FName FieldName;
+    FString Chinese;
+    FString English;
+};
+
+const TArray<FPalWorkDefinition>& GetPalWorkDefinitions() {
+    static const TArray<FPalWorkDefinition> Definitions = {
+        {TEXT("EmitFlame"), TEXT("WorkSuitability_EmitFlame"), TEXT("生火"), TEXT("Kindling")},
+        {TEXT("Watering"), TEXT("WorkSuitability_Watering"), TEXT("浇水"), TEXT("Watering")},
+        {TEXT("Seeding"), TEXT("WorkSuitability_Seeding"), TEXT("播种"), TEXT("Planting")},
+        {TEXT("GenerateElectricity"), TEXT("WorkSuitability_GenerateElectricity"), TEXT("发电"), TEXT("Electricity")},
+        {TEXT("Handcraft"), TEXT("WorkSuitability_Handcraft"), TEXT("手工作业"), TEXT("Handiwork")},
+        {TEXT("Collection"), TEXT("WorkSuitability_Collection"), TEXT("采集"), TEXT("Gathering")},
+        {TEXT("Deforest"), TEXT("WorkSuitability_Deforest"), TEXT("伐木"), TEXT("Lumbering")},
+        {TEXT("Mining"), TEXT("WorkSuitability_Mining"), TEXT("采矿"), TEXT("Mining")},
+        // __DEPRECATED_20260719__ [reason: OilExtraction is an internal SDK field, not a player-visible work suitability]
+        // {TEXT("OilExtraction"), TEXT("WorkSuitability_OilExtraction"), TEXT("采油"), TEXT("Oil extraction")},
+        {TEXT("ProductMedicine"), TEXT("WorkSuitability_ProductMedicine"), TEXT("制药"), TEXT("Medicine")},
+        {TEXT("Cool"), TEXT("WorkSuitability_Cool"), TEXT("冷却"), TEXT("Cooling")},
+        {TEXT("Transport"), TEXT("WorkSuitability_Transport"), TEXT("搬运"), TEXT("Transporting")},
+        {TEXT("MonsterFarm"), TEXT("WorkSuitability_MonsterFarm"), TEXT("牧场"), TEXT("Ranching")},
+    };
+    return Definitions;
+}
 
 struct FPassiveDescriptionFallback {
     const TCHAR* SkillId;
@@ -251,6 +323,8 @@ UDataTable* EnsurePassiveRichTextStyleTable(const FSlateFontInfo& SourceFont) {
     AddStyle(TEXT("NumGreen_13"), FLinearColor(0.38f, 0.92f, 0.58f, 1.0f));
     AddStyle(TEXT("NumYellow_13"), FLinearColor(1.0f, 0.82f, 0.30f, 1.0f));
     AddStyle(TEXT("Status_Up"), FLinearColor(0.38f, 0.92f, 0.58f, 1.0f));
+    AddStyle(TEXT("Status_Down"), FLinearColor(1.0f, 0.38f, 0.38f, 1.0f));
+    AddStyle(TEXT("Status_Keyword"), FLinearColor(1.0f, 0.82f, 0.30f, 1.0f));
     Table->MarkPackageDirty();
     return Table;
 }
@@ -333,6 +407,20 @@ FEdGraphPinType NameArrayPin() {
 FEdGraphPinType TextPin() {
     FEdGraphPinType PinType;
     PinType.PinCategory = UEdGraphSchema_K2::PC_Text;
+    return PinType;
+}
+
+FEdGraphPinType StructPin(UScriptStruct* Struct) {
+    FEdGraphPinType PinType;
+    PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+    PinType.PinSubCategoryObject = Struct;
+    return PinType;
+}
+
+FEdGraphPinType SoftObjectPin(UClass* Class) {
+    FEdGraphPinType PinType;
+    PinType.PinCategory = UEdGraphSchema_K2::PC_SoftObject;
+    PinType.PinSubCategoryObject = Class;
     return PinType;
 }
 
@@ -571,6 +659,52 @@ UK2Node_CallArrayFunction* AddArrayCall(
     return Node;
 }
 
+UK2Node_GetDataTableRow* AddGetDataTableRow(
+    UEdGraph* Graph,
+    UScriptStruct* RowStruct,
+    int32 X,
+    int32 Y) {
+    if (!Graph || !RowStruct) {
+        return nullptr;
+    }
+    UK2Node_GetDataTableRow* Node = NewObject<UK2Node_GetDataTableRow>(Graph);
+    if (!Node) {
+        return nullptr;
+    }
+    Node->NodePosX = X;
+    Node->NodePosY = Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->AllocateDefaultPins();
+    UEdGraphPin* ResultPin = Node->GetResultPin();
+    if (!ResultPin) {
+        return nullptr;
+    }
+    ResultPin->PinType = StructPin(RowStruct);
+    return Node;
+}
+
+UK2Node_BreakStruct* AddBreakStruct(
+    UEdGraph* Graph,
+    UScriptStruct* Struct,
+    int32 X,
+    int32 Y) {
+    if (!Graph || !Struct) {
+        return nullptr;
+    }
+    UK2Node_BreakStruct* Node = NewObject<UK2Node_BreakStruct>(Graph);
+    if (!Node) {
+        return nullptr;
+    }
+    Node->StructType = Struct;
+    Node->NodePosX = X;
+    Node->NodePosY = Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->AllocateDefaultPins();
+    return Node;
+}
+
 UK2Node_MacroInstance* AddForEachLoop(UEdGraph* Graph, int32 X, int32 Y) {
     UEdGraph* MacroGraph = LoadObject<UEdGraph>(
         nullptr,
@@ -767,6 +901,37 @@ UK2Node_DynamicCast* AddDynamicCast(UEdGraph* Graph, UClass* TargetClass, int32 
         return nullptr;
     }
     Node->TargetType = TargetClass;
+    Node->NodePosX = X;
+    Node->NodePosY = Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->AllocateDefaultPins();
+    return Node;
+}
+
+UK2Node_DynamicCast* AddPureDynamicCast(UEdGraph* Graph, UClass* TargetClass, int32 X, int32 Y) {
+    UK2Node_DynamicCast* Node = AddDynamicCast(Graph, TargetClass, X, Y);
+    if (Node) {
+        Node->SetPurity(true);
+        Node->ReconstructNode();
+    }
+    return Node;
+}
+
+UK2Node_ClassDynamicCast* AddPureClassDynamicCast(
+    UEdGraph* Graph,
+    UClass* TargetClass,
+    int32 X,
+    int32 Y) {
+    if (!Graph || !TargetClass) {
+        return nullptr;
+    }
+    UK2Node_ClassDynamicCast* Node = NewObject<UK2Node_ClassDynamicCast>(Graph);
+    if (!Node) {
+        return nullptr;
+    }
+    Node->TargetType = TargetClass;
+    Node->SetPurity(true);
     Node->NodePosX = X;
     Node->NodePosY = Y;
     Graph->AddNode(Node, true, false);
@@ -1245,6 +1410,17 @@ bool BuildOverlay(
         Blueprint->NewVariables[ExistingTargetsIndex].VarType = ObjectArrayPin(PalMonsterClass);
     }
 
+    const int32 ExistingTargetCharacterIdsIndex = FBlueprintEditorUtils::FindNewVariableIndex(
+        Blueprint, OverlayTargetCharacterIdsVariableName);
+    if (ExistingTargetCharacterIdsIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(
+                Blueprint, OverlayTargetCharacterIdsVariableName, NameArrayPin())) {
+            return false;
+        }
+    } else {
+        Blueprint->NewVariables[ExistingTargetCharacterIdsIndex].VarType = NameArrayPin();
+    }
+
     const int32 ExistingTargetLevelsIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayTargetLevelsVariableName);
     if (ExistingTargetLevelsIndex == INDEX_NONE) {
         if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayTargetLevelsVariableName, IntArrayPin())) {
@@ -1400,6 +1576,17 @@ bool BuildOverlay(
         Blueprint->NewVariables[ExistingPassiveExcludeIdsIndex].VarType = NameArrayPin();
     }
 
+    const int32 ExistingSpeciesFilterIdsIndex = FBlueprintEditorUtils::FindNewVariableIndex(
+        Blueprint, OverlaySpeciesFilterIdsVariableName);
+    if (ExistingSpeciesFilterIdsIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(
+                Blueprint, OverlaySpeciesFilterIdsVariableName, NameArrayPin())) {
+            return false;
+        }
+    } else {
+        Blueprint->NewVariables[ExistingSpeciesFilterIdsIndex].VarType = NameArrayPin();
+    }
+
     int32 ExistingPassiveFilterMatchIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayPassiveFilterMatchVariableName);
     if (ExistingPassiveFilterMatchIndex == INDEX_NONE) {
         if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayPassiveFilterMatchVariableName, BoolPin())) {
@@ -1465,6 +1652,19 @@ bool BuildOverlay(
     }
     Blueprint->NewVariables[ExistingTopGuideEnabledIndex].VarType = BoolPin();
     Blueprint->NewVariables[ExistingTopGuideEnabledIndex].DefaultValue = TEXT("true");
+
+    int32 ExistingLanguageIdIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayLanguageIdVariableName);
+    if (ExistingLanguageIdIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, OverlayLanguageIdVariableName, IntPin())) {
+            return false;
+        }
+        ExistingLanguageIdIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayLanguageIdVariableName);
+    }
+    if (ExistingLanguageIdIndex == INDEX_NONE) {
+        return false;
+    }
+    Blueprint->NewVariables[ExistingLanguageIdIndex].VarType = IntPin();
+    Blueprint->NewVariables[ExistingLanguageIdIndex].DefaultValue = TEXT("0");
 
     int32 ExistingShowNameIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, OverlayShowNameVariableName);
     if (ExistingShowNameIndex == INDEX_NONE) {
@@ -1671,6 +1871,9 @@ bool BuildOverlay(
     UK2Node_CallArrayFunction* ClearPassiveIdTextArray = AddArrayCall(Graph, TEXT("Array_Clear"), 4980, -300);
     UK2Node_VariableGet* ClearNamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, 5240, -140);
     UK2Node_CallArrayFunction* ClearNameArray = AddArrayCall(Graph, TEXT("Array_Clear"), 5520, -300);
+    UK2Node_VariableGet* ClearCharacterIdsGet = AddVariableGet(
+        Graph, OverlayTargetCharacterIdsVariableName, 5780, -140);
+    UK2Node_CallArrayFunction* ClearCharacterIdArray = AddArrayCall(Graph, TEXT("Array_Clear"), 6060, -300);
     if (!AddTarget || !AddTargetsGet || !AddTargetItem || !AddLevelsGet || !AddLevelItem
         || !AddDistancesGet || !AddDistanceItem || !ClearTargets || !ClearTargetsGet || !ClearTargetArray
         || !ClearLevelsGet || !ClearLevelArray || !ClearDistancesGet || !ClearDistanceArray
@@ -1682,7 +1885,7 @@ bool BuildOverlay(
         || !ClearIvDefenseGet || !ClearIvDefenseArray
         || !ClearPassiveTextsGet || !ClearPassiveTextArray
         || !ClearPassiveIdTextsGet || !ClearPassiveIdTextArray
-        || !ClearNamesGet || !ClearNameArray
+        || !ClearNamesGet || !ClearNameArray || !ClearCharacterIdsGet || !ClearCharacterIdArray
         || !Link(AddTarget, UEdGraphSchema_K2::PN_Then, AddTargetItem, UEdGraphSchema_K2::PN_Execute)
         || !Link(AddTargetsGet, OverlayTargetsVariableName, AddTargetItem, TEXT("TargetArray"))
         || !Link(AddTarget, TEXT("Target"), AddTargetItem, TEXT("NewItem"))
@@ -1719,9 +1922,65 @@ bool BuildOverlay(
         || !Link(ClearPassiveTextArray, UEdGraphSchema_K2::PN_Then, ClearPassiveIdTextArray, UEdGraphSchema_K2::PN_Execute)
         || !Link(ClearPassiveIdTextsGet, OverlayTargetPassiveIdTextsVariableName, ClearPassiveIdTextArray, TEXT("TargetArray"))
         || !Link(ClearPassiveIdTextArray, UEdGraphSchema_K2::PN_Then, ClearNameArray, UEdGraphSchema_K2::PN_Execute)
-        || !Link(ClearNamesGet, OverlayTargetNamesVariableName, ClearNameArray, TEXT("TargetArray"))) {
+        || !Link(ClearNamesGet, OverlayTargetNamesVariableName, ClearNameArray, TEXT("TargetArray"))
+        || !Link(ClearNameArray, UEdGraphSchema_K2::PN_Then, ClearCharacterIdArray, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ClearCharacterIdsGet, OverlayTargetCharacterIdsVariableName, ClearCharacterIdArray, TEXT("TargetArray"))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay target array graph failed"));
         return false;
+    }
+
+    UK2Node_CustomEvent* RemoveTarget = AddCustomEvent(
+        Blueprint, Graph, *OverlayRemoveTargetEventName.ToString(), -1500, 1600, {
+            TPair<FName, FEdGraphPinType>(FName("Target"), ObjectPin(PalMonsterClass))
+        });
+    UK2Node_VariableGet* RemoveTargetsFindGet = AddVariableGet(
+        Graph, OverlayTargetsVariableName, -1240, 1760);
+    UK2Node_CallArrayFunction* RemoveTargetFind = AddArrayCall(Graph, TEXT("Array_Find"), -960, 1600);
+    UK2Node_CallFunction* RemoveIndexValid = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("GreaterEqual_IntInt"), -680, 1760);
+    UK2Node_IfThenElse* RemoveIndexBranch = AddBranch(Graph, -400, 1600);
+    if (!RemoveTarget || !RemoveTargetsFindGet || !RemoveTargetFind || !RemoveIndexValid || !RemoveIndexBranch
+        || !Link(RemoveTarget, UEdGraphSchema_K2::PN_Then, RemoveIndexBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RemoveTargetsFindGet, OverlayTargetsVariableName, RemoveTargetFind, TEXT("TargetArray"))
+        || !Link(RemoveTarget, TEXT("Target"), RemoveTargetFind, TEXT("ItemToFind"))
+        || !Link(RemoveTargetFind, UEdGraphSchema_K2::PN_ReturnValue, RemoveIndexValid, TEXT("A"))
+        || !SetPinDefault(RemoveIndexValid, TEXT("B"), TEXT("0"))
+        || !Link(RemoveIndexValid, UEdGraphSchema_K2::PN_ReturnValue, RemoveIndexBranch, UEdGraphSchema_K2::PN_Condition)) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay target removal lookup graph failed"));
+        return false;
+    }
+
+    const TArray<FName> RemoveArrayNames = {
+        OverlayTargetsVariableName,
+        OverlayTargetLevelsVariableName,
+        OverlayTargetDistancesVariableName,
+        OverlayTargetGendersVariableName,
+        OverlayTargetLuckyStatesVariableName,
+        OverlayTargetBossStatesVariableName,
+        OverlayTargetCaptureCountsVariableName,
+        OverlayTargetElementMasksVariableName,
+        OverlayTargetIvHpVariableName,
+        OverlayTargetIvAttackVariableName,
+        OverlayTargetIvDefenseVariableName,
+        OverlayTargetPassiveTextsVariableName,
+        OverlayTargetPassiveIdTextsVariableName,
+        OverlayTargetNamesVariableName,
+        OverlayTargetCharacterIdsVariableName,
+    };
+    UEdGraphNode* RemoveExecTail = RemoveIndexBranch;
+    int32 RemoveNodeX = -120;
+    for (const FName& ArrayName : RemoveArrayNames) {
+        UK2Node_VariableGet* ArrayGet = AddVariableGet(Graph, ArrayName, RemoveNodeX, 1840);
+        UK2Node_CallArrayFunction* RemoveAt = AddArrayCall(Graph, TEXT("Array_Remove"), RemoveNodeX + 260, 1600);
+        if (!ArrayGet || !RemoveAt
+            || !Link(RemoveExecTail, UEdGraphSchema_K2::PN_Then, RemoveAt, UEdGraphSchema_K2::PN_Execute)
+            || !Link(ArrayGet, ArrayName, RemoveAt, TEXT("TargetArray"))
+            || !Link(RemoveTargetFind, UEdGraphSchema_K2::PN_ReturnValue, RemoveAt, TEXT("IndexToRemove"))) {
+            UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay target removal array failed array=%s"), *ArrayName.ToString());
+            return false;
+        }
+        RemoveExecTail = RemoveAt;
+        RemoveNodeX += 520;
     }
 
     // __DEPRECATED_20260717__ [reason: every target now needs a gender code; logging alone remains one-shot]
@@ -1990,13 +2249,16 @@ bool BuildOverlay(
         UK2Node_CallFunction* Nickname = bUseName
             ? AddStaticCall(Graph, CharacterParameterComponentClass, TEXT("GetNickname"), X + 4680, Y + 260)
             : nullptr;
-        UK2Node_VariableGet* LoggedGet = AddVariableGet(Graph, OverlayGenderLoggedVariableName, X + 5200, Y + 160);
-        UK2Node_CallFunction* NotLogged = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 5460, Y + 160);
-        UK2Node_IfThenElse* LogBranch = AddBranch(Graph, X + 5720, Y);
-        UK2Node_VariableSet* StoreDiagnostic = AddVariableSet(Graph, OverlayGenderDiagnosticVariableName, X + 5980, Y);
-        UK2Node_VariableSet* StoreDiagnosticCode = AddVariableSet(Graph, OverlayGenderDiagnosticCodeVariableName, X + 6240, Y);
-        UK2Node_CallFunction* Print = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), X + 6500, Y);
-        UK2Node_VariableSet* MarkLogged = AddVariableSet(Graph, OverlayGenderLoggedVariableName, X + 6760, Y);
+        UK2Node_VariableGet* CharacterIdsGet = AddVariableGet(
+            Graph, OverlayTargetCharacterIdsVariableName, X + 5200, Y + 120);
+        UK2Node_CallArrayFunction* AddCharacterIdItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 5460, Y);
+        UK2Node_VariableGet* LoggedGet = AddVariableGet(Graph, OverlayGenderLoggedVariableName, X + 5720, Y + 160);
+        UK2Node_CallFunction* NotLogged = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 5980, Y + 160);
+        UK2Node_IfThenElse* LogBranch = AddBranch(Graph, X + 6240, Y);
+        UK2Node_VariableSet* StoreDiagnostic = AddVariableSet(Graph, OverlayGenderDiagnosticVariableName, X + 6500, Y);
+        UK2Node_VariableSet* StoreDiagnosticCode = AddVariableSet(Graph, OverlayGenderDiagnosticCodeVariableName, X + 6760, Y);
+        UK2Node_CallFunction* Print = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), X + 7020, Y);
+        UK2Node_VariableSet* MarkLogged = AddVariableSet(Graph, OverlayGenderLoggedVariableName, X + 7280, Y);
         const FString Message = FString::Printf(TEXT("[PalworldResourceESP] BLUEPRINT_GENDER value=%s"), Value);
         const bool bLuckySourceReady = bLuckyKnown
             ? SelectLuckyState
@@ -2036,6 +2298,9 @@ bool BuildOverlay(
         const bool bPassiveIdSourceReady = bPassiveKnown
             ? Link(PassiveIdBuildTextSource, OverlayPassiveIdBuildTextVariableName, AddPassiveIdTextItem, TEXT("NewItem"))
             : SetPinDefault(AddPassiveIdTextItem, TEXT("NewItem"), TEXT(""));
+        const bool bCharacterIdSourceReady = bLuckyKnown
+            ? Link(CharacterId, UEdGraphSchema_K2::PN_ReturnValue, AddCharacterIdItem, TEXT("NewItem"))
+            : SetPinDefault(AddCharacterIdItem, TEXT("NewItem"), TEXT("None"));
         return GendersGet && AddGenderItem && LuckyStatesGet && AddLuckyStateItem && bLuckySourceReady
             && BossStatesGet && AddBossStateItem && bBossSourceReady
             && CaptureCountsGet && AddCaptureCountItem && CaptureCountBuildSource && bCaptureSourceReady
@@ -2045,6 +2310,7 @@ bool BuildOverlay(
             && PassiveTextsGet && AddPassiveTextItem && PassiveBuildTextSource && bPassiveSourceReady
             && PassiveIdTextsGet && AddPassiveIdTextItem && PassiveIdBuildTextSource && bPassiveIdSourceReady
             && NamesGet && AddNameItem && bNameSourceReady
+            && CharacterIdsGet && AddCharacterIdItem && bCharacterIdSourceReady
             && LoggedGet && NotLogged && LogBranch
             && StoreDiagnostic && StoreDiagnosticCode && Print && MarkLogged
             && Link(ExecNode, ExecPin, AddGenderItem, UEdGraphSchema_K2::PN_Execute)
@@ -2070,7 +2336,9 @@ bool BuildOverlay(
             && Link(PassiveIdTextsGet, OverlayTargetPassiveIdTextsVariableName, AddPassiveIdTextItem, TEXT("TargetArray"))
             && Link(AddPassiveIdTextItem, UEdGraphSchema_K2::PN_Then, AddNameItem, UEdGraphSchema_K2::PN_Execute)
             && Link(NamesGet, OverlayTargetNamesVariableName, AddNameItem, TEXT("TargetArray"))
-            && Link(AddNameItem, UEdGraphSchema_K2::PN_Then, LogBranch, UEdGraphSchema_K2::PN_Execute)
+            && Link(AddNameItem, UEdGraphSchema_K2::PN_Then, AddCharacterIdItem, UEdGraphSchema_K2::PN_Execute)
+            && Link(CharacterIdsGet, OverlayTargetCharacterIdsVariableName, AddCharacterIdItem, TEXT("TargetArray"))
+            && Link(AddCharacterIdItem, UEdGraphSchema_K2::PN_Then, LogBranch, UEdGraphSchema_K2::PN_Execute)
             && Link(LoggedGet, OverlayGenderLoggedVariableName, NotLogged, TEXT("A"))
             && Link(NotLogged, UEdGraphSchema_K2::PN_ReturnValue, LogBranch, UEdGraphSchema_K2::PN_Condition)
             && Link(LogBranch, UEdGraphSchema_K2::PN_Then, StoreDiagnostic, UEdGraphSchema_K2::PN_Execute)
@@ -2102,6 +2370,9 @@ bool BuildOverlay(
     UK2Node_VariableGet* ShowDistanceGet = AddVariableGet(Graph, OverlayShowDistanceVariableName, -1500, 520);
     UK2Node_VariableGet* ShowIvGet = AddVariableGet(Graph, OverlayShowIvVariableName, -1500, 600);
     UK2Node_VariableGet* ShowPassiveSkillsGet = AddVariableGet(Graph, OverlayShowPassiveSkillsVariableName, -1500, 640);
+    UK2Node_VariableGet* LanguageIdGet = AddVariableGet(Graph, OverlayLanguageIdVariableName, -1500, 560);
+    UK2Node_CallFunction* LanguageIsEnglish = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -1220, 560);
     UK2Node_VariableGet* GenderFilterGet = AddVariableGet(Graph, OverlayGenderFilterIdVariableName, -1500, 680);
     UK2Node_VariableGet* LuckyFilterGet = AddVariableGet(Graph, OverlayLuckyFilterIdVariableName, -1500, 760);
     UK2Node_VariableGet* BossFilterGet = AddVariableGet(Graph, OverlayBossFilterIdVariableName, -1500, 840);
@@ -2127,6 +2398,17 @@ bool BuildOverlay(
     UK2Node_VariableGet* TargetNamesGet = AddVariableGet(Graph, OverlayTargetNamesVariableName, -1000, 880);
     UK2Node_CallArrayFunction* TargetNameGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 880);
     UK2Node_CallFunction* NameNotEmpty = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), -440, 880);
+    UK2Node_VariableGet* TargetCharacterIdsGet = AddVariableGet(
+        Graph, OverlayTargetCharacterIdsVariableName, -1000, 1280);
+    UK2Node_CallArrayFunction* TargetCharacterIdGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1280);
+    UK2Node_VariableGet* SpeciesFilterIdsGet = AddVariableGet(
+        Graph, OverlaySpeciesFilterIdsVariableName, -440, 1120);
+    UK2Node_CallArrayFunction* SpeciesFilterCount = AddArrayCall(Graph, TEXT("Array_Length"), -160, 1120);
+    UK2Node_CallFunction* SpeciesFilterAll = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), 120, 1120);
+    UK2Node_CallArrayFunction* SpeciesFilterContains = AddArrayCall(Graph, TEXT("Array_Contains"), -160, 1280);
+    UK2Node_CallFunction* SpeciesFilterAccepted = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 400, 1200);
     UK2Node_VariableGet* TargetGendersGet = AddVariableGet(Graph, OverlayTargetGendersVariableName, -1000, 1440);
     UK2Node_CallArrayFunction* TargetGenderGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1440);
     UK2Node_CallFunction* GenderFilterAll = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -440, 1440);
@@ -2229,12 +2511,14 @@ bool BuildOverlay(
     // UK2Node_VariableGet* TargetDistancesGet = AddVariableGet(Graph, OverlayTargetDistancesVariableName, -1000, 1200);
     // UK2Node_CallArrayFunction* TargetDistanceGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1200);
     UK2Node_CallFunction* BuildLevelText = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), -400, 1040);
+    UK2Node_CallFunction* LevelPrefix = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), -680, 1120);
     UK2Node_CallFunction* PlayerPawn = AddStaticCall(Graph, UGameplayStatics::StaticClass(), TEXT("GetPlayerPawn"), -720, 1280);
     UK2Node_CallFunction* PlayerLocation = AddStaticCall(Graph, AActor::StaticClass(), TEXT("K2_GetActorLocation"), -400, 1280);
     UK2Node_CallFunction* LiveDistance = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Vector_Distance"), -80, 1280);
     UK2Node_CallFunction* DistanceMeters = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Divide_DoubleDouble"), 200, 1280);
     UK2Node_CallFunction* RoundDistance = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Round"), 480, 1280);
     UK2Node_CallFunction* BuildDistanceText = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), 760, 1280);
+    UK2Node_CallFunction* DistanceSuffix = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 480, 1440);
     UK2Node_CallFunction* LevelWithSpacing = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 200, 1040);
     UK2Node_CallFunction* LevelAndDistance = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 1040, 1120);
     UK2Node_CallFunction* SelectWithLevel = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 1320, 1040);
@@ -2243,6 +2527,9 @@ bool BuildOverlay(
     UK2Node_CallFunction* BuildIvHp = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), 1040, 1440);
     UK2Node_CallFunction* BuildIvAttack = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), 1320, 1440);
     UK2Node_CallFunction* BuildIvDefense = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), 1600, 1440);
+    UK2Node_CallFunction* IvHpPrefix = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 1040, 1600);
+    UK2Node_CallFunction* IvAttackPrefix = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 1320, 1600);
+    UK2Node_CallFunction* IvDefensePrefix = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 1600, 1600);
     UK2Node_CallFunction* IvSeparator = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 1880, 1440);
     UK2Node_CallFunction* MetadataWithSeparator = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 2160, 1360);
     UK2Node_CallFunction* MetadataWithIv = AddStaticCall(Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 2440, 1360);
@@ -2261,6 +2548,7 @@ bool BuildOverlay(
     UK2Node_CallFunction* TargetDead = AddStaticCall(Graph, PalUtilityClass, TEXT("IsDead"), -700, 440);
     UK2Node_CallFunction* TargetNotDead = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), -440, 440);
     UK2Node_IfThenElse* TargetAliveBranch = AddBranch(Graph, -420, 80);
+    UK2Node_IfThenElse* SpeciesFilterBranch = AddBranch(Graph, -300, 80);
     UK2Node_IfThenElse* GenderFilterBranch = AddBranch(Graph, -160, 80);
     UK2Node_IfThenElse* LuckyFilterBranch = AddBranch(Graph, 120, 80);
     UK2Node_IfThenElse* BossFilterBranch = AddBranch(Graph, 400, 80);
@@ -2314,11 +2602,14 @@ bool BuildOverlay(
         OutlineX += 840;
     }
     if (!OnPaint || !TopGuideEnabledGet || !ShowNameGet || !ShowLevelGet || !ShowDistanceGet || !ShowIvGet
-        || !ShowPassiveSkillsGet || !IvMinGet || !IvHpMinGet || !IvAttackMinGet || !IvDefenseMinGet
+        || !ShowPassiveSkillsGet || !LanguageIdGet || !LanguageIsEnglish
+        || !IvMinGet || !IvHpMinGet || !IvAttackMinGet || !IvDefenseMinGet
         || !GenderFilterGet || !LuckyFilterGet || !BossFilterGet || !CollectionFilterGet || !ElementFilterGet
         || !BasicMetadataEnabled || !MetadataEnabled || !AllMetadataEnabled || !VisibleNameEnabled || !LabelsEnabled
         || !PaintSequence || !LabelEnabledBranch || !TopGuideEnabledBranch || !TargetsGet || !ForEachTarget
         || !TargetLevelsGet || !TargetLevelGet || !TargetNamesGet || !TargetNameGet || !NameNotEmpty
+        || !TargetCharacterIdsGet || !TargetCharacterIdGet || !SpeciesFilterIdsGet
+        || !SpeciesFilterCount || !SpeciesFilterAll || !SpeciesFilterContains || !SpeciesFilterAccepted
         || !TargetGendersGet || !TargetGenderGet
         || !GenderFilterAll || !GenderFilterMatch || !GenderFilterAccepted
         || !TargetLuckyStatesGet || !TargetLuckyStateGet || !LuckyFilterAll || !LuckyFilterOnly
@@ -2350,21 +2641,24 @@ bool BuildOverlay(
         || !PassiveExcludeIdWrapped || !TargetContainsExcludedPassiveId
         || !TargetDoesNotContainExcludedPassiveId || !PassiveExcludeMatchAnd
         || !StorePassiveExcludeMatch || !FinalPassiveExcludeMatch || !PassiveExcludeBranch
-        || !BuildLevelText || !PlayerPawn || !PlayerLocation
-        || !LiveDistance || !DistanceMeters || !RoundDistance || !BuildDistanceText || !LevelWithSpacing
+        || !BuildLevelText || !LevelPrefix || !PlayerPawn || !PlayerLocation
+        || !LiveDistance || !DistanceMeters || !RoundDistance || !BuildDistanceText || !DistanceSuffix || !LevelWithSpacing
         || !LevelAndDistance || !SelectWithLevel || !SelectWithoutLevel || !SelectLabel
-        || !BuildIvHp || !BuildIvAttack || !BuildIvDefense || !IvSeparator
+        || !BuildIvHp || !BuildIvAttack || !BuildIvDefense
+        || !IvHpPrefix || !IvAttackPrefix || !IvDefensePrefix || !IvSeparator
         || !MetadataWithSeparator || !MetadataWithIv || !SelectMetadata || !MetadataNotEmpty
         || !PassiveLineSeparator || !MetadataWithPassiveSeparator || !MetadataWithPassive || !SelectMetadataWithPassive
         || !NameWithNewline || !NameAndMetadata || !SelectNameLabel || !SelectFinalLabel
         || !TargetValid || !TargetBranch || !TargetDead || !TargetNotDead
-        || !TargetAliveBranch || !GenderFilterBranch || !LuckyFilterBranch || !BossFilterBranch
+        || !TargetAliveBranch || !SpeciesFilterBranch || !GenderFilterBranch || !LuckyFilterBranch || !BossFilterBranch
         || !CollectionFilterBranch || !ElementFilterBranch
         || !IvMinimumBranch || !PassiveFilterBranch
         || !ActorLocation || !Self || !PlayerController
         || !Project || !ProjectBranch || !ViewportSize || !ViewportScale || !BreakViewport || !RemoveScale
         || !HalfWidth || !MakeStart || !DrawLine || !MakeLabelOffset || !LabelPosition || !DrawText
         || !Link(OnPaint, UEdGraphSchema_K2::PN_Then, ForEachTarget, TEXT("Exec"))
+        || !Link(LanguageIdGet, OverlayLanguageIdVariableName, LanguageIsEnglish, TEXT("A"))
+        || !SetPinDefault(LanguageIsEnglish, TEXT("B"), TEXT("1"))
         || !Link(TopGuideEnabledGet, OverlayTopGuideEnabledVariableName, TopGuideEnabledBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(ShowLevelGet, OverlayShowLevelVariableName, BasicMetadataEnabled, TEXT("A"))
         || !Link(ShowDistanceGet, OverlayShowDistanceVariableName, BasicMetadataEnabled, TEXT("B"))
@@ -2385,6 +2679,20 @@ bool BuildOverlay(
         || !Link(TargetLevelsGet, OverlayTargetLevelsVariableName, TargetLevelGet, TEXT("TargetArray"))
         || !Link(ForEachTarget, TEXT("Array Index"), TargetLevelGet, TEXT("Index"))
         || !Link(TargetLevelGet, TEXT("Item"), BuildLevelText, TEXT("InInt"))
+        || !SetPinDefault(LevelPrefix, TEXT("A"), TEXT("Lv."))
+        || !SetPinDefault(LevelPrefix, TEXT("B"), TEXT("等级 "))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, LevelPrefix, TEXT("bPickA"))
+        || !Link(LevelPrefix, UEdGraphSchema_K2::PN_ReturnValue, BuildLevelText, TEXT("Prefix"))
+        || !Link(TargetCharacterIdsGet, OverlayTargetCharacterIdsVariableName, TargetCharacterIdGet, TEXT("TargetArray"))
+        || !Link(ForEachTarget, TEXT("Array Index"), TargetCharacterIdGet, TEXT("Index"))
+        || !Link(SpeciesFilterIdsGet, OverlaySpeciesFilterIdsVariableName, SpeciesFilterCount, TEXT("TargetArray"))
+        || !Link(SpeciesFilterCount, UEdGraphSchema_K2::PN_ReturnValue, SpeciesFilterAll, TEXT("A"))
+        || !SetPinDefault(SpeciesFilterAll, TEXT("B"), TEXT("0"))
+        || !Link(SpeciesFilterIdsGet, OverlaySpeciesFilterIdsVariableName, SpeciesFilterContains, TEXT("TargetArray"))
+        || !Link(TargetCharacterIdGet, TEXT("Item"), SpeciesFilterContains, TEXT("ItemToFind"))
+        || !Link(SpeciesFilterAll, UEdGraphSchema_K2::PN_ReturnValue, SpeciesFilterAccepted, TEXT("A"))
+        || !Link(SpeciesFilterContains, UEdGraphSchema_K2::PN_ReturnValue, SpeciesFilterAccepted, TEXT("B"))
+        || !Link(SpeciesFilterAccepted, UEdGraphSchema_K2::PN_ReturnValue, SpeciesFilterBranch, UEdGraphSchema_K2::PN_Condition)
         || !Link(TargetGendersGet, OverlayTargetGendersVariableName, TargetGenderGet, TEXT("TargetArray"))
         || !Link(ForEachTarget, TEXT("Array Index"), TargetGenderGet, TEXT("Index"))
         || !Link(GenderFilterGet, OverlayGenderFilterIdVariableName, GenderFilterAll, TEXT("A"))
@@ -2560,6 +2868,10 @@ bool BuildOverlay(
         || !Link(LiveDistance, UEdGraphSchema_K2::PN_ReturnValue, DistanceMeters, TEXT("A"))
         || !Link(DistanceMeters, UEdGraphSchema_K2::PN_ReturnValue, RoundDistance, TEXT("A"))
         || !Link(RoundDistance, UEdGraphSchema_K2::PN_ReturnValue, BuildDistanceText, TEXT("InInt"))
+        || !SetPinDefault(DistanceSuffix, TEXT("A"), TEXT("m"))
+        || !SetPinDefault(DistanceSuffix, TEXT("B"), TEXT("米"))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, DistanceSuffix, TEXT("bPickA"))
+        || !Link(DistanceSuffix, UEdGraphSchema_K2::PN_ReturnValue, BuildDistanceText, TEXT("Suffix"))
         || !Link(BuildLevelText, UEdGraphSchema_K2::PN_ReturnValue, LevelWithSpacing, TEXT("A"))
         || !Link(LevelWithSpacing, UEdGraphSchema_K2::PN_ReturnValue, LevelAndDistance, TEXT("A"))
         || !Link(BuildDistanceText, UEdGraphSchema_K2::PN_ReturnValue, LevelAndDistance, TEXT("B"))
@@ -2572,10 +2884,22 @@ bool BuildOverlay(
         || !Link(SelectWithoutLevel, UEdGraphSchema_K2::PN_ReturnValue, SelectLabel, TEXT("B"))
         || !Link(ShowLevelGet, OverlayShowLevelVariableName, SelectLabel, TEXT("bPickA"))
         || !Link(TargetIvHpValue, TEXT("Item"), BuildIvHp, TEXT("InInt"))
+        || !SetPinDefault(IvHpPrefix, TEXT("A"), TEXT("IV HP "))
+        || !SetPinDefault(IvHpPrefix, TEXT("B"), TEXT("个体值 生命 "))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, IvHpPrefix, TEXT("bPickA"))
+        || !Link(IvHpPrefix, UEdGraphSchema_K2::PN_ReturnValue, BuildIvHp, TEXT("Prefix"))
         || !Link(BuildIvHp, UEdGraphSchema_K2::PN_ReturnValue, BuildIvAttack, TEXT("AppendTo"))
         || !Link(TargetIvAttackValue, TEXT("Item"), BuildIvAttack, TEXT("InInt"))
+        || !SetPinDefault(IvAttackPrefix, TEXT("A"), TEXT(" / ATK "))
+        || !SetPinDefault(IvAttackPrefix, TEXT("B"), TEXT(" / 攻击 "))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, IvAttackPrefix, TEXT("bPickA"))
+        || !Link(IvAttackPrefix, UEdGraphSchema_K2::PN_ReturnValue, BuildIvAttack, TEXT("Prefix"))
         || !Link(BuildIvAttack, UEdGraphSchema_K2::PN_ReturnValue, BuildIvDefense, TEXT("AppendTo"))
         || !Link(TargetIvDefenseValue, TEXT("Item"), BuildIvDefense, TEXT("InInt"))
+        || !SetPinDefault(IvDefensePrefix, TEXT("A"), TEXT(" / DEF "))
+        || !SetPinDefault(IvDefensePrefix, TEXT("B"), TEXT(" / 防御 "))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, IvDefensePrefix, TEXT("bPickA"))
+        || !Link(IvDefensePrefix, UEdGraphSchema_K2::PN_ReturnValue, BuildIvDefense, TEXT("Prefix"))
         || !Link(BasicMetadataEnabled, UEdGraphSchema_K2::PN_ReturnValue, IvSeparator, TEXT("bPickA"))
         || !Link(SelectLabel, UEdGraphSchema_K2::PN_ReturnValue, MetadataWithSeparator, TEXT("A"))
         || !Link(IvSeparator, UEdGraphSchema_K2::PN_ReturnValue, MetadataWithSeparator, TEXT("B"))
@@ -2617,7 +2941,8 @@ bool BuildOverlay(
         || !Link(TargetNotDead, UEdGraphSchema_K2::PN_ReturnValue, TargetAliveBranch, UEdGraphSchema_K2::PN_Condition)
         // __DEPRECATED_20260717__ [reason: gender rejection must happen before projection and drawing]
         // || !Link(TargetAliveBranch, UEdGraphSchema_K2::PN_Then, ProjectBranch, UEdGraphSchema_K2::PN_Execute)
-        || !Link(TargetAliveBranch, UEdGraphSchema_K2::PN_Then, GenderFilterBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(TargetAliveBranch, UEdGraphSchema_K2::PN_Then, SpeciesFilterBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SpeciesFilterBranch, UEdGraphSchema_K2::PN_Then, GenderFilterBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(GenderFilterBranch, UEdGraphSchema_K2::PN_Then, LuckyFilterBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(LuckyFilterBranch, UEdGraphSchema_K2::PN_Then, BossFilterBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(BossFilterBranch, UEdGraphSchema_K2::PN_Then, CollectionFilterBranch, UEdGraphSchema_K2::PN_Execute)
@@ -2661,20 +2986,15 @@ bool BuildOverlay(
         || !SetPinDefault(HalfWidth, TEXT("B"), TEXT("0.5"))
         || !SetPinDefault(MakeStart, TEXT("Y"), TEXT("24.0"))
         || !SetPinDefault(BuildLevelText, TEXT("AppendTo"), TEXT(""))
-        || !SetPinDefault(BuildLevelText, TEXT("Prefix"), TEXT("Lv."))
         || !SetPinDefault(BuildLevelText, TEXT("Suffix"), TEXT(""))
         || !SetPinDefault(PlayerPawn, TEXT("PlayerIndex"), TEXT("0"))
         || !SetPinDefault(DistanceMeters, TEXT("B"), TEXT("100.0"))
         || !SetPinDefault(BuildDistanceText, TEXT("Prefix"), TEXT(""))
-        || !SetPinDefault(BuildDistanceText, TEXT("Suffix"), TEXT("m"))
         || !SetPinDefault(LevelWithSpacing, TEXT("B"), TEXT("  "))
         || !SetPinDefault(SelectWithoutLevel, TEXT("B"), TEXT(""))
         || !SetPinDefault(BuildIvHp, TEXT("AppendTo"), TEXT(""))
-        || !SetPinDefault(BuildIvHp, TEXT("Prefix"), TEXT("IV HP "))
         || !SetPinDefault(BuildIvHp, TEXT("Suffix"), TEXT(""))
-        || !SetPinDefault(BuildIvAttack, TEXT("Prefix"), TEXT(" / ATK "))
         || !SetPinDefault(BuildIvAttack, TEXT("Suffix"), TEXT(""))
-        || !SetPinDefault(BuildIvDefense, TEXT("Prefix"), TEXT(" / DEF "))
         || !SetPinDefault(BuildIvDefense, TEXT("Suffix"), TEXT(""))
         || !SetPinDefault(IvSeparator, TEXT("A"), TEXT("\n"))
         || !SetPinDefault(IvSeparator, TEXT("B"), TEXT(""))
@@ -2716,6 +3036,21 @@ bool EnsureMemberVariable(
     return true;
 }
 
+bool BuildHandledKeyOverride(UWidgetBlueprint* Blueprint, const FName& FunctionName) {
+    UEdGraph* Graph = nullptr;
+    UK2Node_FunctionEntry* Entry = nullptr;
+    UK2Node_FunctionResult* Result = nullptr;
+    if (!PrepareOverrideFunctionGraph(
+            Blueprint, UUserWidget::StaticClass(), FunctionName, Graph, Entry, Result)) {
+        return false;
+    }
+    UK2Node_CallFunction* HandledReply = AddStaticCall(
+        Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("Handled"), -1040, 1120);
+    return HandledReply
+        && Link(Entry, UEdGraphSchema_K2::PN_Then, Result, UEdGraphSchema_K2::PN_Execute)
+        && Link(HandledReply, UEdGraphSchema_K2::PN_ReturnValue, Result, UEdGraphSchema_K2::PN_ReturnValue);
+}
+
 bool PrepareModActorControls(UBlueprint* Blueprint) {
     if (!Blueprint
         || !EnsureMemberVariable(Blueprint, ControlRevisionVariableName, IntPin(), TEXT("0"))
@@ -2745,6 +3080,11 @@ bool PrepareModActorControls(UBlueprint* Blueprint) {
         || !EnsureMemberVariable(Blueprint, PassiveIncludeTextVariableName, StringPin())
         || !EnsureMemberVariable(Blueprint, PassiveExcludeTextVariableName, StringPin())
         || !EnsureMemberVariable(Blueprint, PassiveFilterRevisionVariableName, IntPin(), TEXT("0"))
+        || !EnsureMemberVariable(Blueprint, SpeciesFilterIdsVariableName, NameArrayPin())
+        || !EnsureMemberVariable(Blueprint, SpeciesFilterTextVariableName, StringPin())
+        || !EnsureMemberVariable(Blueprint, RichTextAuditBufferVariableName, StringPin())
+        || !EnsureMemberVariable(Blueprint, PanelMainPageVariableName, IntPin(), TEXT("0"))
+        || !EnsureMemberVariable(Blueprint, PanelFilterPageVariableName, IntPin(), TEXT("0"))
         || !EnsureMemberVariable(Blueprint, PassiveRainbowExpandedVariableName, BoolPin(), TEXT("false"))
         || !EnsureMemberVariable(Blueprint, PassiveLegendExpandedVariableName, BoolPin(), TEXT("false"))
         || !EnsureMemberVariable(Blueprint, PassiveGold3ExpandedVariableName, BoolPin(), TEXT("false"))
@@ -2983,7 +3323,7 @@ UEditableTextBox* AddPanelSearchBoxV2(
     SearchBox->bIsVariable = true;
     SearchBox->WidgetStyle = Style;
     SearchBox->SetText(FText::GetEmpty());
-    SearchBox->SetHintText(FText::FromString(TEXT("输入名称 / Name")));
+    SearchBox->SetHintText(FText::GetEmpty());
     SearchBox->SetMinDesiredWidth(360.0f);
     Parent->AddChild(SearchBox);
     SetHorizontalLayout(SearchBox, FMargin(0.0f, 0.0f, 6.0f, 0.0f), ESlateSizeRule::Fill);
@@ -3054,7 +3394,7 @@ UCheckBox* AddPanelToggleV2(
 
 UCheckBox* AddPanelFilterChipV2(
     UWidgetBlueprint* Blueprint,
-    UHorizontalBox* Parent,
+    UPanelWidget* Parent,
     const FName& ToggleName,
     const FName& TextName,
     const TCHAR* Text) {
@@ -3763,10 +4103,10 @@ bool BuildPanelInitializeControlsV2(
         || !SetPinDefault(IsMale, TEXT("B"), TEXT("1"))
         || !Link(Event, TEXT("GenderFilterId"), IsFemale, TEXT("A"))
         || !SetPinDefault(IsFemale, TEXT("B"), TEXT("2"))
-        || !SetPinDefault(SelectFemale, TEXT("A"), TEXT("当前 / Current: 雌性 / Female"))
-        || !SetPinDefault(SelectFemale, TEXT("B"), TEXT("当前 / Current: 全部 / All"))
+        || !SetPinDefault(SelectFemale, TEXT("A"), TEXT("当前：雌性"))
+        || !SetPinDefault(SelectFemale, TEXT("B"), TEXT("当前：全部"))
         || !Link(IsFemale, UEdGraphSchema_K2::PN_ReturnValue, SelectFemale, TEXT("bPickA"))
-        || !SetPinDefault(SelectMale, TEXT("A"), TEXT("当前 / Current: 雄性 / Male"))
+        || !SetPinDefault(SelectMale, TEXT("A"), TEXT("当前：雄性"))
         || !Link(SelectFemale, UEdGraphSchema_K2::PN_ReturnValue, SelectMale, TEXT("B"))
         || !Link(IsMale, UEdGraphSchema_K2::PN_ReturnValue, SelectMale, TEXT("bPickA"))
         || !Link(SelectMale, UEdGraphSchema_K2::PN_ReturnValue, ToText, TEXT("InString"))
@@ -3795,10 +4135,10 @@ bool BuildPanelInitializeControlsV2(
         || !SetPinDefault(IsOnlyLucky, TEXT("B"), TEXT("1"))
         || !Link(Event, TEXT("LuckyFilterId"), IsExcludeLucky, TEXT("A"))
         || !SetPinDefault(IsExcludeLucky, TEXT("B"), TEXT("2"))
-        || !SetPinDefault(SelectExcludeLucky, TEXT("A"), TEXT("当前 / Current: 排除闪光 / Exclude Lucky"))
-        || !SetPinDefault(SelectExcludeLucky, TEXT("B"), TEXT("当前 / Current: 全部 / All"))
+        || !SetPinDefault(SelectExcludeLucky, TEXT("A"), TEXT("当前：排除闪光"))
+        || !SetPinDefault(SelectExcludeLucky, TEXT("B"), TEXT("当前：全部"))
         || !Link(IsExcludeLucky, UEdGraphSchema_K2::PN_ReturnValue, SelectExcludeLucky, TEXT("bPickA"))
-        || !SetPinDefault(SelectOnlyLucky, TEXT("A"), TEXT("当前 / Current: 仅闪光 / Only Lucky"))
+        || !SetPinDefault(SelectOnlyLucky, TEXT("A"), TEXT("当前：仅闪光"))
         || !Link(SelectExcludeLucky, UEdGraphSchema_K2::PN_ReturnValue, SelectOnlyLucky, TEXT("B"))
         || !Link(IsOnlyLucky, UEdGraphSchema_K2::PN_ReturnValue, SelectOnlyLucky, TEXT("bPickA"))
         || !Link(SelectOnlyLucky, UEdGraphSchema_K2::PN_ReturnValue, LuckyToText, TEXT("InString"))
@@ -3827,10 +4167,10 @@ bool BuildPanelInitializeControlsV2(
         || !SetPinDefault(IsOnlyBoss, TEXT("B"), TEXT("1"))
         || !Link(Event, TEXT("BossFilterId"), IsExcludeBoss, TEXT("A"))
         || !SetPinDefault(IsExcludeBoss, TEXT("B"), TEXT("2"))
-        || !SetPinDefault(SelectExcludeBoss, TEXT("A"), TEXT("当前 / Current: 排除 Boss / Exclude Boss"))
-        || !SetPinDefault(SelectExcludeBoss, TEXT("B"), TEXT("当前 / Current: 全部 / All"))
+        || !SetPinDefault(SelectExcludeBoss, TEXT("A"), TEXT("当前：排除首领"))
+        || !SetPinDefault(SelectExcludeBoss, TEXT("B"), TEXT("当前：全部"))
         || !Link(IsExcludeBoss, UEdGraphSchema_K2::PN_ReturnValue, SelectExcludeBoss, TEXT("bPickA"))
-        || !SetPinDefault(SelectOnlyBoss, TEXT("A"), TEXT("当前 / Current: 仅 Boss / Only Boss"))
+        || !SetPinDefault(SelectOnlyBoss, TEXT("A"), TEXT("当前：仅首领"))
         || !Link(SelectExcludeBoss, UEdGraphSchema_K2::PN_ReturnValue, SelectOnlyBoss, TEXT("B"))
         || !Link(IsOnlyBoss, UEdGraphSchema_K2::PN_ReturnValue, SelectOnlyBoss, TEXT("bPickA"))
         || !Link(SelectOnlyBoss, UEdGraphSchema_K2::PN_ReturnValue, BossToText, TEXT("InString"))
@@ -3859,10 +4199,10 @@ bool BuildPanelInitializeControlsV2(
         || !SetPinDefault(IsIncompleteCollection, TEXT("B"), TEXT("1"))
         || !Link(Event, TEXT("CollectionFilterId"), IsCompleteCollection, TEXT("A"))
         || !SetPinDefault(IsCompleteCollection, TEXT("B"), TEXT("2"))
-        || !SetPinDefault(SelectCompleteCollection, TEXT("A"), TEXT("当前 / Current: 已完成 / Complete"))
-        || !SetPinDefault(SelectCompleteCollection, TEXT("B"), TEXT("当前 / Current: 全部 / All"))
+        || !SetPinDefault(SelectCompleteCollection, TEXT("A"), TEXT("当前：已完成"))
+        || !SetPinDefault(SelectCompleteCollection, TEXT("B"), TEXT("当前：全部"))
         || !Link(IsCompleteCollection, UEdGraphSchema_K2::PN_ReturnValue, SelectCompleteCollection, TEXT("bPickA"))
-        || !SetPinDefault(SelectIncompleteCollection, TEXT("A"), TEXT("当前 / Current: 未完成 / Incomplete"))
+        || !SetPinDefault(SelectIncompleteCollection, TEXT("A"), TEXT("当前：未完成"))
         || !Link(SelectCompleteCollection, UEdGraphSchema_K2::PN_ReturnValue, SelectIncompleteCollection, TEXT("B"))
         || !Link(IsIncompleteCollection, UEdGraphSchema_K2::PN_ReturnValue, SelectIncompleteCollection, TEXT("bPickA"))
         || !Link(SelectIncompleteCollection, UEdGraphSchema_K2::PN_ReturnValue, CollectionToText, TEXT("InString"))
@@ -3905,7 +4245,8 @@ bool BuildPanelLanguageEvent(
     int32 LanguageId,
     const TArray<FPanelTranslation>& Translations,
     int32 Y,
-    const TArray<UButton*>* LanguageButtons = nullptr) {
+    const TArray<UButton*>* LanguageButtons = nullptr,
+    bool bRefreshCatalogs = false) {
     UEdGraph* Graph = EventGraph(Blueprint);
     UK2Node_ComponentBoundEvent* Event = AddButtonEvent(Blueprint, Button, -1400, Y);
     UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1160, Y + 120);
@@ -3937,7 +4278,22 @@ bool BuildPanelLanguageEvent(
         return false;
     }
     X += LanguageButtons ? LanguageButtons->Num() * 520 : 0;
-    return AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, ExecTail, X, Y);
+    if (!AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, ExecTail, X, Y)) {
+        return false;
+    }
+    if (!bRefreshCatalogs) {
+        return true;
+    }
+    UK2Node_Self* PanelSelf = AddSelfNode(Graph, X + 300, Y + 180);
+    UK2Node_CallFunction* RefreshPassiveCatalog = AddStaticCall(
+        Graph, Blueprint->GeneratedClass, *PanelPopulatePassiveCatalogEventName.ToString(), X + 560, Y);
+    UK2Node_CallFunction* RefreshPalCatalog = AddStaticCall(
+        Graph, Blueprint->GeneratedClass, *PanelRenderPalCatalogEventName.ToString(), X + 820, Y);
+    return PanelSelf && RefreshPassiveCatalog && RefreshPalCatalog
+        && Link(ExecTail, UEdGraphSchema_K2::PN_Then, RefreshPassiveCatalog, UEdGraphSchema_K2::PN_Execute)
+        && Link(PanelSelf, UEdGraphSchema_K2::PN_Self, RefreshPassiveCatalog, UEdGraphSchema_K2::PN_Self)
+        && Link(RefreshPassiveCatalog, UEdGraphSchema_K2::PN_Then, RefreshPalCatalog, UEdGraphSchema_K2::PN_Execute)
+        && Link(PanelSelf, UEdGraphSchema_K2::PN_Self, RefreshPalCatalog, UEdGraphSchema_K2::PN_Self);
 }
 
 bool BuildPanelInitializeLanguage(
@@ -4075,7 +4431,7 @@ bool AppendPassiveTokenMutation(
     if (!Graph || !ModActorClass || !BridgeGet || !SkillIdGet || !ExecTail
         || !SkillIdToString || !TokenPrefix || !TokenSuffix || !TextGet || !RemoveToken || !StoreText
         || (bAdd && !AddToken)
-        || !Link(SkillIdGet, PassiveEntrySkillIdVariableName, SkillIdToString, TEXT("InName"))
+        || !Link(SkillIdGet, SkillIdGet->GetVarName(), SkillIdToString, TEXT("InName"))
         || !SetPinDefault(TokenPrefix, TEXT("A"), TEXT("|"))
         || !Link(SkillIdToString, UEdGraphSchema_K2::PN_ReturnValue, TokenPrefix, TEXT("B"))
         || !Link(TokenPrefix, UEdGraphSchema_K2::PN_ReturnValue, TokenSuffix, TEXT("A"))
@@ -4158,17 +4514,148 @@ bool BuildPassiveTooltip(UWidgetBlueprint* Blueprint) {
         Blueprint,
         Graph,
         *PassiveTooltipInitializeEventName.ToString(),
-        -800,
+        -3000,
         0,
         {{FName("Description"), TextPin()}}
     );
-    UK2Node_VariableGet* RichTextGet = AddVariableGet(Graph, RichText->GetFName(), -520, 160);
-    UK2Node_CallFunction* SetText = AddStaticCall(Graph, URichTextBlock::StaticClass(), TEXT("SetText"), -240, 0);
-    if (!Initialize || !RichTextGet || !SetText
-        || !Link(Initialize, UEdGraphSchema_K2::PN_Then, SetText, UEdGraphSchema_K2::PN_Execute)
-        || !Link(RichTextGet, RichText->GetFName(), SetText, UEdGraphSchema_K2::PN_Self)
-        || !Link(Initialize, TEXT("Description"), SetText, TEXT("InText"))) {
+    UK2Node_CallFunction* MakeGameStylePath = AddStaticCall(
+        Graph, UKismetSystemLibrary::StaticClass(), TEXT("MakeSoftObjectPath"), -2700, -420);
+    UK2Node_CallFunction* MakeGameStyleReference = AddStaticCall(
+        Graph, UKismetSystemLibrary::StaticClass(), TEXT("Conv_SoftObjPathToSoftObjRef"), -2400, -420);
+    UK2Node_CallFunction* LoadGameStyle = AddStaticCall(
+        Graph, UKismetSystemLibrary::StaticClass(), TEXT("LoadAsset_Blocking"), -2100, 0);
+    UK2Node_DynamicCast* CastGameStyle = AddPureDynamicCast(
+        Graph, UDataTable::StaticClass(), -1800, -420);
+    UK2Node_CallFunction* GameStyleIsValid = AddStaticCall(
+        Graph, UKismetSystemLibrary::StaticClass(), TEXT("IsValid"), -1500, -420);
+    UK2Node_CallFunction* SelectStyle = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectObject"), -1200, -420);
+    UK2Node_DynamicCast* CastSelectedStyle = AddPureDynamicCast(
+        Graph, UDataTable::StaticClass(), -900, -420);
+    UK2Node_VariableGet* RichTextStyleGet = AddVariableGet(
+        Graph, RichText->GetFName(), -900, -240);
+    UK2Node_CallFunction* SetRuntimeStyle = AddStaticCall(
+        Graph, URichTextBlock::StaticClass(), TEXT("SetTextStyleSet"), -600, 0);
+    UK2Node_MakeArray* DecoratorArray = NewObject<UK2Node_MakeArray>(Graph);
+    UEdGraphPin* FallbackStylePin = Pin(SelectStyle, TEXT("B"));
+    if (!Initialize || !MakeGameStylePath || !MakeGameStyleReference || !LoadGameStyle
+        || !CastGameStyle || !GameStyleIsValid || !SelectStyle || !CastSelectedStyle
+        || !RichTextStyleGet || !SetRuntimeStyle || !DecoratorArray || !FallbackStylePin
+        || !SetPinDefault(MakeGameStylePath, TEXT("PathString"), GameRichTextStylePath)
+        || !Link(MakeGameStylePath, UEdGraphSchema_K2::PN_ReturnValue, MakeGameStyleReference, TEXT("SoftObjectPath"))
+        || !Link(MakeGameStyleReference, UEdGraphSchema_K2::PN_ReturnValue, LoadGameStyle, TEXT("Asset"))
+        || !Link(LoadGameStyle, UEdGraphSchema_K2::PN_ReturnValue, CastGameStyle, UEdGraphSchema_K2::PN_ObjectToCast)
+        || !Link(CastGameStyle, CastGameStyle->GetCastResultPin()->PinName, GameStyleIsValid, TEXT("Object"))
+        || !Link(CastGameStyle, CastGameStyle->GetCastResultPin()->PinName, SelectStyle, TEXT("A"))
+        || !Link(GameStyleIsValid, UEdGraphSchema_K2::PN_ReturnValue, SelectStyle, TEXT("bSelectA"))
+        || !Link(SelectStyle, UEdGraphSchema_K2::PN_ReturnValue, CastSelectedStyle, UEdGraphSchema_K2::PN_ObjectToCast)
+        || !Link(RichTextStyleGet, RichText->GetFName(), SetRuntimeStyle, UEdGraphSchema_K2::PN_Self)
+        || !Link(CastSelectedStyle, CastSelectedStyle->GetCastResultPin()->PinName, SetRuntimeStyle, TEXT("NewTextStyleSet"))) {
         return false;
+    }
+    FallbackStylePin->DefaultObject = RichTextStyle;
+    constexpr const TCHAR* DecoratorPaths[] = {
+        TEXT("/Game/Pal/Blueprint/UI/PalTextBlock/BP_PalRichTextIconDecorator.BP_PalRichTextIconDecorator_C"),
+        TEXT("/Game/Pal/Blueprint/UI/PalTextBlock/BP_PalRichTextDecorator_ItemName.BP_PalRichTextDecorator_ItemName_C"),
+        TEXT("/Game/Pal/Blueprint/UI/PalTextBlock/BP_PalRichTextDecorator_CharacterName.BP_PalRichTextDecorator_CharacterName_C"),
+        TEXT("/Game/Pal/Blueprint/UI/PalTextBlock/BP_PalRichTextDecorator_MapObject.BP_PalRichTextDecorator_MapObject_C"),
+        TEXT("/Game/Pal/Blueprint/UI/PalTextBlock/BP_PalRichTextDecorator_ActiveSkillName.BP_PalRichTextDecorator_ActiveSkillName_C"),
+        TEXT("/Game/Pal/Blueprint/UI/PalTextBlock/BP_PalRichTextDecorator_UICommon.BP_PalRichTextDecorator_UICommon_C"),
+    };
+    DecoratorArray->NumInputs = UE_ARRAY_COUNT(DecoratorPaths);
+    DecoratorArray->NodePosX = -300;
+    DecoratorArray->NodePosY = 420;
+    Graph->AddNode(DecoratorArray, true, false);
+    DecoratorArray->CreateNewGuid();
+    DecoratorArray->AllocateDefaultPins();
+
+    FEdGraphPinType DecoratorClassPin;
+    DecoratorClassPin.PinCategory = UEdGraphSchema_K2::PC_Class;
+    DecoratorClassPin.PinSubCategoryObject = URichTextBlockDecorator::StaticClass();
+    FEdGraphPinType DecoratorArrayPin = DecoratorClassPin;
+    DecoratorArrayPin.ContainerType = EPinContainerType::Array;
+    DecoratorArray->GetOutputPin()->PinType = DecoratorArrayPin;
+    TArray<UK2Node_CallFunction*> LoadDecoratorClasses;
+    for (int32 Index = 0; Index < UE_ARRAY_COUNT(DecoratorPaths); ++Index) {
+        if (UEdGraphPin* InputPin = Pin(DecoratorArray, DecoratorArray->GetPinName(Index))) {
+            InputPin->PinType = DecoratorClassPin;
+        } else {
+            return false;
+        }
+        UK2Node_CallFunction* MakePath = AddStaticCall(
+            Graph, UKismetSystemLibrary::StaticClass(), TEXT("MakeSoftClassPath"), -3000, 240 + Index * 180);
+        UK2Node_CallFunction* ToSoftClass = AddStaticCall(
+            Graph, UKismetSystemLibrary::StaticClass(), TEXT("Conv_SoftClassPathToSoftClassRef"), -2700, 240 + Index * 180);
+        UK2Node_CallFunction* LoadClass = AddStaticCall(
+            Graph, UKismetSystemLibrary::StaticClass(), TEXT("LoadClassAsset_Blocking"), -2400 + Index * 300, 0);
+        UK2Node_ClassDynamicCast* CastDecorator = AddPureClassDynamicCast(
+            Graph, URichTextBlockDecorator::StaticClass(), -2250 + Index * 300, 180);
+        if (!MakePath || !ToSoftClass || !LoadClass || !CastDecorator) {
+            return false;
+        }
+        // __DEPRECATED_20260719__ [reason: reflected function pins cannot be manually narrowed]
+        // SoftClassOutput->PinType.PinSubCategoryObject = URichTextBlockDecorator::StaticClass();
+        // LoadClassInput->PinType.PinSubCategoryObject = URichTextBlockDecorator::StaticClass();
+        // LoadClassOutput->PinType = DecoratorClassPin;
+        if (!SetPinDefault(MakePath, TEXT("PathString"), DecoratorPaths[Index])
+            || !Link(MakePath, UEdGraphSchema_K2::PN_ReturnValue, ToSoftClass, TEXT("SoftClassPath"))
+            || !Link(ToSoftClass, UEdGraphSchema_K2::PN_ReturnValue, LoadClass, TEXT("AssetClass"))
+            || !Link(LoadClass, UEdGraphSchema_K2::PN_ReturnValue, CastDecorator, TEXT("Class"))
+            || !Link(
+                CastDecorator, CastDecorator->GetCastResultPin()->PinName,
+                DecoratorArray, DecoratorArray->GetPinName(Index))) {
+            return false;
+        }
+        LoadDecoratorClasses.Add(LoadClass);
+    }
+
+    UK2Node_VariableGet* RichTextGet = AddVariableGet(Graph, RichText->GetFName(), -600, 240);
+    UK2Node_CallFunction* SetDecorators = AddStaticCall(
+        Graph, URichTextBlock::StaticClass(), TEXT("SetDecorators"), -300, 0);
+    UK2Node_CallFunction* DescriptionToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), 0, 300);
+    // __MISTAKE_20260719__ [reason: replacing every pipe also corrupted visible " | " separators]
+    // const previous transform was Replace("|", "\"");
+    UK2Node_CallFunction* NormalizeStyleAttributePair = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), 300, 300);
+    UK2Node_CallFunction* NormalizeAttributeOpen = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), 600, 300);
+    UK2Node_CallFunction* NormalizeSelfClosingAttribute = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), 900, 300);
+    UK2Node_CallFunction* NormalizedDescriptionToText = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), 1200, 300);
+    UK2Node_CallFunction* SetText = AddStaticCall(Graph, URichTextBlock::StaticClass(), TEXT("SetText"), 1500, 0);
+    if (LoadDecoratorClasses.Num() != UE_ARRAY_COUNT(DecoratorPaths)
+        || !RichTextGet || !SetDecorators || !DescriptionToString || !NormalizeStyleAttributePair
+        || !NormalizeAttributeOpen || !NormalizeSelfClosingAttribute || !NormalizedDescriptionToText || !SetText
+        || !SetPinDefault(NormalizeStyleAttributePair, TEXT("From"), TEXT("| style=|"))
+        || !SetPinDefault(NormalizeStyleAttributePair, TEXT("To"), TEXT("\" style=\""))
+        || !SetPinDefault(NormalizeAttributeOpen, TEXT("From"), TEXT("=|"))
+        || !SetPinDefault(NormalizeAttributeOpen, TEXT("To"), TEXT("=\""))
+        || !SetPinDefault(NormalizeSelfClosingAttribute, TEXT("From"), TEXT("|/>"))
+        || !SetPinDefault(NormalizeSelfClosingAttribute, TEXT("To"), TEXT("\"/>"))
+        || !Link(Initialize, UEdGraphSchema_K2::PN_Then, LoadGameStyle, UEdGraphSchema_K2::PN_Execute)
+        || !Link(LoadGameStyle, UEdGraphSchema_K2::PN_Then, SetRuntimeStyle, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SetRuntimeStyle, UEdGraphSchema_K2::PN_Then, LoadDecoratorClasses[0], UEdGraphSchema_K2::PN_Execute)
+        || !Link(RichTextGet, RichText->GetFName(), SetDecorators, UEdGraphSchema_K2::PN_Self)
+        || !Link(DecoratorArray, DecoratorArray->GetOutputPin()->PinName, SetDecorators, TEXT("InDecoratorClasses"))
+        || !Link(LoadDecoratorClasses.Last(), UEdGraphSchema_K2::PN_Then, SetDecorators, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SetDecorators, UEdGraphSchema_K2::PN_Then, SetText, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RichTextGet, RichText->GetFName(), SetText, UEdGraphSchema_K2::PN_Self)
+        || !Link(Initialize, TEXT("Description"), DescriptionToString, TEXT("InText"))
+        || !Link(DescriptionToString, UEdGraphSchema_K2::PN_ReturnValue, NormalizeStyleAttributePair, TEXT("SourceString"))
+        || !Link(NormalizeStyleAttributePair, UEdGraphSchema_K2::PN_ReturnValue, NormalizeAttributeOpen, TEXT("SourceString"))
+        || !Link(NormalizeAttributeOpen, UEdGraphSchema_K2::PN_ReturnValue, NormalizeSelfClosingAttribute, TEXT("SourceString"))
+        || !Link(NormalizeSelfClosingAttribute, UEdGraphSchema_K2::PN_ReturnValue, NormalizedDescriptionToText, TEXT("InString"))
+        || !Link(NormalizedDescriptionToText, UEdGraphSchema_K2::PN_ReturnValue, SetText, TEXT("InText"))) {
+        return false;
+    }
+    for (int32 Index = 0; Index + 1 < LoadDecoratorClasses.Num(); ++Index) {
+        if (!Link(
+                LoadDecoratorClasses[Index], UEdGraphSchema_K2::PN_Then,
+                LoadDecoratorClasses[Index + 1], UEdGraphSchema_K2::PN_Execute)) {
+            return false;
+        }
     }
 
     FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
@@ -4528,23 +5015,1734 @@ bool BuildPassiveEntry(UWidgetBlueprint* Blueprint, UClass* ModActorClass, UClas
     return Blueprint->Status != BS_Error;
 }
 
+bool AppendPalSelectionSummaryUpdate(
+    UEdGraph* Graph,
+    UClass* ModActorClass,
+    UK2Node_VariableGet* BridgeGet,
+    bool bAdding,
+    UEdGraphNode*& ExecTail,
+    int32 X,
+    int32 Y) {
+    UK2Node_VariableGet* SummaryGet = AddVariableGet(Graph, PalEntrySelectionSummaryVariableName, X, Y + 120);
+    UK2Node_CallFunction* GetCurrentText = AddStaticCall(
+        Graph, UTextBlock::StaticClass(), TEXT("GetText"), X + 260, Y + 120);
+    UK2Node_CallFunction* CurrentTextToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), X + 520, Y + 120);
+    UK2Node_VariableGet* DisplayNameGet = AddVariableGet(Graph, PalEntryDisplayNameVariableName, X + 520, Y + 260);
+    UK2Node_VariableGet* LanguageGet = AddExternalVariableGet(
+        Graph, LanguageIdVariableName, ModActorClass, X, Y + 380);
+    UK2Node_CallFunction* IsEnglish = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 260, Y + 380);
+    UK2Node_CallFunction* Prefix = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 520, Y + 380);
+    UK2Node_CallFunction* Delimiter = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 520, Y + 500);
+    UK2Node_CallFunction* NoneText = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 520, Y + 620);
+    UK2Node_VariableGet* SpeciesGet = AddExternalVariableGet(
+        Graph, SpeciesFilterIdsVariableName, ModActorClass, X, Y + 760);
+    UK2Node_CallArrayFunction* SpeciesCount = AddArrayCall(Graph, TEXT("Array_Length"), X + 260, Y + 760);
+    UK2Node_CallFunction* BoundaryCount = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 520, Y + 760);
+    UK2Node_CallFunction* ResultToText = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), X + 1820, Y + 120);
+    UK2Node_CallFunction* SetSummary = AddStaticCall(
+        Graph, UTextBlock::StaticClass(), TEXT("SetText"), X + 2080, Y);
+    if (!Graph || !ModActorClass || !BridgeGet || !ExecTail || !SummaryGet || !GetCurrentText
+        || !CurrentTextToString || !DisplayNameGet || !LanguageGet || !IsEnglish
+        || !Prefix || !Delimiter || !NoneText || !SpeciesGet || !SpeciesCount || !BoundaryCount
+        || !ResultToText || !SetSummary
+        || !Link(SummaryGet, PalEntrySelectionSummaryVariableName, GetCurrentText, UEdGraphSchema_K2::PN_Self)
+        || !Link(GetCurrentText, UEdGraphSchema_K2::PN_ReturnValue, CurrentTextToString, TEXT("InText"))
+        || !Link(BridgeGet, PalEntryBridgeVariableName, LanguageGet, UEdGraphSchema_K2::PN_Self)
+        || !Link(LanguageGet, LanguageIdVariableName, IsEnglish, TEXT("A"))
+        || !SetPinDefault(IsEnglish, TEXT("B"), TEXT("1"))
+        || !SetPinDefault(Prefix, TEXT("A"), TEXT("Selected: "))
+        || !SetPinDefault(Prefix, TEXT("B"), TEXT("已选中："))
+        || !Link(IsEnglish, UEdGraphSchema_K2::PN_ReturnValue, Prefix, TEXT("bPickA"))
+        || !SetPinDefault(Delimiter, TEXT("A"), TEXT(", "))
+        || !SetPinDefault(Delimiter, TEXT("B"), TEXT("、"))
+        || !Link(IsEnglish, UEdGraphSchema_K2::PN_ReturnValue, Delimiter, TEXT("bPickA"))
+        || !SetPinDefault(NoneText, TEXT("A"), TEXT("Selected: none"))
+        || !SetPinDefault(NoneText, TEXT("B"), TEXT("已选中：无"))
+        || !Link(IsEnglish, UEdGraphSchema_K2::PN_ReturnValue, NoneText, TEXT("bPickA"))
+        || !Link(BridgeGet, PalEntryBridgeVariableName, SpeciesGet, UEdGraphSchema_K2::PN_Self)
+        || !Link(SpeciesGet, SpeciesFilterIdsVariableName, SpeciesCount, TEXT("TargetArray"))
+        || !Link(SpeciesCount, UEdGraphSchema_K2::PN_ReturnValue, BoundaryCount, TEXT("A"))
+        || !SetPinDefault(BoundaryCount, TEXT("B"), bAdding ? TEXT("1") : TEXT("0"))
+        || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetSummary, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SummaryGet, PalEntrySelectionSummaryVariableName, SetSummary, UEdGraphSchema_K2::PN_Self)) {
+        return false;
+    }
+
+    UEdGraphNode* ResultSource = nullptr;
+    if (bAdding) {
+        UK2Node_CallFunction* PrefixAndName = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), X + 780, Y + 260);
+        UK2Node_CallFunction* DelimiterAndName = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), X + 780, Y + 420);
+        UK2Node_CallFunction* AppendName = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), X + 1040, Y + 420);
+        UK2Node_CallFunction* SelectAddResult = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 1300, Y + 300);
+        if (!PrefixAndName || !DelimiterAndName || !AppendName || !SelectAddResult
+            || !Link(Prefix, UEdGraphSchema_K2::PN_ReturnValue, PrefixAndName, TEXT("A"))
+            || !Link(DisplayNameGet, PalEntryDisplayNameVariableName, PrefixAndName, TEXT("B"))
+            || !Link(Delimiter, UEdGraphSchema_K2::PN_ReturnValue, DelimiterAndName, TEXT("A"))
+            || !Link(DisplayNameGet, PalEntryDisplayNameVariableName, DelimiterAndName, TEXT("B"))
+            || !Link(CurrentTextToString, UEdGraphSchema_K2::PN_ReturnValue, AppendName, TEXT("A"))
+            || !Link(DelimiterAndName, UEdGraphSchema_K2::PN_ReturnValue, AppendName, TEXT("B"))
+            || !Link(PrefixAndName, UEdGraphSchema_K2::PN_ReturnValue, SelectAddResult, TEXT("A"))
+            || !Link(AppendName, UEdGraphSchema_K2::PN_ReturnValue, SelectAddResult, TEXT("B"))
+            || !Link(BoundaryCount, UEdGraphSchema_K2::PN_ReturnValue, SelectAddResult, TEXT("bPickA"))) {
+            return false;
+        }
+        ResultSource = SelectAddResult;
+    } else {
+        UK2Node_CallFunction* DelimiterAndName = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), X + 780, Y + 260);
+        UK2Node_CallFunction* NameAndDelimiter = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), X + 780, Y + 420);
+        UK2Node_CallFunction* RemoveSuffix = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), X + 1040, Y + 260);
+        UK2Node_CallFunction* RemovePrefix = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), X + 1300, Y + 260);
+        UK2Node_CallFunction* SelectRemoveResult = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), X + 1560, Y + 260);
+        if (!DelimiterAndName || !NameAndDelimiter || !RemoveSuffix || !RemovePrefix || !SelectRemoveResult
+            || !Link(Delimiter, UEdGraphSchema_K2::PN_ReturnValue, DelimiterAndName, TEXT("A"))
+            || !Link(DisplayNameGet, PalEntryDisplayNameVariableName, DelimiterAndName, TEXT("B"))
+            || !Link(DisplayNameGet, PalEntryDisplayNameVariableName, NameAndDelimiter, TEXT("A"))
+            || !Link(Delimiter, UEdGraphSchema_K2::PN_ReturnValue, NameAndDelimiter, TEXT("B"))
+            || !Link(CurrentTextToString, UEdGraphSchema_K2::PN_ReturnValue, RemoveSuffix, TEXT("SourceString"))
+            || !Link(DelimiterAndName, UEdGraphSchema_K2::PN_ReturnValue, RemoveSuffix, TEXT("From"))
+            || !SetPinDefault(RemoveSuffix, TEXT("To"), TEXT(""))
+            || !Link(RemoveSuffix, UEdGraphSchema_K2::PN_ReturnValue, RemovePrefix, TEXT("SourceString"))
+            || !Link(NameAndDelimiter, UEdGraphSchema_K2::PN_ReturnValue, RemovePrefix, TEXT("From"))
+            || !SetPinDefault(RemovePrefix, TEXT("To"), TEXT(""))
+            || !Link(NoneText, UEdGraphSchema_K2::PN_ReturnValue, SelectRemoveResult, TEXT("A"))
+            || !Link(RemovePrefix, UEdGraphSchema_K2::PN_ReturnValue, SelectRemoveResult, TEXT("B"))
+            || !Link(BoundaryCount, UEdGraphSchema_K2::PN_ReturnValue, SelectRemoveResult, TEXT("bPickA"))) {
+            return false;
+        }
+        ResultSource = SelectRemoveResult;
+    }
+    if (!ResultSource
+        || !Link(ResultSource, UEdGraphSchema_K2::PN_ReturnValue, ResultToText, TEXT("InString"))
+        || !Link(ResultToText, UEdGraphSchema_K2::PN_ReturnValue, SetSummary, TEXT("InText"))) {
+        return false;
+    }
+    ExecTail = SetSummary;
+    return true;
+}
+
+bool BuildPalEntry(
+    UWidgetBlueprint* Blueprint,
+    UClass* ModActorClass,
+    UClass* PalUtilityClass,
+    UClass* DatabaseCharacterParameterClass,
+    UClass* PassiveTooltipClass) {
+    if (!Blueprint || !Blueprint->WidgetTree || !ModActorClass
+        || !PalUtilityClass || !DatabaseCharacterParameterClass || !PassiveTooltipClass) {
+        return false;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    if (!Graph) {
+        return false;
+    }
+    ClearGraph(Graph);
+    if (!EnsureMemberVariable(Blueprint, PalEntryBridgeVariableName, ObjectPin(ModActorClass))
+        || !EnsureMemberVariable(Blueprint, PalEntryCharacterIdVariableName, NamePin())
+        || !EnsureMemberVariable(Blueprint, PalEntryDisplayNameVariableName, StringPin())
+        || !EnsureMemberVariable(Blueprint, PalEntrySelectionSummaryVariableName, ObjectPin(UTextBlock::StaticClass()))
+        || !EnsureMemberVariable(Blueprint, PalEntrySelectedVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PalEntryInitializingVariableName, BoolPin(), TEXT("false"))) {
+        return false;
+    }
+
+    USizeBox* Size = Blueprint->WidgetTree->ConstructWidget<USizeBox>(
+        USizeBox::StaticClass(), TEXT("ESP_PalEntrySize"));
+    UCheckBox* Toggle = Blueprint->WidgetTree->ConstructWidget<UCheckBox>(
+        UCheckBox::StaticClass(), TEXT("ESP_PalEntryToggle"));
+    UHorizontalBox* Row = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(
+        UHorizontalBox::StaticClass(), TEXT("ESP_PalEntryRow"));
+    USizeBox* IconSize = Blueprint->WidgetTree->ConstructWidget<USizeBox>(
+        USizeBox::StaticClass(), TEXT("ESP_PalEntryIconSize"));
+    UImage* Icon = Blueprint->WidgetTree->ConstructWidget<UImage>(
+        UImage::StaticClass(), TEXT("ESP_PalEntryIcon"));
+    UVerticalBox* TextColumn = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(
+        UVerticalBox::StaticClass(), TEXT("ESP_PalEntryTextColumn"));
+    UTextBlock* Title = Blueprint->WidgetTree->ConstructWidget<UTextBlock>(
+        UTextBlock::StaticClass(), TEXT("ESP_PalEntryTitle"));
+    UTextBlock* Elements = Blueprint->WidgetTree->ConstructWidget<UTextBlock>(
+        UTextBlock::StaticClass(), TEXT("ESP_PalEntryElements"));
+    UTextBlock* Work = Blueprint->WidgetTree->ConstructWidget<UTextBlock>(
+        UTextBlock::StaticClass(), TEXT("ESP_PalEntryWork"));
+    if (!Size || !Toggle || !Row || !IconSize || !Icon || !TextColumn
+        || !Title || !Elements || !Work) {
+        return false;
+    }
+    Size->SetWidthOverride(350.0f);
+    Size->SetHeightOverride(128.0f);
+    Toggle->bIsVariable = true;
+    Icon->bIsVariable = true;
+    Title->bIsVariable = true;
+    Elements->bIsVariable = true;
+    Work->bIsVariable = true;
+    FCheckBoxStyle Style = FCheckBoxStyle::GetDefault();
+    Style.SetCheckBoxType(ESlateCheckBoxType::ToggleButton)
+        .SetUncheckedImage(FSlateRoundedBoxBrush(PanelV2Style::SurfaceRaised, 6.0f, PanelV2Style::ToggleOutline, 1.0f))
+        .SetUncheckedHoveredImage(FSlateRoundedBoxBrush(PanelV2Style::ToggleUncheckedHover, 6.0f, PanelV2Style::AccentHover, 1.0f))
+        .SetUncheckedPressedImage(FSlateRoundedBoxBrush(PanelV2Style::SurfaceHover, 6.0f, PanelV2Style::Accent, 1.0f))
+        .SetCheckedImage(FSlateRoundedBoxBrush(FLinearColor(0.07f, 0.30f, 0.18f, 1.0f), 6.0f, PanelV2Style::Accent, 3.0f))
+        .SetCheckedHoveredImage(FSlateRoundedBoxBrush(FLinearColor(0.09f, 0.36f, 0.22f, 1.0f), 6.0f, PanelV2Style::AccentHover, 3.0f))
+        .SetCheckedPressedImage(FSlateRoundedBoxBrush(FLinearColor(0.06f, 0.25f, 0.15f, 1.0f), 6.0f, PanelV2Style::Accent, 3.0f))
+        .SetForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetHoveredForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetPressedForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetCheckedForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetCheckedHoveredForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetCheckedPressedForegroundColor(FSlateColor(PanelV2Style::PrimaryText))
+        .SetPadding(FMargin(10.0f, 8.0f));
+    Toggle->SetWidgetStyle(Style);
+    IconSize->SetWidthOverride(86.0f);
+    IconSize->SetHeightOverride(86.0f);
+    IconSize->AddChild(Icon);
+    Row->AddChild(IconSize);
+    Row->AddChild(TextColumn);
+    SetHorizontalLayout(IconSize, FMargin(0.0f, 0.0f, 10.0f, 0.0f), ESlateSizeRule::Automatic);
+    SetHorizontalLayout(TextColumn, FMargin(0.0f), ESlateSizeRule::Fill);
+    auto ConfigureText = [](UTextBlock* Text, int32 SizeValue, const FLinearColor& Color) {
+        FSlateFontInfo Font = Text->GetFont();
+        Font.Size = SizeValue;
+        Text->SetFont(Font);
+        Text->SetColorAndOpacity(FSlateColor(Color));
+        Text->SetAutoWrapText(true);
+    };
+    ConfigureText(Title, 16, PanelV2Style::PrimaryText);
+    ConfigureText(Elements, 12, FLinearColor(0.60f, 0.80f, 1.0f, 1.0f));
+    ConfigureText(Work, 11, PanelV2Style::SecondaryText);
+    TextColumn->AddChild(Title);
+    TextColumn->AddChild(Elements);
+    TextColumn->AddChild(Work);
+    SetVerticalPadding(Elements, FMargin(0.0f, 3.0f, 0.0f, 2.0f));
+    Toggle->AddChild(Row);
+    Size->AddChild(Toggle);
+    Blueprint->WidgetTree->RootWidget = Size;
+
+    const bool bWidgetPropertiesExist = Blueprint->GeneratedClass
+        && Blueprint->GeneratedClass->FindPropertyByName(Toggle->GetFName())
+        && Blueprint->GeneratedClass->FindPropertyByName(Icon->GetFName())
+        && Blueprint->GeneratedClass->FindPropertyByName(Title->GetFName())
+        && Blueprint->GeneratedClass->FindPropertyByName(Elements->GetFName())
+        && Blueprint->GeneratedClass->FindPropertyByName(Work->GetFName());
+    if (!bWidgetPropertiesExist) {
+        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+        FKismetEditorUtilities::CompileBlueprint(Blueprint);
+        if (Blueprint->Status == BS_Error) {
+            UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] Pal entry WidgetTree compile failed"));
+            return false;
+        }
+    }
+
+    UK2Node_CustomEvent* Initialize = AddCustomEvent(
+        Blueprint, Graph, *PalEntryInitializeEventName.ToString(), -1800, -600, {
+            {FName("Bridge"), ObjectPin(ModActorClass)},
+            {FName("CharacterId"), NamePin()},
+            {FName("PaldexNumber"), StringPin()},
+            {FName("DisplayName"), StringPin()},
+            {FName("SelectionSummary"), ObjectPin(UTextBlock::StaticClass())},
+            {FName("ElementText"), StringPin()},
+            {FName("WorkText"), StringPin()},
+            {FName("Tooltip"), TextPin()},
+            {FName("Selected"), BoolPin()},
+        });
+    UK2Node_VariableSet* StoreInitializing = AddVariableSet(Graph, PalEntryInitializingVariableName, -1520, -600);
+    UK2Node_VariableSet* StoreBridge = AddVariableSet(Graph, PalEntryBridgeVariableName, -1240, -600);
+    UK2Node_VariableSet* StoreCharacterId = AddVariableSet(Graph, PalEntryCharacterIdVariableName, -960, -600);
+    UK2Node_VariableSet* StoreDisplayName = AddVariableSet(Graph, PalEntryDisplayNameVariableName, -680, -600);
+    UK2Node_VariableSet* StoreSelectionSummary = AddVariableSet(Graph, PalEntrySelectionSummaryVariableName, -400, -600);
+    UK2Node_VariableSet* StoreSelected = AddVariableSet(Graph, PalEntrySelectedVariableName, -120, -600);
+    UK2Node_CallFunction* NumberPrefix = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), -1240, -360);
+    UK2Node_CallFunction* TitleText = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), -960, -360);
+    UK2Node_CallFunction* TitleToText = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), -680, -360);
+    UK2Node_VariableGet* TitleGet = AddVariableGet(Graph, Title->GetFName(), -680, -240);
+    UK2Node_CallFunction* SetTitle = AddStaticCall(Graph, UTextBlock::StaticClass(), TEXT("SetText"), -400, -600);
+    UK2Node_CallFunction* ElementToText = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), -400, -360);
+    UK2Node_VariableGet* ElementGet = AddVariableGet(Graph, Elements->GetFName(), -400, -240);
+    UK2Node_CallFunction* SetElements = AddStaticCall(Graph, UTextBlock::StaticClass(), TEXT("SetText"), -120, -600);
+    UK2Node_CallFunction* WorkToText = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), -120, -360);
+    UK2Node_VariableGet* WorkGet = AddVariableGet(Graph, Work->GetFName(), -120, -240);
+    UK2Node_CallFunction* SetWork = AddStaticCall(Graph, UTextBlock::StaticClass(), TEXT("SetText"), 160, -600);
+    UK2Node_VariableGet* ToggleGet = AddVariableGet(Graph, Toggle->GetFName(), 160, -360);
+    // __DEPRECATED_20260719__ [reason: Pal cards now use the game-aware rich-text tooltip widget]
+    // UK2Node_CallFunction* LegacyTextTooltip = AddStaticCall(
+    //     Graph, UWidget::StaticClass(), TEXT("SetToolTip" "Text"), 440, -600);
+    UK2Node_Self* EntrySelf = AddSelfNode(Graph, 160, -120);
+    UK2Node_CallFunction* GetController = AddStaticCall(
+        Graph, UGameplayStatics::StaticClass(), TEXT("GetPlayerController"), 440, -360);
+    UK2Node_CallFunction* CreateTooltip = AddStaticCall(
+        Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("Create"), 440, -600);
+    UK2Node_DynamicCast* CastTooltip = AddDynamicCast(Graph, PassiveTooltipClass, 720, -600);
+    UK2Node_CallFunction* InitializeTooltip = AddStaticCall(
+        Graph, PassiveTooltipClass, *PassiveTooltipInitializeEventName.ToString(), 1000, -600);
+    UK2Node_CallFunction* SetTooltip = AddStaticCall(Graph, UWidget::StaticClass(), TEXT("SetToolTip"), 1280, -600);
+    UEdGraphNode* TooltipSetupTail = InitializeTooltip;
+    if (EnablePartnerRichTextAudit) {
+        UK2Node_CallFunction* AuditCharacterId = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_NameToString"), 1000, -960);
+        UK2Node_CallFunction* AuditTooltipText = AddStaticCall(
+            Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), 1000, -840);
+        UK2Node_CallFunction* AuditEscapeCarriageReturns = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), 1280, -840);
+        UK2Node_CallFunction* AuditEscapeNewlines = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Replace"), 1560, -840);
+        UK2Node_CallFunction* AuditPrefix = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 1280, -960);
+        UK2Node_CallFunction* AuditTextPrefix = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 1560, -960);
+        UK2Node_CallFunction* AuditMessage = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 1840, -960);
+        UK2Node_CallFunction* AuditPrint = AddStaticCall(
+            Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), 2120, -600);
+        UK2Node_CallFunction* AuditLine = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 2120, -960);
+        UK2Node_VariableGet* AuditBridgeGet = AddVariableGet(
+            Graph, PalEntryBridgeVariableName, 2120, -840);
+        UK2Node_VariableGet* AuditBufferGet = AddExternalVariableGet(
+            Graph, RichTextAuditBufferVariableName, ModActorClass, 2400, -840);
+        UK2Node_CallFunction* AuditAppend = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 2400, -960);
+        UK2Node_VariableSet* AuditBufferSet = AddExternalVariableSet(
+            Graph, RichTextAuditBufferVariableName, ModActorClass, 2680, -600);
+        if (!AuditCharacterId || !AuditTooltipText || !AuditEscapeCarriageReturns || !AuditEscapeNewlines
+            || !AuditPrefix || !AuditTextPrefix || !AuditMessage || !AuditPrint || !AuditLine
+            || !AuditBridgeGet || !AuditBufferGet || !AuditAppend || !AuditBufferSet
+            || !Link(Initialize, TEXT("CharacterId"), AuditCharacterId, TEXT("InName"))
+            || !Link(Initialize, TEXT("Tooltip"), AuditTooltipText, TEXT("InText"))
+            || !Link(AuditTooltipText, UEdGraphSchema_K2::PN_ReturnValue, AuditEscapeCarriageReturns, TEXT("SourceString"))
+            || !SetPinDefault(AuditEscapeCarriageReturns, TEXT("From"), TEXT("\r"))
+            || !SetPinDefault(AuditEscapeCarriageReturns, TEXT("To"), TEXT("\\r"))
+            || !Link(AuditEscapeCarriageReturns, UEdGraphSchema_K2::PN_ReturnValue, AuditEscapeNewlines, TEXT("SourceString"))
+            || !SetPinDefault(AuditEscapeNewlines, TEXT("From"), TEXT("\n"))
+            || !SetPinDefault(AuditEscapeNewlines, TEXT("To"), TEXT("\\n"))
+            || !SetPinDefault(AuditPrefix, TEXT("A"), TEXT("character_id="))
+            || !Link(AuditCharacterId, UEdGraphSchema_K2::PN_ReturnValue, AuditPrefix, TEXT("B"))
+            || !Link(AuditPrefix, UEdGraphSchema_K2::PN_ReturnValue, AuditTextPrefix, TEXT("A"))
+            || !SetPinDefault(AuditTextPrefix, TEXT("B"), TEXT(" text="))
+            || !Link(AuditTextPrefix, UEdGraphSchema_K2::PN_ReturnValue, AuditMessage, TEXT("A"))
+            || !Link(AuditEscapeNewlines, UEdGraphSchema_K2::PN_ReturnValue, AuditMessage, TEXT("B"))
+            || !Link(AuditMessage, UEdGraphSchema_K2::PN_ReturnValue, AuditLine, TEXT("A"))
+            || !SetPinDefault(AuditLine, TEXT("B"), TEXT("\n"))
+            || !Link(AuditBridgeGet, PalEntryBridgeVariableName, AuditBufferGet, UEdGraphSchema_K2::PN_Self)
+            || !Link(AuditBufferGet, RichTextAuditBufferVariableName, AuditAppend, TEXT("A"))
+            || !Link(AuditLine, UEdGraphSchema_K2::PN_ReturnValue, AuditAppend, TEXT("B"))
+            || !Link(AuditBridgeGet, PalEntryBridgeVariableName, AuditBufferSet, UEdGraphSchema_K2::PN_Self)
+            || !Link(AuditAppend, UEdGraphSchema_K2::PN_ReturnValue, AuditBufferSet, RichTextAuditBufferVariableName)
+            || !Link(InitializeTooltip, UEdGraphSchema_K2::PN_Then, AuditBufferSet, UEdGraphSchema_K2::PN_Execute)
+            || !Link(AuditBufferSet, UEdGraphSchema_K2::PN_Then, AuditPrint, UEdGraphSchema_K2::PN_Execute)
+            || !Link(EntrySelf, UEdGraphSchema_K2::PN_Self, AuditPrint, TEXT("WorldContextObject"))
+            || !Link(AuditMessage, UEdGraphSchema_K2::PN_ReturnValue, AuditPrint, TEXT("InString"))
+            || !SetPinDefault(AuditPrint, TEXT("bPrintToScreen"), TEXT("false"))
+            || !SetPinDefault(AuditPrint, TEXT("bPrintToLog"), TEXT("true"))) {
+            return false;
+        }
+        TooltipSetupTail = AuditPrint;
+    }
+    UK2Node_CallFunction* SetChecked = AddStaticCall(Graph, UCheckBox::StaticClass(), TEXT("SetIsChecked"), 1560, -600);
+    UK2Node_VariableSet* ClearInitializing = AddVariableSet(Graph, PalEntryInitializingVariableName, 1840, -600);
+    UK2Node_CallFunction* Database = AddStaticCall(
+        Graph, PalUtilityClass, TEXT("GetDatabaseCharacterParameter"), 440, -120);
+    UK2Node_CallFunction* IconTexture = AddStaticCall(
+        Graph, DatabaseCharacterParameterClass, TEXT("GetCharacterIconTexture"), 720, -120);
+    UK2Node_VariableGet* CharacterIdGetForIcon = AddVariableGet(
+        Graph, PalEntryCharacterIdVariableName, 720, 40);
+    UK2Node_VariableGet* IconGet = AddVariableGet(Graph, Icon->GetFName(), 1000, 40);
+    UK2Node_CallFunction* SetIcon = AddStaticCall(Graph, UImage::StaticClass(), TEXT("SetBrushFromSoftTexture"), 1280, -600);
+    if (!Initialize || !StoreInitializing || !StoreBridge || !StoreCharacterId || !StoreDisplayName
+        || !StoreSelectionSummary || !StoreSelected || !NumberPrefix || !TitleText
+        || !TitleToText || !TitleGet || !SetTitle || !ElementToText || !ElementGet || !SetElements
+        || !WorkToText || !WorkGet || !SetWork || !ToggleGet || !EntrySelf || !GetController
+        || !CreateTooltip || !CastTooltip || !InitializeTooltip || !SetTooltip || !SetChecked || !ClearInitializing
+        || !Database || !IconTexture || !CharacterIdGetForIcon || !IconGet || !SetIcon
+        || !Link(Initialize, UEdGraphSchema_K2::PN_Then, StoreInitializing, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(StoreInitializing, PalEntryInitializingVariableName, TEXT("true"))
+        || !Link(StoreInitializing, UEdGraphSchema_K2::PN_Then, StoreBridge, UEdGraphSchema_K2::PN_Execute)
+        || !Link(Initialize, TEXT("Bridge"), StoreBridge, PalEntryBridgeVariableName)
+        || !Link(StoreBridge, UEdGraphSchema_K2::PN_Then, StoreCharacterId, UEdGraphSchema_K2::PN_Execute)
+        || !Link(Initialize, TEXT("CharacterId"), StoreCharacterId, PalEntryCharacterIdVariableName)
+        || !Link(StoreCharacterId, UEdGraphSchema_K2::PN_Then, StoreDisplayName, UEdGraphSchema_K2::PN_Execute)
+        || !Link(Initialize, TEXT("DisplayName"), StoreDisplayName, PalEntryDisplayNameVariableName)
+        || !Link(StoreDisplayName, UEdGraphSchema_K2::PN_Then, StoreSelectionSummary, UEdGraphSchema_K2::PN_Execute)
+        || !Link(Initialize, TEXT("SelectionSummary"), StoreSelectionSummary, PalEntrySelectionSummaryVariableName)
+        || !Link(StoreSelectionSummary, UEdGraphSchema_K2::PN_Then, StoreSelected, UEdGraphSchema_K2::PN_Execute)
+        || !Link(Initialize, TEXT("Selected"), StoreSelected, PalEntrySelectedVariableName)
+        || !SetPinDefault(NumberPrefix, TEXT("A"), TEXT("#"))
+        || !Link(Initialize, TEXT("PaldexNumber"), NumberPrefix, TEXT("B"))
+        || !Link(NumberPrefix, UEdGraphSchema_K2::PN_ReturnValue, TitleText, TEXT("A"))
+        || !Link(Initialize, TEXT("DisplayName"), TitleText, TEXT("B"))
+        || !Link(TitleText, UEdGraphSchema_K2::PN_ReturnValue, TitleToText, TEXT("InString"))
+        || !Link(StoreSelected, UEdGraphSchema_K2::PN_Then, SetTitle, UEdGraphSchema_K2::PN_Execute)
+        || !Link(TitleGet, Title->GetFName(), SetTitle, UEdGraphSchema_K2::PN_Self)
+        || !Link(TitleToText, UEdGraphSchema_K2::PN_ReturnValue, SetTitle, TEXT("InText"))
+        || !Link(Initialize, TEXT("ElementText"), ElementToText, TEXT("InString"))
+        || !Link(SetTitle, UEdGraphSchema_K2::PN_Then, SetElements, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ElementGet, Elements->GetFName(), SetElements, UEdGraphSchema_K2::PN_Self)
+        || !Link(ElementToText, UEdGraphSchema_K2::PN_ReturnValue, SetElements, TEXT("InText"))
+        || !Link(Initialize, TEXT("WorkText"), WorkToText, TEXT("InString"))
+        || !Link(SetElements, UEdGraphSchema_K2::PN_Then, SetWork, UEdGraphSchema_K2::PN_Execute)
+        || !Link(WorkGet, Work->GetFName(), SetWork, UEdGraphSchema_K2::PN_Self)
+        || !Link(WorkToText, UEdGraphSchema_K2::PN_ReturnValue, SetWork, TEXT("InText"))
+        || !Link(EntrySelf, UEdGraphSchema_K2::PN_Self, GetController, TEXT("WorldContextObject"))
+        || !SetPinDefault(GetController, TEXT("PlayerIndex"), TEXT("0"))
+        || !SetClassPin(CreateTooltip, TEXT("WidgetType"), PassiveTooltipClass)
+        || !Link(GetController, UEdGraphSchema_K2::PN_ReturnValue, CreateTooltip, TEXT("OwningPlayer"))
+        || !Link(SetWork, UEdGraphSchema_K2::PN_Then, CreateTooltip, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CreateTooltip, UEdGraphSchema_K2::PN_Then, CastTooltip, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CreateTooltip, UEdGraphSchema_K2::PN_ReturnValue, CastTooltip, UEdGraphSchema_K2::PN_ObjectToCast)
+        || !Link(CastTooltip, UEdGraphSchema_K2::PN_CastSucceeded, InitializeTooltip, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CastTooltip, CastTooltip->GetCastResultPin()->PinName, InitializeTooltip, UEdGraphSchema_K2::PN_Self)
+        || !Link(Initialize, TEXT("Tooltip"), InitializeTooltip, TEXT("Description"))
+        || !Link(TooltipSetupTail, UEdGraphSchema_K2::PN_Then, SetTooltip, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ToggleGet, Toggle->GetFName(), SetTooltip, UEdGraphSchema_K2::PN_Self)
+        || !Link(CastTooltip, CastTooltip->GetCastResultPin()->PinName, SetTooltip, TEXT("Widget"))
+        || !Link(SetTooltip, UEdGraphSchema_K2::PN_Then, SetChecked, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ToggleGet, Toggle->GetFName(), SetChecked, UEdGraphSchema_K2::PN_Self)
+        || !Link(Initialize, TEXT("Selected"), SetChecked, TEXT("InIsChecked"))
+        || !Link(EntrySelf, UEdGraphSchema_K2::PN_Self, Database, TEXT("WorldContextObject"))
+        || !Link(Database, UEdGraphSchema_K2::PN_ReturnValue, IconTexture, UEdGraphSchema_K2::PN_Self)
+        || !Link(CharacterIdGetForIcon, PalEntryCharacterIdVariableName, IconTexture, TEXT("CharacterID"))
+        || !Link(SetChecked, UEdGraphSchema_K2::PN_Then, ClearInitializing, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(ClearInitializing, PalEntryInitializingVariableName, TEXT("false"))
+        || !Link(ClearInitializing, UEdGraphSchema_K2::PN_Then, SetIcon, UEdGraphSchema_K2::PN_Execute)
+        || !Link(IconGet, Icon->GetFName(), SetIcon, UEdGraphSchema_K2::PN_Self)
+        || !Link(IconTexture, UEdGraphSchema_K2::PN_ReturnValue, SetIcon, TEXT("SoftTexture"))
+        || !SetPinDefault(SetIcon, TEXT("bMatchSize"), TEXT("false"))) {
+        return false;
+    }
+
+    UK2Node_ComponentBoundEvent* Changed = AddCheckBoxStateChangedEvent(Blueprint, Toggle, -1800, 480);
+    UK2Node_VariableGet* InitializingGet = AddVariableGet(Graph, PalEntryInitializingVariableName, -1800, 640);
+    UK2Node_CallFunction* NotInitializing = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), -1520, 640);
+    UK2Node_IfThenElse* ChangedAllowed = AddBranch(Graph, -1240, 480);
+    UK2Node_IfThenElse* SelectedBranch = AddBranch(Graph, -1520, 480);
+    UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PalEntryBridgeVariableName, -1520, 680);
+    UK2Node_VariableGet* CharacterIdGet = AddVariableGet(Graph, PalEntryCharacterIdVariableName, -1520, 800);
+    UK2Node_VariableGet* SpeciesGetForAdd = AddExternalVariableGet(
+        Graph, SpeciesFilterIdsVariableName, ModActorClass, -1240, 360);
+    UK2Node_CallArrayFunction* SpeciesCount = AddArrayCall(Graph, TEXT("Array_Length"), -960, 280);
+    UK2Node_CallFunction* HasCapacity = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Less_IntInt"), -680, 280);
+    UK2Node_IfThenElse* CapacityBranch = AddBranch(Graph, -960, 480);
+    UK2Node_CallArrayFunction* AddSpecies = AddArrayCall(Graph, TEXT("Array_AddUnique"), -680, 480);
+    UK2Node_VariableGet* SpeciesGetForRemove = AddExternalVariableGet(
+        Graph, SpeciesFilterIdsVariableName, ModActorClass, -1240, 920);
+    UK2Node_CallArrayFunction* RemoveSpecies = AddArrayCall(Graph, TEXT("Array_RemoveItem"), -960, 920);
+    UK2Node_VariableGet* ToggleGetForReject = AddVariableGet(Graph, Toggle->GetFName(), -680, 760);
+    UK2Node_CallFunction* RejectOverflow = AddStaticCall(
+        Graph, UCheckBox::StaticClass(), TEXT("SetIsChecked"), -400, 760);
+    if (!Changed || !InitializingGet || !NotInitializing || !ChangedAllowed || !SelectedBranch
+        || !BridgeGet || !CharacterIdGet || !SpeciesGetForAdd
+        || !SpeciesCount || !HasCapacity || !CapacityBranch || !AddSpecies
+        || !SpeciesGetForRemove || !RemoveSpecies || !ToggleGetForReject || !RejectOverflow
+        || !Link(Changed, UEdGraphSchema_K2::PN_Then, ChangedAllowed, UEdGraphSchema_K2::PN_Execute)
+        || !Link(InitializingGet, PalEntryInitializingVariableName, NotInitializing, TEXT("A"))
+        || !Link(NotInitializing, UEdGraphSchema_K2::PN_ReturnValue, ChangedAllowed, UEdGraphSchema_K2::PN_Condition)
+        || !Link(ChangedAllowed, UEdGraphSchema_K2::PN_Then, SelectedBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(Changed, TEXT("bIsChecked"), SelectedBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(SelectedBranch, UEdGraphSchema_K2::PN_Then, CapacityBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BridgeGet, PalEntryBridgeVariableName, SpeciesGetForAdd, UEdGraphSchema_K2::PN_Self)
+        || !Link(SpeciesGetForAdd, SpeciesFilterIdsVariableName, SpeciesCount, TEXT("TargetArray"))
+        || !Link(SpeciesCount, UEdGraphSchema_K2::PN_ReturnValue, HasCapacity, TEXT("A"))
+        || !SetPinDefault(HasCapacity, TEXT("B"), TEXT("512"))
+        || !Link(HasCapacity, UEdGraphSchema_K2::PN_ReturnValue, CapacityBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(CapacityBranch, UEdGraphSchema_K2::PN_Then, AddSpecies, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SpeciesGetForAdd, SpeciesFilterIdsVariableName, AddSpecies, TEXT("TargetArray"))
+        || !Link(CharacterIdGet, PalEntryCharacterIdVariableName, AddSpecies, TEXT("NewItem"))
+        || !Link(CapacityBranch, UEdGraphSchema_K2::PN_Else, RejectOverflow, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ToggleGetForReject, Toggle->GetFName(), RejectOverflow, UEdGraphSchema_K2::PN_Self)
+        || !SetPinDefault(RejectOverflow, TEXT("InIsChecked"), TEXT("false"))
+        || !Link(SelectedBranch, UEdGraphSchema_K2::PN_Else, RemoveSpecies, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BridgeGet, PalEntryBridgeVariableName, SpeciesGetForRemove, UEdGraphSchema_K2::PN_Self)
+        || !Link(SpeciesGetForRemove, SpeciesFilterIdsVariableName, RemoveSpecies, TEXT("TargetArray"))
+        || !Link(CharacterIdGet, PalEntryCharacterIdVariableName, RemoveSpecies, TEXT("Item"))) {
+        return false;
+    }
+    UEdGraphNode* AddTail = AddSpecies;
+    UEdGraphNode* RemoveTail = RemoveSpecies;
+    if (!AppendPassiveTokenMutation(
+            Graph, ModActorClass, BridgeGet, CharacterIdGet,
+            SpeciesFilterTextVariableName, true, AddTail, -400, 480)
+        || !AppendPassiveTokenMutation(
+            Graph, ModActorClass, BridgeGet, CharacterIdGet,
+            SpeciesFilterTextVariableName, false, RemoveTail, -680, 920)
+        || !AppendExternalIntegerIncrement(
+            Graph, ModActorClass, BridgeGet, ControlRevisionVariableName, AddTail, 1200, 480)
+        || !AppendExternalIntegerIncrement(
+            Graph, ModActorClass, BridgeGet, ControlRevisionVariableName, RemoveTail, 920, 920)
+        || !AppendPalSelectionSummaryUpdate(Graph, ModActorClass, BridgeGet, true, AddTail, 2000, 480)
+        || !AppendPalSelectionSummaryUpdate(Graph, ModActorClass, BridgeGet, false, RemoveTail, 1720, 920)) {
+        return false;
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+    UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildPalEntry compile status=%d nodes=%d"),
+        static_cast<int32>(Blueprint->Status), Graph->Nodes.Num());
+    return Blueprint->Status != BS_Error;
+}
+
 bool BuildPanelTabEvent(
     UWidgetBlueprint* Blueprint,
     UButton* Button,
     UWidgetSwitcher* Switcher,
     const TArray<UButton*>& TabButtons,
     int32 ActiveIndex,
-    int32 Y) {
+    int32 Y,
+    UClass* ModActorClass = nullptr,
+    const FName& PageVariableName = NAME_None) {
     UEdGraph* Graph = EventGraph(Blueprint);
     UK2Node_ComponentBoundEvent* Event = AddButtonEvent(Blueprint, Button, -1200, Y);
     UK2Node_VariableGet* SwitcherGet = AddVariableGet(Graph, Switcher->GetFName(), -940, Y + 120);
     UK2Node_CallFunction* SetIndex = AddStaticCall(Graph, UWidgetSwitcher::StaticClass(), TEXT("SetActiveWidgetIndex"), -660, Y);
     UEdGraphNode* ExecTail = SetIndex;
-    return Graph && Event && SwitcherGet && SetIndex
-        && SetPinDefault(SetIndex, TEXT("Index"), FString::FromInt(ActiveIndex))
-        && Link(Event, UEdGraphSchema_K2::PN_Then, SetIndex, UEdGraphSchema_K2::PN_Execute)
-        && Link(SwitcherGet, Switcher->GetFName(), SetIndex, UEdGraphSchema_K2::PN_Self)
-        && AppendPanelSegmentVisualsConstant(Graph, TabButtons, ActiveIndex, ExecTail, -380, Y);
+    if (!Graph || !Event || !SwitcherGet || !SetIndex
+        || !SetPinDefault(SetIndex, TEXT("Index"), FString::FromInt(ActiveIndex))
+        || !Link(Event, UEdGraphSchema_K2::PN_Then, SetIndex, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SwitcherGet, Switcher->GetFName(), SetIndex, UEdGraphSchema_K2::PN_Self)) {
+        return false;
+    }
+    if (ModActorClass && PageVariableName != NAME_None) {
+        UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -380, Y + 120);
+        UK2Node_VariableSet* SetPage = AddExternalVariableSet(Graph, PageVariableName, ModActorClass, -120, Y);
+        UEdGraphNode* PageTail = SetPage;
+        if (!BridgeGet || !SetPage
+            || !SetPinDefault(SetPage, PageVariableName, FString::FromInt(ActiveIndex))
+            || !Link(SetIndex, UEdGraphSchema_K2::PN_Then, SetPage, UEdGraphSchema_K2::PN_Execute)
+            || !Link(BridgeGet, PanelBridgeVariableName, SetPage, UEdGraphSchema_K2::PN_Self)
+            || !AppendRevisionIncrement(Graph, ModActorClass, BridgeGet, PageTail, 160, Y)) {
+            return false;
+        }
+        ExecTail = PageTail;
+    }
+    return AppendPanelSegmentVisualsConstant(Graph, TabButtons, ActiveIndex, ExecTail, 420, Y);
+}
+
+bool AppendPanelSegmentVisualsInput(
+    UEdGraph* Graph,
+    UK2Node_CustomEvent* Event,
+    const FName& InputName,
+    const TArray<UButton*>& Buttons,
+    UEdGraphNode*& ExecTail,
+    int32 X,
+    int32 Y) {
+    if (!Graph || !Event || Buttons.Num() == 0 || Buttons.Contains(nullptr)) {
+        return false;
+    }
+    UK2Node_CallFunction* Clamped = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Clamp"), X, Y + 260);
+    if (!Clamped
+        || !Link(Event, InputName, Clamped, TEXT("Value"))
+        || !SetPinDefault(Clamped, TEXT("Min"), TEXT("0"))
+        || !SetPinDefault(Clamped, TEXT("Max"), FString::FromInt(Buttons.Num() - 1))) {
+        return false;
+    }
+    for (int32 Index = 0; Index < Buttons.Num(); ++Index) {
+        UK2Node_CallFunction* IsSelected = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), X + 260, Y + Index * 180);
+        UK2Node_CallFunction* SelectAlpha = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectFloat"), X + 520, Y + Index * 180);
+        UK2Node_CallFunction* SelectColor = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("LinearColorLerp"), X + 780, Y + Index * 180);
+        UK2Node_VariableGet* ButtonGet = AddVariableGet(
+            Graph, Buttons[Index]->GetFName(), X + 1040, Y + Index * 180 + 300);
+        UK2Node_CallFunction* SetBackground = AddStaticCall(
+            Graph, UButton::StaticClass(), TEXT("SetBackgroundColor"), X + 1300, Y + Index * 180);
+        if (!IsSelected || !SelectAlpha || !SelectColor || !ButtonGet || !SetBackground
+            || !SetPinDefault(IsSelected, TEXT("B"), FString::FromInt(Index))
+            || !Link(Clamped, UEdGraphSchema_K2::PN_ReturnValue, IsSelected, TEXT("A"))
+            || !SetPinDefault(SelectAlpha, TEXT("A"), TEXT("1.0"))
+            || !SetPinDefault(SelectAlpha, TEXT("B"), TEXT("0.0"))
+            || !Link(IsSelected, UEdGraphSchema_K2::PN_ReturnValue, SelectAlpha, TEXT("bPickA"))
+            || !SetPinDefault(SelectColor, TEXT("A"), PanelV2Style::SurfaceRaised.ToString())
+            || !SetPinDefault(SelectColor, TEXT("B"), PanelV2Style::Accent.ToString())
+            || !Link(SelectAlpha, UEdGraphSchema_K2::PN_ReturnValue, SelectColor, TEXT("Alpha"))
+            || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, SetBackground, UEdGraphSchema_K2::PN_Execute)
+            || !Link(ButtonGet, Buttons[Index]->GetFName(), SetBackground, UEdGraphSchema_K2::PN_Self)
+            || !Link(SelectColor, UEdGraphSchema_K2::PN_ReturnValue, SetBackground, TEXT("InBackgroundColor"))) {
+            return false;
+        }
+        ExecTail = SetBackground;
+    }
+    return true;
+}
+
+bool BuildPanelSetPageStateEvent(
+    UWidgetBlueprint* Blueprint,
+    UWidgetSwitcher* Switcher,
+    UWidgetSwitcher* FilterSubSwitcher,
+    const TArray<UButton*>& TabButtons,
+    const TArray<UButton*>& FilterSubTabButtons,
+    int32 Y) {
+    UEdGraph* Graph = EventGraph(Blueprint);
+    UK2Node_CustomEvent* Event = AddCustomEvent(
+        Blueprint, Graph, *PanelSetPageStateEventName.ToString(), -1200, Y,
+        {
+            TPair<FName, FEdGraphPinType>(FName("MainPage"), IntPin()),
+            TPair<FName, FEdGraphPinType>(FName("FilterPage"), IntPin())
+        });
+    UK2Node_VariableGet* SwitcherGet = AddVariableGet(Graph, Switcher->GetFName(), -940, Y + 140);
+    UK2Node_VariableGet* FilterSwitcherGet = AddVariableGet(Graph, FilterSubSwitcher->GetFName(), -940, Y + 320);
+    UK2Node_CallFunction* SetMain = AddStaticCall(Graph, UWidgetSwitcher::StaticClass(), TEXT("SetActiveWidgetIndex"), -680, Y);
+    UK2Node_CallFunction* SetFilter = AddStaticCall(Graph, UWidgetSwitcher::StaticClass(), TEXT("SetActiveWidgetIndex"), -420, Y + 220);
+    UEdGraphNode* ExecTail = SetFilter;
+    return Graph && Event && SwitcherGet && FilterSwitcherGet && SetMain && SetFilter
+        && Link(Event, UEdGraphSchema_K2::PN_Then, SetMain, UEdGraphSchema_K2::PN_Execute)
+        && Link(SetMain, UEdGraphSchema_K2::PN_Then, SetFilter, UEdGraphSchema_K2::PN_Execute)
+        && Link(SwitcherGet, Switcher->GetFName(), SetMain, UEdGraphSchema_K2::PN_Self)
+        && Link(FilterSwitcherGet, FilterSubSwitcher->GetFName(), SetFilter, UEdGraphSchema_K2::PN_Self)
+        && Link(Event, TEXT("MainPage"), SetMain, TEXT("Index"))
+        && Link(Event, TEXT("FilterPage"), SetFilter, TEXT("Index"))
+        && AppendPanelSegmentVisualsInput(Graph, Event, TEXT("MainPage"), TabButtons, ExecTail, -120, Y)
+        && AppendPanelSegmentVisualsInput(Graph, Event, TEXT("FilterPage"), FilterSubTabButtons, ExecTail, 1800, Y);
+}
+
+bool BuildPanelPalCatalog(
+    UWidgetBlueprint* Blueprint,
+    UClass* ModActorClass,
+    UClass* PalEntryClass,
+    UClass* PalUtilityClass,
+    UClass* PalUIUtilityClass,
+    UClass* DatabaseCharacterParameterClass,
+    UScriptStruct* CharacterParameterDatabaseRowStruct,
+    UScriptStruct* DropItemDatabaseRowStruct,
+    UEnum* ElementEnum,
+    UEnum* WorkSuitabilityEnum,
+    UClass* MasterDataTablesUtilityClass,
+    UEditableTextBox* SearchBox,
+    UButton* SearchButton,
+    UButton* ClearQueryButton,
+    UButton* ClearSelectionButton,
+    const TArray<UCheckBox*>& ElementToggles,
+    const TArray<UCheckBox*>& WorkToggles,
+    UWrapBox* ResultsWrap,
+    UTextBlock* ResultCountText,
+    UTextBlock* SelectedSummaryText,
+    UK2Node_CustomEvent* PopulateEvent,
+    UK2Node_CustomEvent* RenderEvent,
+    int32 Y) {
+    if (!Blueprint || !ModActorClass || !PalEntryClass || !PalUtilityClass || !PalUIUtilityClass
+        || !DatabaseCharacterParameterClass || !CharacterParameterDatabaseRowStruct || !DropItemDatabaseRowStruct
+        || !ElementEnum || !WorkSuitabilityEnum || !MasterDataTablesUtilityClass
+        || !SearchBox || !SearchButton || !ClearQueryButton || !ClearSelectionButton
+        || ElementToggles.Num() != 9 || ElementToggles.Contains(nullptr)
+        || WorkToggles.Num() != GetPalWorkDefinitions().Num() || WorkToggles.Contains(nullptr)
+        || !ResultsWrap || !ResultCountText || !SelectedSummaryText || !PopulateEvent || !RenderEvent) {
+        return false;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    if (!Graph) {
+        return false;
+    }
+
+    struct FElementQueryDefinition {
+        FString EnumName;
+        int32 EnumValue;
+    };
+    const TArray<FElementQueryDefinition> ElementDefinitions = {
+        {TEXT("Normal"), 1}, {TEXT("Fire"), 2}, {TEXT("Water"), 3},
+        {TEXT("Leaf"), 4}, {TEXT("Electricity"), 5}, {TEXT("Ice"), 6},
+        {TEXT("Earth"), 7}, {TEXT("Dark"), 8}, {TEXT("Dragon"), 9},
+    };
+    const TArray<FPalWorkDefinition>& WorkDefinitions = GetPalWorkDefinitions();
+    for (const FElementQueryDefinition& Definition : ElementDefinitions) {
+        if (ElementEnum->GetValueByNameString(Definition.EnumName) == INDEX_NONE) {
+            return false;
+        }
+    }
+    for (const FPalWorkDefinition& Definition : WorkDefinitions) {
+        if (WorkSuitabilityEnum->GetValueByNameString(Definition.EnumName.ToString()) == INDEX_NONE
+            || !CharacterParameterDatabaseRowStruct->FindPropertyByName(Definition.FieldName)) {
+            return false;
+        }
+    }
+
+    // Populate the cached species IDs from the running game's current monster table.
+    UK2Node_CallFunction* MakeTablePath = AddStaticCall(
+        Graph, UKismetSystemLibrary::StaticClass(), TEXT("MakeSoftObjectPath"), -1640, Y + 160);
+    UK2Node_CallFunction* MakeTableReference = AddStaticCall(
+        Graph, UKismetSystemLibrary::StaticClass(), TEXT("Conv_SoftObjPathToSoftObjRef"), -1380, Y + 160);
+    UK2Node_CallFunction* LoadTable = AddStaticCall(
+        Graph, UKismetSystemLibrary::StaticClass(), TEXT("LoadAsset_Blocking"), -1120, Y);
+    UK2Node_DynamicCast* CastTable = AddDynamicCast(Graph, UDataTable::StaticClass(), -840, Y);
+    UK2Node_VariableSet* StoreTable = AddVariableSet(Graph, PalCatalogTableVariableName, -560, Y);
+    UK2Node_VariableGet* CatalogIdsForClear = AddVariableGet(Graph, PalCatalogIdsVariableName, -560, Y + 180);
+    UK2Node_CallArrayFunction* ClearCatalogIds = AddArrayCall(Graph, TEXT("Array_Clear"), -280, Y);
+    UK2Node_VariableGet* ZukanIndicesForClear = AddVariableGet(Graph, PalCatalogZukanIndicesVariableName, -280, Y + 180);
+    UK2Node_CallArrayFunction* ClearZukanIndices = AddArrayCall(Graph, TEXT("Array_Clear"), 0, Y);
+    UK2Node_VariableGet* SortKeysForClear = AddVariableGet(Graph, PalCatalogSortKeysVariableName, 0, Y + 180);
+    UK2Node_CallArrayFunction* ClearSortKeys = AddArrayCall(Graph, TEXT("Array_Clear"), 280, Y);
+    UK2Node_VariableGet* TableForRows = AddVariableGet(Graph, PalCatalogTableVariableName, 0, Y + 180);
+    UK2Node_CallFunction* GetRowNames = AddStaticCall(
+        Graph, UDataTableFunctionLibrary::StaticClass(), TEXT("GetDataTableRowNames"), 280, Y);
+    UK2Node_MacroInstance* ForEachRowName = AddForEachLoop(Graph, 560, Y);
+    UK2Node_VariableGet* TableForRow = AddVariableGet(Graph, PalCatalogTableVariableName, 820, Y + 220);
+    UK2Node_GetDataTableRow* GetCatalogRow = AddGetDataTableRow(
+        Graph, CharacterParameterDatabaseRowStruct, 1080, Y);
+    UK2Node_BreakStruct* BreakCatalogRow = AddBreakStruct(
+        Graph, CharacterParameterDatabaseRowStruct, 1340, Y + 260);
+    UK2Node_VariableGet* SortModeGet = AddVariableGet(Graph, PalCatalogSortModeVariableName, 1600, Y + 820);
+    UK2Node_CallFunction* SortModeIsRunSpeed = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), 1860, Y + 820);
+    UK2Node_CallFunction* SelectRunSpeed = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectInt"), 2900, Y + 700);
+    TArray<UK2Node_CallFunction*> SortModeIsWork;
+    TArray<UK2Node_CallFunction*> SelectWork;
+    for (int32 Index = 0; Index < WorkDefinitions.Num(); ++Index) {
+        SortModeIsWork.Add(AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"),
+            2120 + Index * 260, Y + 940));
+        SelectWork.Add(AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectInt"),
+            3160 + Index * 260, Y + 700));
+    }
+    UK2Node_CallFunction* FinalSortKey = SelectWork.Num() > 0 ? SelectWork.Last() : nullptr;
+    UK2Node_CallFunction* ZukanPositive = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Greater_IntInt"), 1600, Y + 200);
+    UK2Node_CallFunction* NotBoss = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), 1600, Y + 320);
+    UK2Node_CallFunction* NotTowerBoss = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), 1600, Y + 420);
+    UK2Node_CallFunction* NotRaidBoss = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), 1600, Y + 520);
+    UK2Node_VariableGet* ExistingCatalogIdsForDuplicate = AddVariableGet(
+        Graph, PalCatalogIdsVariableName, 1600, Y + 640);
+    UK2Node_CallArrayFunction* CatalogIdAlreadyAdded = AddArrayCall(
+        Graph, TEXT("Array_Contains"), 1860, Y + 640);
+    UK2Node_CallFunction* CatalogIdNotAdded = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), 2120, Y + 640);
+    TArray<UK2Node_CallFunction*> AdmissionAndNodes;
+    for (int32 Index = 0; Index < 5; ++Index) {
+        AdmissionAndNodes.Add(AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), 1860 + Index * 260, Y + 200));
+    }
+    UK2Node_IfThenElse* AdmissionBranch = AddBranch(Graph, 3420, Y);
+    UK2Node_VariableGet* ZukanIndicesForLength = AddVariableGet(
+        Graph, PalCatalogZukanIndicesVariableName, 3680, Y + 160);
+    UK2Node_CallArrayFunction* ZukanCount = AddArrayCall(Graph, TEXT("Array_Length"), 3940, Y + 160);
+    UK2Node_VariableSet* StoreInsertIndex = AddVariableSet(Graph, PalCatalogInsertIndexVariableName, 4200, Y);
+    UK2Node_VariableSet* StoreInsertFound = AddVariableSet(Graph, PalCatalogInsertFoundVariableName, 4460, Y);
+    UK2Node_VariableGet* SortKeysForInsertionLoop = AddVariableGet(
+        Graph, PalCatalogSortKeysVariableName, 4460, Y + 180);
+    UK2Node_MacroInstance* ForEachExistingSortKey = AddForEachLoop(Graph, 4720, Y);
+    UK2Node_CallFunction* NewSortKeyGreaterThanExisting = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Greater_IntInt"), 4980, Y + 180);
+    UK2Node_CallFunction* NewSortKeyLessThanExisting = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Less_IntInt"), 4980, Y + 300);
+    UK2Node_VariableGet* SortDescendingGet = AddVariableGet(Graph, PalCatalogSortDescendingVariableName, 5240, Y + 420);
+    UK2Node_CallFunction* NotSortDescending = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), 5500, Y + 420);
+    UK2Node_CallFunction* DescendingGreater = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), 5760, Y + 200);
+    UK2Node_CallFunction* AscendingLess = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), 5760, Y + 320);
+    UK2Node_CallFunction* SortOrderMatches = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 6020, Y + 260);
+    UK2Node_VariableGet* InsertFoundGet = AddVariableGet(Graph, PalCatalogInsertFoundVariableName, 4980, Y + 300);
+    UK2Node_CallFunction* InsertNotFound = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), 5240, Y + 300);
+    UK2Node_CallFunction* ShouldStoreInsertIndex = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), 5500, Y + 220);
+    UK2Node_IfThenElse* StoreInsertBranch = AddBranch(Graph, 5760, Y);
+    UK2Node_VariableSet* UpdateInsertIndex = AddVariableSet(Graph, PalCatalogInsertIndexVariableName, 6020, Y);
+    UK2Node_VariableSet* MarkInsertFound = AddVariableSet(Graph, PalCatalogInsertFoundVariableName, 6280, Y);
+    UK2Node_VariableGet* ZukanIndicesForInsert = AddVariableGet(
+        Graph, PalCatalogZukanIndicesVariableName, 4980, Y + 520);
+    UK2Node_VariableGet* InsertIndexForZukan = AddVariableGet(Graph, PalCatalogInsertIndexVariableName, 5240, Y + 520);
+    UK2Node_CallArrayFunction* InsertZukanIndex = AddArrayCall(Graph, TEXT("Array_Insert"), 5500, Y + 440);
+    UK2Node_VariableGet* SortKeysForInsert = AddVariableGet(Graph, PalCatalogSortKeysVariableName, 5760, Y + 760);
+    UK2Node_VariableGet* InsertIndexForSortKey = AddVariableGet(Graph, PalCatalogInsertIndexVariableName, 6020, Y + 760);
+    UK2Node_CallArrayFunction* InsertSortKey = AddArrayCall(Graph, TEXT("Array_Insert"), 6540, Y + 620);
+    UK2Node_VariableGet* CatalogIdsForInsert = AddVariableGet(Graph, PalCatalogIdsVariableName, 5760, Y + 620);
+    UK2Node_VariableGet* InsertIndexForId = AddVariableGet(Graph, PalCatalogInsertIndexVariableName, 6020, Y + 620);
+    UK2Node_CallArrayFunction* InsertCatalogId = AddArrayCall(Graph, TEXT("Array_Insert"), 6280, Y + 440);
+    UK2Node_VariableSet* StoreCatalogLoaded = AddVariableSet(Graph, PalCatalogLoadedVariableName, 820, Y + 760);
+    UK2Node_Self* PopulateSelf = AddSelfNode(Graph, 1080, Y + 900);
+    UK2Node_CallFunction* RenderAfterPopulate = AddStaticCall(
+        Graph, Blueprint->GeneratedClass, *PanelRenderPalCatalogEventName.ToString(), 1340, Y + 760);
+    if (!MakeTablePath || !MakeTableReference || !LoadTable || !CastTable || !StoreTable
+        || !CatalogIdsForClear || !ClearCatalogIds || !ZukanIndicesForClear || !ClearZukanIndices
+        || !SortKeysForClear || !ClearSortKeys
+        || !TableForRows || !GetRowNames || !ForEachRowName || !TableForRow || !GetCatalogRow
+        || !BreakCatalogRow || !SortModeGet || !SortModeIsRunSpeed || !SelectRunSpeed
+        || SortModeIsWork.Num() != WorkDefinitions.Num() || SortModeIsWork.Contains(nullptr)
+        || SelectWork.Num() != WorkDefinitions.Num() || SelectWork.Contains(nullptr) || !FinalSortKey
+        || !ZukanPositive || !NotBoss || !NotTowerBoss || !NotRaidBoss
+        || !ExistingCatalogIdsForDuplicate || !CatalogIdAlreadyAdded || !CatalogIdNotAdded
+        || AdmissionAndNodes.Num() != 5 || AdmissionAndNodes.Contains(nullptr)
+        || !AdmissionBranch || !ZukanIndicesForLength || !ZukanCount || !StoreInsertIndex || !StoreInsertFound
+        || !SortKeysForInsertionLoop || !ForEachExistingSortKey || !NewSortKeyGreaterThanExisting
+        || !NewSortKeyLessThanExisting || !SortDescendingGet || !NotSortDescending || !DescendingGreater
+        || !AscendingLess || !SortOrderMatches || !InsertFoundGet || !InsertNotFound || !ShouldStoreInsertIndex || !StoreInsertBranch
+        || !UpdateInsertIndex || !MarkInsertFound || !ZukanIndicesForInsert || !InsertIndexForZukan
+        || !InsertZukanIndex || !SortKeysForInsert || !InsertIndexForSortKey || !InsertSortKey
+        || !CatalogIdsForInsert || !InsertIndexForId || !InsertCatalogId
+        || !StoreCatalogLoaded || !PopulateSelf || !RenderAfterPopulate
+        || !SetPinDefault(MakeTablePath, TEXT("PathString"), PalMonsterParameterTablePath)
+        || !Link(MakeTablePath, UEdGraphSchema_K2::PN_ReturnValue, MakeTableReference, TEXT("SoftObjectPath"))
+        || !Link(PopulateEvent, UEdGraphSchema_K2::PN_Then, LoadTable, UEdGraphSchema_K2::PN_Execute)
+        || !Link(MakeTableReference, UEdGraphSchema_K2::PN_ReturnValue, LoadTable, TEXT("Asset"))
+        || !Link(LoadTable, UEdGraphSchema_K2::PN_Then, CastTable, UEdGraphSchema_K2::PN_Execute)
+        || !Link(LoadTable, UEdGraphSchema_K2::PN_ReturnValue, CastTable, UEdGraphSchema_K2::PN_ObjectToCast)
+        || !Link(CastTable, CastTable->GetValidCastPin()->PinName, StoreTable, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CastTable, CastTable->GetCastResultPin()->PinName, StoreTable, PalCatalogTableVariableName)
+        || !Link(StoreTable, UEdGraphSchema_K2::PN_Then, ClearCatalogIds, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CatalogIdsForClear, PalCatalogIdsVariableName, ClearCatalogIds, TEXT("TargetArray"))
+        || !Link(ClearCatalogIds, UEdGraphSchema_K2::PN_Then, ClearZukanIndices, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ZukanIndicesForClear, PalCatalogZukanIndicesVariableName, ClearZukanIndices, TEXT("TargetArray"))
+        || !Link(ClearZukanIndices, UEdGraphSchema_K2::PN_Then, ClearSortKeys, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SortKeysForClear, PalCatalogSortKeysVariableName, ClearSortKeys, TEXT("TargetArray"))
+        || !Link(ClearSortKeys, UEdGraphSchema_K2::PN_Then, GetRowNames, UEdGraphSchema_K2::PN_Execute)
+        || !Link(TableForRows, PalCatalogTableVariableName, GetRowNames, TEXT("Table"))
+        || !Link(GetRowNames, UEdGraphSchema_K2::PN_Then, ForEachRowName, TEXT("Exec"))
+        || !Link(GetRowNames, TEXT("OutRowNames"), ForEachRowName, TEXT("Array"))
+        || !Link(ForEachRowName, TEXT("LoopBody"), GetCatalogRow, UEdGraphSchema_K2::PN_Execute)
+        || !Link(TableForRow, PalCatalogTableVariableName, GetCatalogRow, TEXT("DataTable"))
+        || !Link(ForEachRowName, TEXT("Array Element"), GetCatalogRow, TEXT("RowName"))
+        || !Link(GetCatalogRow, UEdGraphSchema_K2::PN_ReturnValue, BreakCatalogRow, CharacterParameterDatabaseRowStruct->GetFName())
+        || !Link(SortModeGet, PalCatalogSortModeVariableName, SortModeIsRunSpeed, TEXT("A"))
+        || !SetPinDefault(SortModeIsRunSpeed, TEXT("B"), TEXT("1"))
+        || !Link(BreakCatalogRow, TEXT("RunSpeed"), SelectRunSpeed, TEXT("A"))
+        || !Link(BreakCatalogRow, TEXT("ZukanIndex"), SelectRunSpeed, TEXT("B"))
+        || !Link(SortModeIsRunSpeed, UEdGraphSchema_K2::PN_ReturnValue, SelectRunSpeed, TEXT("bPickA"))
+        || !Link(BreakCatalogRow, TEXT("ZukanIndex"), ZukanPositive, TEXT("A"))
+        || !SetPinDefault(ZukanPositive, TEXT("B"), TEXT("0"))
+        || !Link(BreakCatalogRow, TEXT("IsBoss"), NotBoss, TEXT("A"))
+        || !Link(BreakCatalogRow, TEXT("IsTowerBoss"), NotTowerBoss, TEXT("A"))
+        || !Link(BreakCatalogRow, TEXT("IsRaidBoss"), NotRaidBoss, TEXT("A"))
+        || !Link(ExistingCatalogIdsForDuplicate, PalCatalogIdsVariableName, CatalogIdAlreadyAdded, TEXT("TargetArray"))
+        || !Link(ForEachRowName, TEXT("Array Element"), CatalogIdAlreadyAdded, TEXT("ItemToFind"))
+        || !Link(CatalogIdAlreadyAdded, UEdGraphSchema_K2::PN_ReturnValue, CatalogIdNotAdded, TEXT("A"))
+        || !Link(BreakCatalogRow, TEXT("IsPal"), AdmissionAndNodes[0], TEXT("A"))
+        || !Link(ZukanPositive, UEdGraphSchema_K2::PN_ReturnValue, AdmissionAndNodes[0], TEXT("B"))
+        || !Link(AdmissionAndNodes[0], UEdGraphSchema_K2::PN_ReturnValue, AdmissionAndNodes[1], TEXT("A"))
+        || !Link(NotBoss, UEdGraphSchema_K2::PN_ReturnValue, AdmissionAndNodes[1], TEXT("B"))
+        || !Link(AdmissionAndNodes[1], UEdGraphSchema_K2::PN_ReturnValue, AdmissionAndNodes[2], TEXT("A"))
+        || !Link(NotTowerBoss, UEdGraphSchema_K2::PN_ReturnValue, AdmissionAndNodes[2], TEXT("B"))
+        || !Link(AdmissionAndNodes[2], UEdGraphSchema_K2::PN_ReturnValue, AdmissionAndNodes[3], TEXT("A"))
+        || !Link(NotRaidBoss, UEdGraphSchema_K2::PN_ReturnValue, AdmissionAndNodes[3], TEXT("B"))
+        || !Link(AdmissionAndNodes[3], UEdGraphSchema_K2::PN_ReturnValue, AdmissionAndNodes[4], TEXT("A"))
+        || !Link(CatalogIdNotAdded, UEdGraphSchema_K2::PN_ReturnValue, AdmissionAndNodes[4], TEXT("B"))
+        || !Link(GetCatalogRow, UEdGraphSchema_K2::PN_Then, AdmissionBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(AdmissionAndNodes[4], UEdGraphSchema_K2::PN_ReturnValue, AdmissionBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(ZukanIndicesForLength, PalCatalogZukanIndicesVariableName, ZukanCount, TEXT("TargetArray"))
+        || !Link(AdmissionBranch, UEdGraphSchema_K2::PN_Then, StoreInsertIndex, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ZukanCount, UEdGraphSchema_K2::PN_ReturnValue, StoreInsertIndex, PalCatalogInsertIndexVariableName)
+        || !Link(StoreInsertIndex, UEdGraphSchema_K2::PN_Then, StoreInsertFound, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(StoreInsertFound, PalCatalogInsertFoundVariableName, TEXT("false"))
+        || !Link(StoreInsertFound, UEdGraphSchema_K2::PN_Then, ForEachExistingSortKey, TEXT("Exec"))
+        || !Link(SortKeysForInsertionLoop, PalCatalogSortKeysVariableName, ForEachExistingSortKey, TEXT("Array"))
+        || !Link(FinalSortKey, UEdGraphSchema_K2::PN_ReturnValue, NewSortKeyGreaterThanExisting, TEXT("A"))
+        || !Link(ForEachExistingSortKey, TEXT("Array Element"), NewSortKeyGreaterThanExisting, TEXT("B"))
+        || !Link(FinalSortKey, UEdGraphSchema_K2::PN_ReturnValue, NewSortKeyLessThanExisting, TEXT("A"))
+        || !Link(ForEachExistingSortKey, TEXT("Array Element"), NewSortKeyLessThanExisting, TEXT("B"))
+        || !Link(SortDescendingGet, PalCatalogSortDescendingVariableName, NotSortDescending, TEXT("A"))
+        || !Link(SortDescendingGet, PalCatalogSortDescendingVariableName, DescendingGreater, TEXT("A"))
+        || !Link(NewSortKeyGreaterThanExisting, UEdGraphSchema_K2::PN_ReturnValue, DescendingGreater, TEXT("B"))
+        || !Link(NotSortDescending, UEdGraphSchema_K2::PN_ReturnValue, AscendingLess, TEXT("A"))
+        || !Link(NewSortKeyLessThanExisting, UEdGraphSchema_K2::PN_ReturnValue, AscendingLess, TEXT("B"))
+        || !Link(DescendingGreater, UEdGraphSchema_K2::PN_ReturnValue, SortOrderMatches, TEXT("A"))
+        || !Link(AscendingLess, UEdGraphSchema_K2::PN_ReturnValue, SortOrderMatches, TEXT("B"))
+        || !Link(InsertFoundGet, PalCatalogInsertFoundVariableName, InsertNotFound, TEXT("A"))
+        || !Link(SortOrderMatches, UEdGraphSchema_K2::PN_ReturnValue, ShouldStoreInsertIndex, TEXT("A"))
+        || !Link(InsertNotFound, UEdGraphSchema_K2::PN_ReturnValue, ShouldStoreInsertIndex, TEXT("B"))
+        || !Link(ForEachExistingSortKey, TEXT("LoopBody"), StoreInsertBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ShouldStoreInsertIndex, UEdGraphSchema_K2::PN_ReturnValue, StoreInsertBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(StoreInsertBranch, UEdGraphSchema_K2::PN_Then, UpdateInsertIndex, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ForEachExistingSortKey, TEXT("Array Index"), UpdateInsertIndex, PalCatalogInsertIndexVariableName)
+        || !Link(UpdateInsertIndex, UEdGraphSchema_K2::PN_Then, MarkInsertFound, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(MarkInsertFound, PalCatalogInsertFoundVariableName, TEXT("true"))
+        || !Link(ForEachExistingSortKey, TEXT("Completed"), InsertZukanIndex, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ZukanIndicesForInsert, PalCatalogZukanIndicesVariableName, InsertZukanIndex, TEXT("TargetArray"))
+        || !Link(BreakCatalogRow, TEXT("ZukanIndex"), InsertZukanIndex, TEXT("NewItem"))
+        || !Link(InsertIndexForZukan, PalCatalogInsertIndexVariableName, InsertZukanIndex, TEXT("Index"))
+        || !Link(InsertZukanIndex, UEdGraphSchema_K2::PN_Then, InsertSortKey, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SortKeysForInsert, PalCatalogSortKeysVariableName, InsertSortKey, TEXT("TargetArray"))
+        || !Link(FinalSortKey, UEdGraphSchema_K2::PN_ReturnValue, InsertSortKey, TEXT("NewItem"))
+        || !Link(InsertIndexForSortKey, PalCatalogInsertIndexVariableName, InsertSortKey, TEXT("Index"))
+        || !Link(InsertSortKey, UEdGraphSchema_K2::PN_Then, InsertCatalogId, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CatalogIdsForInsert, PalCatalogIdsVariableName, InsertCatalogId, TEXT("TargetArray"))
+        || !Link(ForEachRowName, TEXT("Array Element"), InsertCatalogId, TEXT("NewItem"))
+        || !Link(InsertIndexForId, PalCatalogInsertIndexVariableName, InsertCatalogId, TEXT("Index"))
+        || !Link(ForEachRowName, TEXT("Completed"), StoreCatalogLoaded, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(StoreCatalogLoaded, PalCatalogLoadedVariableName, TEXT("true"))
+        || !Link(StoreCatalogLoaded, UEdGraphSchema_K2::PN_Then, RenderAfterPopulate, UEdGraphSchema_K2::PN_Execute)
+        || !Link(PopulateSelf, UEdGraphSchema_K2::PN_Self, RenderAfterPopulate, UEdGraphSchema_K2::PN_Self)) {
+        return false;
+    }
+
+    for (int32 Index = 0; Index < WorkDefinitions.Num(); ++Index) {
+        UK2Node_CallFunction* PreviousSelect = Index == 0 ? SelectRunSpeed : SelectWork[Index - 1];
+        if (!Link(SortModeGet, PalCatalogSortModeVariableName, SortModeIsWork[Index], TEXT("A"))
+            || !SetPinDefault(SortModeIsWork[Index], TEXT("B"), FString::FromInt(Index + 2))
+            || !Link(BreakCatalogRow, WorkDefinitions[Index].FieldName, SelectWork[Index], TEXT("A"))
+            || !Link(PreviousSelect, UEdGraphSchema_K2::PN_ReturnValue, SelectWork[Index], TEXT("B"))
+            || !Link(SortModeIsWork[Index], UEdGraphSchema_K2::PN_ReturnValue, SelectWork[Index], TEXT("bPickA"))) {
+            return false;
+        }
+    }
+
+    // Render uses only cached IDs; changing a query does not reload or snapshot the table.
+    const int32 RenderY = Y + 1400;
+    UK2Node_VariableGet* ResultsWrapForClear = AddVariableGet(Graph, ResultsWrap->GetFName(), -1640, RenderY + 180);
+    UK2Node_CallFunction* ClearResults = AddStaticCall(
+        Graph, UPanelWidget::StaticClass(), TEXT("ClearChildren"), -1380, RenderY);
+    UK2Node_VariableSet* ResetResultCount = AddVariableSet(Graph, PalCatalogResultCountVariableName, -1120, RenderY);
+    UK2Node_VariableSet* ClearSelectedNames = AddVariableSet(Graph, PalCatalogSelectedNamesVariableName, -860, RenderY);
+    UK2Node_VariableSet* ResetSelectedCount = AddVariableSet(Graph, PalCatalogSelectedCountVariableName, -600, RenderY);
+    UK2Node_VariableGet* BridgeForSelectedSummary = AddVariableGet(Graph, PanelBridgeVariableName, -860, RenderY + 320);
+    UK2Node_VariableGet* SelectedIdsForSummary = AddExternalVariableGet(
+        Graph, SpeciesFilterIdsVariableName, ModActorClass, -600, RenderY + 320);
+    UK2Node_MacroInstance* ForEachSelectedId = AddForEachLoop(Graph, -340, RenderY);
+    UK2Node_VariableGet* CatalogIdsForRender = AddVariableGet(Graph, PalCatalogIdsVariableName, -1120, RenderY + 180);
+    UK2Node_MacroInstance* ForEachCatalogId = AddForEachLoop(Graph, -860, RenderY);
+    UK2Node_VariableGet* TableForRenderRow = AddVariableGet(Graph, PalCatalogTableVariableName, -600, RenderY + 220);
+    UK2Node_GetDataTableRow* GetRenderRow = AddGetDataTableRow(
+        Graph, CharacterParameterDatabaseRowStruct, -340, RenderY);
+    UK2Node_BreakStruct* BreakRenderRow = AddBreakStruct(
+        Graph, CharacterParameterDatabaseRowStruct, -80, RenderY + 280);
+    UK2Node_Self* RenderSelf = AddSelfNode(Graph, -600, RenderY + 620);
+    UK2Node_VariableGet* PanelBridgeForLanguage = AddVariableGet(Graph, PanelBridgeVariableName, -600, RenderY + 980);
+    UK2Node_VariableGet* LanguageIdForRender = AddExternalVariableGet(
+        Graph, LanguageIdVariableName, ModActorClass, -340, RenderY + 980);
+    UK2Node_CallFunction* LanguageIsEnglish = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), -80, RenderY + 980);
+    UK2Node_CallFunction* CharacterDatabase = AddStaticCall(
+        Graph, PalUtilityClass, TEXT("GetDatabaseCharacterParameter"), -340, RenderY + 620);
+    UK2Node_CallFunction* GetLocalizedName = AddStaticCall(
+        Graph, DatabaseCharacterParameterClass, TEXT("GetLocalizedCharacterName"), -80, RenderY + 620);
+    UK2Node_CallFunction* NameToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), 180, RenderY + 620);
+    UK2Node_CallFunction* CharacterIdToString = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_NameToString"), 440, RenderY + 620);
+    UK2Node_CallFunction* VariantPrefix = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 700, RenderY + 500);
+    UK2Node_CallFunction* VariantName = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 960, RenderY + 500);
+    UK2Node_CallFunction* NameWithVariant = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 1220, RenderY + 500);
+    UK2Node_CallFunction* VariantSuffix = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 1220, RenderY + 620);
+    UK2Node_CallFunction* GetSelectedLocalizedName = AddStaticCall(
+        Graph, DatabaseCharacterParameterClass, TEXT("GetLocalizedCharacterName"), -80, RenderY - 420);
+    UK2Node_CallFunction* SelectedNameToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), 180, RenderY - 420);
+    UK2Node_VariableGet* SelectedCountForSeparator = AddVariableGet(
+        Graph, PalCatalogSelectedCountVariableName, 180, RenderY - 300);
+    UK2Node_CallFunction* SelectedCountIsZero = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), 440, RenderY - 300);
+    UK2Node_CallFunction* SelectedPrefix = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 440, RenderY - 540);
+    UK2Node_CallFunction* SelectedDelimiter = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 440, RenderY - 420);
+    UK2Node_CallFunction* SelectedSeparator = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 700, RenderY - 420);
+    UK2Node_CallFunction* SelectedSeparatorAndName = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 960, RenderY - 420);
+    UK2Node_VariableGet* CurrentSelectedNames = AddVariableGet(
+        Graph, PalCatalogSelectedNamesVariableName, 960, RenderY - 300);
+    UK2Node_CallFunction* AppendSelectedName = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), 1220, RenderY - 360);
+    UK2Node_VariableSet* StoreSelectedNames = AddVariableSet(
+        Graph, PalCatalogSelectedNamesVariableName, 1480, RenderY - 480);
+    UK2Node_VariableGet* SelectedCountForIncrement = AddVariableGet(
+        Graph, PalCatalogSelectedCountVariableName, 1220, RenderY - 180);
+    UK2Node_CallFunction* IncrementSelectedCount = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Add_IntInt"), 1480, RenderY - 180);
+    UK2Node_VariableSet* StoreSelectedCount = AddVariableSet(
+        Graph, PalCatalogSelectedCountVariableName, 1740, RenderY - 480);
+    UK2Node_VariableGet* FinalSelectedCount = AddVariableGet(
+        Graph, PalCatalogSelectedCountVariableName, 1740, RenderY - 180);
+    UK2Node_CallFunction* NoSelectedIds = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), 2000, RenderY - 180);
+    UK2Node_CallFunction* NoSelectionSummary = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 2000, RenderY - 420);
+    UK2Node_VariableGet* FinalSelectedNames = AddVariableGet(
+        Graph, PalCatalogSelectedNamesVariableName, 2260, RenderY - 180);
+    UK2Node_CallFunction* FinalSelectedSummary = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), 2260, RenderY - 360);
+    UK2Node_CallFunction* SelectedSummaryToText = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), 2520, RenderY - 360);
+    UK2Node_VariableGet* SelectedSummaryTextGet = AddVariableGet(
+        Graph, SelectedSummaryText->GetFName(), 2520, RenderY - 180);
+    UK2Node_CallFunction* SetSelectedSummaryText = AddStaticCall(
+        Graph, UTextBlock::StaticClass(), TEXT("SetText"), 2780, RenderY - 480);
+    UK2Node_VariableGet* SearchBoxGet = AddVariableGet(Graph, SearchBox->GetFName(), 180, RenderY + 760);
+    UK2Node_CallFunction* GetSearchText = AddStaticCall(
+        Graph, UEditableTextBox::StaticClass(), TEXT("GetText"), 440, RenderY + 760);
+    UK2Node_CallFunction* SearchToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), 700, RenderY + 760);
+    UK2Node_CallFunction* SearchEmpty = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("IsEmpty"), 960, RenderY + 760);
+    UK2Node_CallFunction* NameContainsSearch = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Contains"), 960, RenderY + 620);
+    UK2Node_CallFunction* PaldexNumber = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), 700, RenderY + 880);
+    UK2Node_CallFunction* NumberContainsSearch = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Contains"), 960, RenderY + 880);
+    UK2Node_CallFunction* NameOrNumberMatches = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 1220, RenderY + 800);
+    UK2Node_CallFunction* SearchMatches = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), 1480, RenderY + 740);
+    UK2Node_CallFunction* Element1ToInt = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Conv_ByteToInt"), 180, RenderY + 920);
+    UK2Node_CallFunction* Element2ToInt = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Conv_ByteToInt"), 440, RenderY + 920);
+    if (!ResultsWrapForClear || !ClearResults || !ResetResultCount || !ClearSelectedNames || !ResetSelectedCount
+        || !BridgeForSelectedSummary || !SelectedIdsForSummary || !ForEachSelectedId
+        || !CatalogIdsForRender || !ForEachCatalogId
+        || !TableForRenderRow || !GetRenderRow || !BreakRenderRow || !RenderSelf
+        || !PanelBridgeForLanguage || !LanguageIdForRender || !LanguageIsEnglish || !CharacterDatabase
+        || !GetLocalizedName || !NameToString || !CharacterIdToString || !VariantPrefix || !VariantName
+        || !VariantSuffix || !NameWithVariant || !SearchBoxGet || !GetSearchText || !SearchToString
+        || !GetSelectedLocalizedName || !SelectedNameToString || !SelectedCountForSeparator || !SelectedCountIsZero
+        || !SelectedPrefix || !SelectedDelimiter || !SelectedSeparator || !SelectedSeparatorAndName
+        || !CurrentSelectedNames || !AppendSelectedName || !StoreSelectedNames
+        || !SelectedCountForIncrement || !IncrementSelectedCount || !StoreSelectedCount
+        || !FinalSelectedCount || !NoSelectedIds || !NoSelectionSummary || !FinalSelectedNames
+        || !FinalSelectedSummary || !SelectedSummaryToText || !SelectedSummaryTextGet || !SetSelectedSummaryText
+        || !SearchEmpty || !NameContainsSearch || !PaldexNumber || !NumberContainsSearch
+        || !NameOrNumberMatches || !SearchMatches || !Element1ToInt || !Element2ToInt
+        || !Link(RenderEvent, UEdGraphSchema_K2::PN_Then, ClearResults, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ResultsWrapForClear, ResultsWrap->GetFName(), ClearResults, UEdGraphSchema_K2::PN_Self)
+        || !Link(ClearResults, UEdGraphSchema_K2::PN_Then, ResetResultCount, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(ResetResultCount, PalCatalogResultCountVariableName, TEXT("0"))
+        || !Link(ResetResultCount, UEdGraphSchema_K2::PN_Then, ClearSelectedNames, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(ClearSelectedNames, PalCatalogSelectedNamesVariableName, TEXT(""))
+        || !Link(ClearSelectedNames, UEdGraphSchema_K2::PN_Then, ResetSelectedCount, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(ResetSelectedCount, PalCatalogSelectedCountVariableName, TEXT("0"))
+        || !Link(ResetSelectedCount, UEdGraphSchema_K2::PN_Then, ForEachSelectedId, TEXT("Exec"))
+        || !Link(BridgeForSelectedSummary, PanelBridgeVariableName, SelectedIdsForSummary, UEdGraphSchema_K2::PN_Self)
+        || !Link(SelectedIdsForSummary, SpeciesFilterIdsVariableName, ForEachSelectedId, TEXT("Array"))
+        || !Link(CharacterDatabase, UEdGraphSchema_K2::PN_ReturnValue, GetSelectedLocalizedName, UEdGraphSchema_K2::PN_Self)
+        || !Link(ForEachSelectedId, TEXT("Array Element"), GetSelectedLocalizedName, TEXT("CharacterID"))
+        || !Link(GetSelectedLocalizedName, TEXT("OutText"), SelectedNameToString, TEXT("InText"))
+        || !Link(SelectedCountForSeparator, PalCatalogSelectedCountVariableName, SelectedCountIsZero, TEXT("A"))
+        || !SetPinDefault(SelectedCountIsZero, TEXT("B"), TEXT("0"))
+        || !SetPinDefault(SelectedPrefix, TEXT("A"), TEXT("Selected: "))
+        || !SetPinDefault(SelectedPrefix, TEXT("B"), TEXT("已选中："))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, SelectedPrefix, TEXT("bPickA"))
+        || !SetPinDefault(SelectedDelimiter, TEXT("A"), TEXT(", "))
+        || !SetPinDefault(SelectedDelimiter, TEXT("B"), TEXT("、"))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, SelectedDelimiter, TEXT("bPickA"))
+        || !Link(SelectedPrefix, UEdGraphSchema_K2::PN_ReturnValue, SelectedSeparator, TEXT("A"))
+        || !Link(SelectedDelimiter, UEdGraphSchema_K2::PN_ReturnValue, SelectedSeparator, TEXT("B"))
+        || !Link(SelectedCountIsZero, UEdGraphSchema_K2::PN_ReturnValue, SelectedSeparator, TEXT("bPickA"))
+        || !Link(SelectedSeparator, UEdGraphSchema_K2::PN_ReturnValue, SelectedSeparatorAndName, TEXT("A"))
+        || !Link(SelectedNameToString, UEdGraphSchema_K2::PN_ReturnValue, SelectedSeparatorAndName, TEXT("B"))
+        || !Link(CurrentSelectedNames, PalCatalogSelectedNamesVariableName, AppendSelectedName, TEXT("A"))
+        || !Link(SelectedSeparatorAndName, UEdGraphSchema_K2::PN_ReturnValue, AppendSelectedName, TEXT("B"))
+        || !Link(ForEachSelectedId, TEXT("LoopBody"), StoreSelectedNames, UEdGraphSchema_K2::PN_Execute)
+        || !Link(AppendSelectedName, UEdGraphSchema_K2::PN_ReturnValue, StoreSelectedNames, PalCatalogSelectedNamesVariableName)
+        || !Link(StoreSelectedNames, UEdGraphSchema_K2::PN_Then, StoreSelectedCount, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SelectedCountForIncrement, PalCatalogSelectedCountVariableName, IncrementSelectedCount, TEXT("A"))
+        || !SetPinDefault(IncrementSelectedCount, TEXT("B"), TEXT("1"))
+        || !Link(IncrementSelectedCount, UEdGraphSchema_K2::PN_ReturnValue, StoreSelectedCount, PalCatalogSelectedCountVariableName)
+        || !Link(FinalSelectedCount, PalCatalogSelectedCountVariableName, NoSelectedIds, TEXT("A"))
+        || !SetPinDefault(NoSelectedIds, TEXT("B"), TEXT("0"))
+        || !SetPinDefault(NoSelectionSummary, TEXT("A"), TEXT("Selected: none"))
+        || !SetPinDefault(NoSelectionSummary, TEXT("B"), TEXT("已选中：无"))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, NoSelectionSummary, TEXT("bPickA"))
+        || !Link(NoSelectionSummary, UEdGraphSchema_K2::PN_ReturnValue, FinalSelectedSummary, TEXT("A"))
+        || !Link(FinalSelectedNames, PalCatalogSelectedNamesVariableName, FinalSelectedSummary, TEXT("B"))
+        || !Link(NoSelectedIds, UEdGraphSchema_K2::PN_ReturnValue, FinalSelectedSummary, TEXT("bPickA"))
+        || !Link(FinalSelectedSummary, UEdGraphSchema_K2::PN_ReturnValue, SelectedSummaryToText, TEXT("InString"))
+        || !Link(ForEachSelectedId, TEXT("Completed"), SetSelectedSummaryText, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SelectedSummaryTextGet, SelectedSummaryText->GetFName(), SetSelectedSummaryText, UEdGraphSchema_K2::PN_Self)
+        || !Link(SelectedSummaryToText, UEdGraphSchema_K2::PN_ReturnValue, SetSelectedSummaryText, TEXT("InText"))
+        || !Link(SetSelectedSummaryText, UEdGraphSchema_K2::PN_Then, ForEachCatalogId, TEXT("Exec"))
+        || !Link(CatalogIdsForRender, PalCatalogIdsVariableName, ForEachCatalogId, TEXT("Array"))
+        || !Link(ForEachCatalogId, TEXT("LoopBody"), GetRenderRow, UEdGraphSchema_K2::PN_Execute)
+        || !Link(TableForRenderRow, PalCatalogTableVariableName, GetRenderRow, TEXT("DataTable"))
+        || !Link(ForEachCatalogId, TEXT("Array Element"), GetRenderRow, TEXT("RowName"))
+        || !Link(GetRenderRow, UEdGraphSchema_K2::PN_ReturnValue, BreakRenderRow, CharacterParameterDatabaseRowStruct->GetFName())
+        || !Link(PanelBridgeForLanguage, PanelBridgeVariableName, LanguageIdForRender, UEdGraphSchema_K2::PN_Self)
+        || !Link(LanguageIdForRender, LanguageIdVariableName, LanguageIsEnglish, TEXT("A"))
+        || !SetPinDefault(LanguageIsEnglish, TEXT("B"), TEXT("1"))
+        || !Link(RenderSelf, UEdGraphSchema_K2::PN_Self, CharacterDatabase, TEXT("WorldContextObject"))
+        || !Link(CharacterDatabase, UEdGraphSchema_K2::PN_ReturnValue, GetLocalizedName, UEdGraphSchema_K2::PN_Self)
+        || !Link(ForEachCatalogId, TEXT("Array Element"), GetLocalizedName, TEXT("CharacterID"))
+        || !Link(GetLocalizedName, TEXT("OutText"), NameToString, TEXT("InText"))
+        || !Link(ForEachCatalogId, TEXT("Array Element"), CharacterIdToString, TEXT("InName"))
+        || !SetPinDefault(VariantPrefix, TEXT("A"), TEXT(" [ID: "))
+        || !Link(CharacterIdToString, UEdGraphSchema_K2::PN_ReturnValue, VariantPrefix, TEXT("B"))
+        || !Link(VariantPrefix, UEdGraphSchema_K2::PN_ReturnValue, VariantName, TEXT("A"))
+        || !SetPinDefault(VariantName, TEXT("B"), TEXT(""))
+        || !Link(VariantName, UEdGraphSchema_K2::PN_ReturnValue, VariantSuffix, TEXT("A"))
+        || !SetPinDefault(VariantSuffix, TEXT("B"), TEXT("]"))
+        || !Link(NameToString, UEdGraphSchema_K2::PN_ReturnValue, NameWithVariant, TEXT("A"))
+        || !Link(VariantSuffix, UEdGraphSchema_K2::PN_ReturnValue, NameWithVariant, TEXT("B"))
+        || !Link(SearchBoxGet, SearchBox->GetFName(), GetSearchText, UEdGraphSchema_K2::PN_Self)
+        || !Link(GetSearchText, UEdGraphSchema_K2::PN_ReturnValue, SearchToString, TEXT("InText"))
+        || !Link(SearchToString, UEdGraphSchema_K2::PN_ReturnValue, SearchEmpty, TEXT("InString"))
+        || !Link(NameToString, UEdGraphSchema_K2::PN_ReturnValue, NameContainsSearch, TEXT("SearchIn"))
+        || !Link(SearchToString, UEdGraphSchema_K2::PN_ReturnValue, NameContainsSearch, TEXT("Substring"))
+        || !SetPinDefault(NameContainsSearch, TEXT("bUseCase"), TEXT("false"))
+        || !SetPinDefault(NameContainsSearch, TEXT("bSearchFromEnd"), TEXT("false"))
+        || !SetPinDefault(PaldexNumber, TEXT("AppendTo"), TEXT(""))
+        || !SetPinDefault(PaldexNumber, TEXT("Prefix"), TEXT(""))
+        || !Link(BreakRenderRow, TEXT("ZukanIndex"), PaldexNumber, TEXT("InInt"))
+        || !Link(BreakRenderRow, TEXT("ZukanIndexSuffix"), PaldexNumber, TEXT("Suffix"))
+        || !Link(PaldexNumber, UEdGraphSchema_K2::PN_ReturnValue, NumberContainsSearch, TEXT("SearchIn"))
+        || !Link(SearchToString, UEdGraphSchema_K2::PN_ReturnValue, NumberContainsSearch, TEXT("Substring"))
+        || !SetPinDefault(NumberContainsSearch, TEXT("bUseCase"), TEXT("false"))
+        || !SetPinDefault(NumberContainsSearch, TEXT("bSearchFromEnd"), TEXT("false"))
+        || !Link(NameContainsSearch, UEdGraphSchema_K2::PN_ReturnValue, NameOrNumberMatches, TEXT("A"))
+        || !Link(NumberContainsSearch, UEdGraphSchema_K2::PN_ReturnValue, NameOrNumberMatches, TEXT("B"))
+        || !Link(SearchEmpty, UEdGraphSchema_K2::PN_ReturnValue, SearchMatches, TEXT("A"))
+        || !Link(NameOrNumberMatches, UEdGraphSchema_K2::PN_ReturnValue, SearchMatches, TEXT("B"))
+        || !Link(BreakRenderRow, TEXT("ElementType1"), Element1ToInt, TEXT("InByte"))
+        || !Link(BreakRenderRow, TEXT("ElementType2"), Element2ToInt, TEXT("InByte"))) {
+        return false;
+    }
+
+    UEdGraphNode* ElementQueryAccepted = nullptr;
+    int32 QueryX = 700;
+    for (int32 Index = 0; Index < ElementDefinitions.Num(); ++Index) {
+        UCheckBox* Toggle = ElementToggles[Index];
+        UK2Node_VariableGet* ToggleGet = AddVariableGet(Graph, Toggle->GetFName(), QueryX, RenderY + 1040);
+        UK2Node_CallFunction* IsChecked = AddStaticCall(
+            Graph, UCheckBox::StaticClass(), TEXT("IsChecked"), QueryX + 240, RenderY + 1040);
+        UK2Node_CallFunction* NotChecked = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), QueryX + 480, RenderY + 1040);
+        UK2Node_CallFunction* Element1Matches = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), QueryX + 240, RenderY + 1160);
+        UK2Node_CallFunction* Element2Matches = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), QueryX + 480, RenderY + 1160);
+        UK2Node_CallFunction* EitherElementMatches = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), QueryX + 720, RenderY + 1160);
+        UK2Node_CallFunction* ElementCondition = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), QueryX + 960, RenderY + 1100);
+        if (!ToggleGet || !IsChecked || !NotChecked || !Element1Matches || !Element2Matches
+            || !EitherElementMatches || !ElementCondition
+            || !Link(ToggleGet, Toggle->GetFName(), IsChecked, UEdGraphSchema_K2::PN_Self)
+            || !Link(IsChecked, UEdGraphSchema_K2::PN_ReturnValue, NotChecked, TEXT("A"))
+            || !Link(Element1ToInt, UEdGraphSchema_K2::PN_ReturnValue, Element1Matches, TEXT("A"))
+            || !SetPinDefault(Element1Matches, TEXT("B"), FString::FromInt(ElementDefinitions[Index].EnumValue))
+            || !Link(Element2ToInt, UEdGraphSchema_K2::PN_ReturnValue, Element2Matches, TEXT("A"))
+            || !SetPinDefault(Element2Matches, TEXT("B"), FString::FromInt(ElementDefinitions[Index].EnumValue))
+            || !Link(Element1Matches, UEdGraphSchema_K2::PN_ReturnValue, EitherElementMatches, TEXT("A"))
+            || !Link(Element2Matches, UEdGraphSchema_K2::PN_ReturnValue, EitherElementMatches, TEXT("B"))
+            || !Link(NotChecked, UEdGraphSchema_K2::PN_ReturnValue, ElementCondition, TEXT("A"))
+            || !Link(EitherElementMatches, UEdGraphSchema_K2::PN_ReturnValue, ElementCondition, TEXT("B"))) {
+            return false;
+        }
+        if (ElementQueryAccepted) {
+            UK2Node_CallFunction* Combine = AddStaticCall(
+                Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), QueryX + 1200, RenderY + 1100);
+            if (!Combine
+                || !Link(ElementQueryAccepted, UEdGraphSchema_K2::PN_ReturnValue, Combine, TEXT("A"))
+                || !Link(ElementCondition, UEdGraphSchema_K2::PN_ReturnValue, Combine, TEXT("B"))) {
+                return false;
+            }
+            ElementQueryAccepted = Combine;
+        } else {
+            ElementQueryAccepted = ElementCondition;
+        }
+        QueryX += 1440;
+    }
+
+    UEdGraphNode* WorkQueryAccepted = nullptr;
+    UEdGraphNode* WorkTextSource = nullptr;
+    QueryX = 700;
+    for (int32 Index = 0; Index < WorkDefinitions.Num(); ++Index) {
+        UCheckBox* Toggle = WorkToggles[Index];
+        const FPalWorkDefinition& Definition = WorkDefinitions[Index];
+        UK2Node_VariableGet* ToggleGet = AddVariableGet(Graph, Toggle->GetFName(), QueryX, RenderY + 1420);
+        UK2Node_CallFunction* IsChecked = AddStaticCall(
+            Graph, UCheckBox::StaticClass(), TEXT("IsChecked"), QueryX + 240, RenderY + 1420);
+        UK2Node_CallFunction* NotChecked = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), QueryX + 480, RenderY + 1420);
+        UK2Node_CallFunction* HasWork = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("Greater_IntInt"), QueryX + 240, RenderY + 1540);
+        UK2Node_CallFunction* WorkCondition = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanOR"), QueryX + 720, RenderY + 1480);
+        UK2Node_CallFunction* GetWorkName = AddStaticCall(
+            Graph, PalUIUtilityClass, TEXT("GetWorkSuitabilityName"), QueryX, RenderY + 1660);
+        UK2Node_CallFunction* WorkNameToString = AddStaticCall(
+            Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), QueryX + 240, RenderY + 1660);
+        UK2Node_CallFunction* WorkRankPrefix = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), QueryX + 480, RenderY + 1780);
+        UK2Node_CallFunction* WorkWithRank = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), QueryX + 480, RenderY + 1660);
+        UK2Node_CallFunction* SelectWorkText = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), QueryX + 720, RenderY + 1660);
+        UK2Node_CallFunction* AppendWorkText = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), QueryX + 960, RenderY + 1660);
+        if (!ToggleGet || !IsChecked || !NotChecked || !HasWork || !WorkCondition
+            || !GetWorkName || !WorkNameToString || !WorkRankPrefix || !WorkWithRank || !SelectWorkText || !AppendWorkText
+            || !Link(ToggleGet, Toggle->GetFName(), IsChecked, UEdGraphSchema_K2::PN_Self)
+            || !Link(IsChecked, UEdGraphSchema_K2::PN_ReturnValue, NotChecked, TEXT("A"))
+            || !Link(BreakRenderRow, Definition.FieldName, HasWork, TEXT("A"))
+            || !SetPinDefault(HasWork, TEXT("B"), TEXT("0"))
+            || !Link(NotChecked, UEdGraphSchema_K2::PN_ReturnValue, WorkCondition, TEXT("A"))
+            || !Link(HasWork, UEdGraphSchema_K2::PN_ReturnValue, WorkCondition, TEXT("B"))
+            || !Link(RenderSelf, UEdGraphSchema_K2::PN_Self, GetWorkName, TEXT("WorldContextObject"))
+            || !SetPinDefault(GetWorkName, TEXT("WorkSuitability"), Definition.EnumName.ToString())
+            || !Link(GetWorkName, TEXT("outName"), WorkNameToString, TEXT("InText"))
+            || !Link(WorkNameToString, UEdGraphSchema_K2::PN_ReturnValue, WorkWithRank, TEXT("AppendTo"))
+            || !SetPinDefault(WorkRankPrefix, TEXT("A"), TEXT(" Lv."))
+            || !SetPinDefault(WorkRankPrefix, TEXT("B"), TEXT(" "))
+            || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, WorkRankPrefix, TEXT("bPickA"))
+            || !Link(WorkRankPrefix, UEdGraphSchema_K2::PN_ReturnValue, WorkWithRank, TEXT("Prefix"))
+            || !Link(BreakRenderRow, Definition.FieldName, WorkWithRank, TEXT("InInt"))
+            || !SetPinDefault(WorkWithRank, TEXT("Suffix"), Index + 1 < WorkDefinitions.Num() ? TEXT(" | ") : TEXT(""))
+            || !Link(WorkWithRank, UEdGraphSchema_K2::PN_ReturnValue, SelectWorkText, TEXT("A"))
+            || !SetPinDefault(SelectWorkText, TEXT("B"), TEXT(""))
+            || !Link(HasWork, UEdGraphSchema_K2::PN_ReturnValue, SelectWorkText, TEXT("bPickA"))
+            || !Link(SelectWorkText, UEdGraphSchema_K2::PN_ReturnValue, AppendWorkText, TEXT("B"))) {
+            return false;
+        }
+        if (WorkTextSource) {
+            if (!Link(WorkTextSource, UEdGraphSchema_K2::PN_ReturnValue, AppendWorkText, TEXT("A"))) {
+                return false;
+            }
+        } else if (!SetPinDefault(AppendWorkText, TEXT("A"), TEXT(""))) {
+            return false;
+        }
+        WorkTextSource = AppendWorkText;
+        if (WorkQueryAccepted) {
+            UK2Node_CallFunction* Combine = AddStaticCall(
+                Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), QueryX + 960, RenderY + 1480);
+            if (!Combine
+                || !Link(WorkQueryAccepted, UEdGraphSchema_K2::PN_ReturnValue, Combine, TEXT("A"))
+                || !Link(WorkCondition, UEdGraphSchema_K2::PN_ReturnValue, Combine, TEXT("B"))) {
+                return false;
+            }
+            WorkQueryAccepted = Combine;
+        } else {
+            WorkQueryAccepted = WorkCondition;
+        }
+        QueryX += 1200;
+    }
+    if (!ElementQueryAccepted || !WorkQueryAccepted || !WorkTextSource) {
+        return false;
+    }
+
+    UK2Node_CallFunction* SearchAndElement = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), QueryX, RenderY + 680);
+    UK2Node_CallFunction* AllQueriesMatch = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), QueryX + 260, RenderY + 680);
+    UK2Node_IfThenElse* QueryBranch = AddBranch(Graph, QueryX + 520, RenderY);
+    UK2Node_CallFunction* GetElement1Name = AddStaticCall(
+        Graph, PalUIUtilityClass, TEXT("GetPalElementTypeName"), QueryX, RenderY + 1900);
+    UK2Node_CallFunction* Element1NameToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), QueryX + 260, RenderY + 1900);
+    UK2Node_CallFunction* Element1IsNormal = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), QueryX + 520, RenderY + 1900);
+    UK2Node_CallFunction* Element1NormalName = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), QueryX + 780, RenderY + 1900);
+    UK2Node_CallFunction* Element1DisplayName = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), QueryX + 1040, RenderY + 1900);
+    UK2Node_CallFunction* GetElement2Name = AddStaticCall(
+        Graph, PalUIUtilityClass, TEXT("GetPalElementTypeName"), QueryX, RenderY + 2020);
+    UK2Node_CallFunction* Element2NameToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), QueryX + 260, RenderY + 2020);
+    UK2Node_CallFunction* Element2IsNormal = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_IntInt"), QueryX + 520, RenderY + 2020);
+    UK2Node_CallFunction* Element2NormalName = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), QueryX + 780, RenderY + 2020);
+    UK2Node_CallFunction* Element2DisplayName = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), QueryX + 1040, RenderY + 2020);
+    UK2Node_CallFunction* Element2Valid = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Greater_IntInt"), QueryX + 520, RenderY + 2020);
+    UK2Node_CallFunction* Element2Prefix = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), QueryX + 520, RenderY + 1900);
+    UK2Node_CallFunction* SelectElement2 = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), QueryX + 780, RenderY + 1960);
+    UK2Node_CallFunction* ElementDisplayText = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), QueryX + 1040, RenderY + 1900);
+    const int32 NormalElementValue = ElementEnum->GetValueByNameString(TEXT("Normal"));
+    if (!SearchAndElement || !AllQueriesMatch || !QueryBranch || !GetElement1Name || !Element1NameToString
+        || !Element1IsNormal || !Element1NormalName || !Element1DisplayName
+        || !GetElement2Name || !Element2NameToString || !Element2IsNormal || !Element2NormalName || !Element2DisplayName
+        || !Element2Valid || !Element2Prefix
+        || !SelectElement2 || !ElementDisplayText || !PaldexNumber
+        || !Link(SearchMatches, UEdGraphSchema_K2::PN_ReturnValue, SearchAndElement, TEXT("A"))
+        || !Link(ElementQueryAccepted, UEdGraphSchema_K2::PN_ReturnValue, SearchAndElement, TEXT("B"))
+        || !Link(SearchAndElement, UEdGraphSchema_K2::PN_ReturnValue, AllQueriesMatch, TEXT("A"))
+        || !Link(WorkQueryAccepted, UEdGraphSchema_K2::PN_ReturnValue, AllQueriesMatch, TEXT("B"))
+        || !Link(GetRenderRow, UEdGraphSchema_K2::PN_Then, QueryBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(AllQueriesMatch, UEdGraphSchema_K2::PN_ReturnValue, QueryBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(RenderSelf, UEdGraphSchema_K2::PN_Self, GetElement1Name, TEXT("WorldContextObject"))
+        || !Link(BreakRenderRow, TEXT("ElementType1"), GetElement1Name, TEXT("ElementType"))
+        || NormalElementValue == INDEX_NONE
+        || !Link(GetElement1Name, TEXT("outName"), Element1NameToString, TEXT("InText"))
+        || !Link(Element1ToInt, UEdGraphSchema_K2::PN_ReturnValue, Element1IsNormal, TEXT("A"))
+        || !SetPinDefault(Element1IsNormal, TEXT("B"), FString::FromInt(NormalElementValue))
+        || !SetPinDefault(Element1NormalName, TEXT("A"), TEXT("Normal"))
+        || !SetPinDefault(Element1NormalName, TEXT("B"), TEXT("普通"))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, Element1NormalName, TEXT("bPickA"))
+        || !Link(Element1NormalName, UEdGraphSchema_K2::PN_ReturnValue, Element1DisplayName, TEXT("A"))
+        || !Link(Element1NameToString, UEdGraphSchema_K2::PN_ReturnValue, Element1DisplayName, TEXT("B"))
+        || !Link(Element1IsNormal, UEdGraphSchema_K2::PN_ReturnValue, Element1DisplayName, TEXT("bPickA"))
+        || !Link(RenderSelf, UEdGraphSchema_K2::PN_Self, GetElement2Name, TEXT("WorldContextObject"))
+        || !Link(BreakRenderRow, TEXT("ElementType2"), GetElement2Name, TEXT("ElementType"))
+        || !Link(GetElement2Name, TEXT("outName"), Element2NameToString, TEXT("InText"))
+        || !Link(Element2ToInt, UEdGraphSchema_K2::PN_ReturnValue, Element2IsNormal, TEXT("A"))
+        || !SetPinDefault(Element2IsNormal, TEXT("B"), FString::FromInt(NormalElementValue))
+        || !SetPinDefault(Element2NormalName, TEXT("A"), TEXT("Normal"))
+        || !SetPinDefault(Element2NormalName, TEXT("B"), TEXT("普通"))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, Element2NormalName, TEXT("bPickA"))
+        || !Link(Element2NormalName, UEdGraphSchema_K2::PN_ReturnValue, Element2DisplayName, TEXT("A"))
+        || !Link(Element2NameToString, UEdGraphSchema_K2::PN_ReturnValue, Element2DisplayName, TEXT("B"))
+        || !Link(Element2IsNormal, UEdGraphSchema_K2::PN_ReturnValue, Element2DisplayName, TEXT("bPickA"))
+        || !Link(Element2ToInt, UEdGraphSchema_K2::PN_ReturnValue, Element2Valid, TEXT("A"))
+        || !SetPinDefault(Element2Valid, TEXT("B"), TEXT("0"))
+        || !SetPinDefault(Element2Prefix, TEXT("A"), TEXT(" / "))
+        || !Link(Element2DisplayName, UEdGraphSchema_K2::PN_ReturnValue, Element2Prefix, TEXT("B"))
+        || !Link(Element2Prefix, UEdGraphSchema_K2::PN_ReturnValue, SelectElement2, TEXT("A"))
+        || !SetPinDefault(SelectElement2, TEXT("B"), TEXT(""))
+        || !Link(Element2Valid, UEdGraphSchema_K2::PN_ReturnValue, SelectElement2, TEXT("bPickA"))
+        || !Link(Element1DisplayName, UEdGraphSchema_K2::PN_ReturnValue, ElementDisplayText, TEXT("A"))
+        || !Link(SelectElement2, UEdGraphSchema_K2::PN_ReturnValue, ElementDisplayText, TEXT("B"))
+        ) {
+        return false;
+    }
+
+    UEdGraphNode* TooltipSource = nullptr;
+    int32 TooltipX = QueryX;
+    struct FTooltipFieldDefinition {
+        FName FieldName;
+        FString Chinese;
+        FString English;
+    };
+    const TArray<FTooltipFieldDefinition> TooltipFields = {
+        {TEXT("Hp"), TEXT("基础：生命 "), TEXT("Base: HP ")},
+        {TEXT("ShotAttack"), TEXT("攻击 "), TEXT("ATK ")},
+        {TEXT("Defense"), TEXT("防御 "), TEXT("DEF ")},
+        {TEXT("CraftSpeed"), TEXT("工作速度 "), TEXT("Work speed ")},
+        {TEXT("WalkSpeed"), TEXT("移动：步行 "), TEXT("Movement: Walk ")},
+        {TEXT("RunSpeed"), TEXT("奔跑 "), TEXT("Run ")},
+        {TEXT("SwimSpeed"), TEXT("游泳 "), TEXT("Swim ")},
+        {TEXT("Stamina"), TEXT("耐力 "), TEXT("Stamina ")},
+        {TEXT("FoodAmount"), TEXT("进食量 "), TEXT("Food ")},
+    };
+    const TArray<FString> TooltipSuffixes = {
+        TEXT(" | "), TEXT(" | "), TEXT(" | "), TEXT("\n"),
+        TEXT(" | "), TEXT(" | "), TEXT(" | "), TEXT("\n"), TEXT("\n"),
+    };
+    for (int32 Index = 0; Index < TooltipFields.Num(); ++Index) {
+        UK2Node_CallFunction* SelectFieldPrefix = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), TooltipX, RenderY + 2180);
+        UK2Node_CallFunction* AppendField = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), TooltipX, RenderY + 2300);
+        if (!SelectFieldPrefix || !AppendField
+            || !SetPinDefault(SelectFieldPrefix, TEXT("A"), TooltipFields[Index].English)
+            || !SetPinDefault(SelectFieldPrefix, TEXT("B"), TooltipFields[Index].Chinese)
+            || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, SelectFieldPrefix, TEXT("bPickA"))
+            || !Link(SelectFieldPrefix, UEdGraphSchema_K2::PN_ReturnValue, AppendField, TEXT("Prefix"))
+            || !Link(BreakRenderRow, TooltipFields[Index].FieldName, AppendField, TEXT("InInt"))
+            || !SetPinDefault(AppendField, TEXT("Suffix"), TooltipSuffixes[Index])) {
+            return false;
+        }
+        if (TooltipSource) {
+            if (!Link(TooltipSource, UEdGraphSchema_K2::PN_ReturnValue, AppendField, TEXT("AppendTo"))) {
+                return false;
+            }
+        } else if (!SetPinDefault(AppendField, TEXT("AppendTo"), TEXT(""))) {
+            return false;
+        }
+        TooltipSource = AppendField;
+        TooltipX += 260;
+    }
+    UK2Node_CallFunction* GetPartnerSkillName = AddStaticCall(
+        Graph, PalUIUtilityClass, TEXT("GetPartnerSkillName"), TooltipX, RenderY + 2300);
+    UK2Node_CallFunction* PartnerSkillNameToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), TooltipX + 260, RenderY + 2300);
+    UK2Node_CallFunction* PartnerLabelPrefix = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), TooltipX + 520, RenderY + 2180);
+    UK2Node_CallFunction* PartnerLabel = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), TooltipX + 520, RenderY + 2300);
+    UK2Node_CallFunction* AppendPartner = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), TooltipX + 780, RenderY + 2300);
+    UK2Node_CallFunction* GetPartnerDescription = AddStaticCall(
+        Graph, PalUIUtilityClass, TEXT("GetFormatedFirstActivatedInfoTextFixedRank"), TooltipX, RenderY + 2440);
+    UK2Node_CallFunction* PartnerDescriptionToString = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), TooltipX + 260, RenderY + 2440);
+    UK2Node_CallFunction* PartnerDescriptionNotEmpty = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), TooltipX + 520, RenderY + 2560);
+    UK2Node_CallFunction* MissingPartnerDescription = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), TooltipX + 780, RenderY + 2680);
+    UK2Node_CallFunction* SelectPartnerDescription = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), TooltipX + 1040, RenderY + 2440);
+    UK2Node_CallFunction* EffectLabelPrefix = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), TooltipX + 2080, RenderY + 2560);
+    UK2Node_CallFunction* EffectLabel = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), TooltipX + 2080, RenderY + 2440);
+    UK2Node_CallFunction* AppendEffect = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), TooltipX + 2340, RenderY + 2360);
+    UK2Node_CallFunction* GetDropData = AddStaticCall(
+        Graph, DatabaseCharacterParameterClass, TEXT("GetDropItemData"), TooltipX + 2600, RenderY + 2440);
+    UK2Node_BreakStruct* BreakDropData = AddBreakStruct(
+        Graph, DropItemDatabaseRowStruct, TooltipX + 2860, RenderY + 2500);
+    if (!TooltipSource || !GetPartnerSkillName || !PartnerSkillNameToString || !PartnerLabelPrefix || !PartnerLabel || !AppendPartner
+        || !GetPartnerDescription || !PartnerDescriptionToString || !PartnerDescriptionNotEmpty
+        || !MissingPartnerDescription || !SelectPartnerDescription
+        || !EffectLabelPrefix || !EffectLabel || !AppendEffect
+        || !GetDropData || !BreakDropData
+        || !Link(RenderSelf, UEdGraphSchema_K2::PN_Self, GetPartnerSkillName, TEXT("WorldContextObject"))
+        || !Link(ForEachCatalogId, TEXT("Array Element"), GetPartnerSkillName, TEXT("CharacterID"))
+        || !Link(GetPartnerSkillName, TEXT("OutText"), PartnerSkillNameToString, TEXT("InText"))
+        || !SetPinDefault(PartnerLabelPrefix, TEXT("A"), TEXT("Partner skill: "))
+        || !SetPinDefault(PartnerLabelPrefix, TEXT("B"), TEXT("伙伴技能："))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, PartnerLabelPrefix, TEXT("bPickA"))
+        || !Link(PartnerLabelPrefix, UEdGraphSchema_K2::PN_ReturnValue, PartnerLabel, TEXT("A"))
+        || !Link(PartnerSkillNameToString, UEdGraphSchema_K2::PN_ReturnValue, PartnerLabel, TEXT("B"))
+        || !Link(TooltipSource, UEdGraphSchema_K2::PN_ReturnValue, AppendPartner, TEXT("A"))
+        || !Link(PartnerLabel, UEdGraphSchema_K2::PN_ReturnValue, AppendPartner, TEXT("B"))
+        || !Link(RenderSelf, UEdGraphSchema_K2::PN_Self, GetPartnerDescription, TEXT("WorldContextObject"))
+        || !Link(ForEachCatalogId, TEXT("Array Element"), GetPartnerDescription, TEXT("CharacterID"))
+        || !SetPinDefault(GetPartnerDescription, TEXT("Rank"), TEXT("1"))
+        || !Link(GetPartnerDescription, TEXT("outFormatedText"), PartnerDescriptionToString, TEXT("InText"))
+        || !Link(PartnerDescriptionToString, UEdGraphSchema_K2::PN_ReturnValue, PartnerDescriptionNotEmpty, TEXT("A"))
+        || !SetPinDefault(PartnerDescriptionNotEmpty, TEXT("B"), TEXT(""))
+        || !SetPinDefault(MissingPartnerDescription, TEXT("A"), TEXT("Partner skill effect unavailable"))
+        || !SetPinDefault(MissingPartnerDescription, TEXT("B"), TEXT("当前游戏未提供伙伴技能说明"))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, MissingPartnerDescription, TEXT("bPickA"))
+        || !Link(PartnerDescriptionToString, UEdGraphSchema_K2::PN_ReturnValue, SelectPartnerDescription, TEXT("A"))
+        || !Link(MissingPartnerDescription, UEdGraphSchema_K2::PN_ReturnValue, SelectPartnerDescription, TEXT("B"))
+        || !Link(PartnerDescriptionNotEmpty, UEdGraphSchema_K2::PN_ReturnValue, SelectPartnerDescription, TEXT("bPickA"))
+        || !SetPinDefault(EffectLabelPrefix, TEXT("A"), TEXT("\nEffect: "))
+        || !SetPinDefault(EffectLabelPrefix, TEXT("B"), TEXT("\n效果："))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, EffectLabelPrefix, TEXT("bPickA"))
+        || !Link(EffectLabelPrefix, UEdGraphSchema_K2::PN_ReturnValue, EffectLabel, TEXT("A"))
+        || !Link(SelectPartnerDescription, UEdGraphSchema_K2::PN_ReturnValue, EffectLabel, TEXT("B"))
+        || !Link(AppendPartner, UEdGraphSchema_K2::PN_ReturnValue, AppendEffect, TEXT("A"))
+        || !Link(EffectLabel, UEdGraphSchema_K2::PN_ReturnValue, AppendEffect, TEXT("B"))
+        || !Link(CharacterDatabase, UEdGraphSchema_K2::PN_ReturnValue, GetDropData, UEdGraphSchema_K2::PN_Self)
+        || !Link(ForEachCatalogId, TEXT("Array Element"), GetDropData, TEXT("CharacterID"))
+        || !SetPinDefault(GetDropData, TEXT("Level"), TEXT("1"))
+        || !Link(GetDropData, TEXT("OutData"), BreakDropData, DropItemDatabaseRowStruct->GetFName())) {
+        return false;
+    }
+
+    UEdGraphNode* DropTextSource = AppendEffect;
+    UK2Node_CallFunction* DropLabelPrefix = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), TooltipX + 3380, RenderY + 2360);
+    if (!DropLabelPrefix
+        || !SetPinDefault(DropLabelPrefix, TEXT("A"), TEXT("\nDrops: "))
+        || !SetPinDefault(DropLabelPrefix, TEXT("B"), TEXT("\n掉落："))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, DropLabelPrefix, TEXT("bPickA"))) {
+        return false;
+    }
+    int32 DropX = TooltipX + 3640;
+    for (int32 Index = 1; Index <= 10; ++Index) {
+        const FName ItemPin(*FString::Printf(TEXT("ItemId%d"), Index));
+        UK2Node_CallFunction* ItemIdToString = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_NameToString"), DropX, RenderY + 2500);
+        UK2Node_CallFunction* ItemAvailable = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("NotEqual_StrStr"), DropX + 240, RenderY + 2500);
+        UK2Node_CallFunction* GetItemName = AddStaticCall(
+            Graph, PalUIUtilityClass, TEXT("GetItemName"), DropX, RenderY + 2640);
+        UK2Node_CallFunction* ItemNameToString = AddStaticCall(
+            Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_TextToString"), DropX + 240, RenderY + 2640);
+        UK2Node_CallFunction* PrefixItem = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), DropX + 480, RenderY + 2640);
+        UK2Node_CallFunction* SelectItem = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), DropX + 720, RenderY + 2580);
+        UK2Node_CallFunction* AppendItem = AddStaticCall(
+            Graph, UKismetStringLibrary::StaticClass(), TEXT("Concat_StrStr"), DropX + 960, RenderY + 2580);
+        if (!ItemIdToString || !ItemAvailable || !GetItemName || !ItemNameToString
+            || !PrefixItem || !SelectItem || !AppendItem
+            || !Link(BreakDropData, ItemPin, ItemIdToString, TEXT("InName"))
+            || !Link(ItemIdToString, UEdGraphSchema_K2::PN_ReturnValue, ItemAvailable, TEXT("A"))
+            || !SetPinDefault(ItemAvailable, TEXT("B"), TEXT("None"))
+            || !Link(RenderSelf, UEdGraphSchema_K2::PN_Self, GetItemName, TEXT("WorldContextObject"))
+            || !Link(BreakDropData, ItemPin, GetItemName, TEXT("StaticItemId"))
+            || !Link(GetItemName, TEXT("outName"), ItemNameToString, TEXT("InText"))
+            || !(Index == 1
+                ? Link(DropLabelPrefix, UEdGraphSchema_K2::PN_ReturnValue, PrefixItem, TEXT("A"))
+                : SetPinDefault(PrefixItem, TEXT("A"), TEXT(" / ")))
+            || !Link(ItemNameToString, UEdGraphSchema_K2::PN_ReturnValue, PrefixItem, TEXT("B"))
+            || !Link(PrefixItem, UEdGraphSchema_K2::PN_ReturnValue, SelectItem, TEXT("A"))
+            || !SetPinDefault(SelectItem, TEXT("B"), TEXT(""))
+            || !Link(ItemAvailable, UEdGraphSchema_K2::PN_ReturnValue, SelectItem, TEXT("bPickA"))
+            || !Link(DropTextSource, UEdGraphSchema_K2::PN_ReturnValue, AppendItem, TEXT("A"))
+            || !Link(SelectItem, UEdGraphSchema_K2::PN_ReturnValue, AppendItem, TEXT("B"))) {
+            return false;
+        }
+        DropTextSource = AppendItem;
+        DropX += 1200;
+    }
+    UK2Node_CallFunction* TooltipToText = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), DropX, RenderY + 2580);
+    if (!TooltipToText
+        || !Link(DropTextSource, UEdGraphSchema_K2::PN_ReturnValue, TooltipToText, TEXT("InString"))) {
+        return false;
+    }
+
+    UK2Node_CallFunction* GetController = AddStaticCall(
+        Graph, UGameplayStatics::StaticClass(), TEXT("GetPlayerController"), QueryX + 780, RenderY + 160);
+    UK2Node_CallFunction* CreateEntry = AddStaticCall(
+        Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("Create"), QueryX + 1040, RenderY);
+    UK2Node_DynamicCast* CastEntry = AddDynamicCast(Graph, PalEntryClass, QueryX + 1300, RenderY);
+    UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, QueryX + 1040, RenderY + 320);
+    UK2Node_VariableGet* SelectedIdsGet = AddExternalVariableGet(
+        Graph, SpeciesFilterIdsVariableName, ModActorClass, QueryX + 1300, RenderY + 320);
+    UK2Node_CallArrayFunction* IsSelected = AddArrayCall(Graph, TEXT("Array_Contains"), QueryX + 1560, RenderY + 320);
+    UK2Node_CallFunction* InitializeEntry = AddStaticCall(
+        Graph, PalEntryClass, *PalEntryInitializeEventName.ToString(), QueryX + 1560, RenderY);
+    UK2Node_VariableGet* ResultsWrapForAdd = AddVariableGet(Graph, ResultsWrap->GetFName(), QueryX + 1820, RenderY + 320);
+    UK2Node_CallFunction* AddEntry = AddStaticCall(
+        Graph, UPanelWidget::StaticClass(), TEXT("AddChild"), QueryX + 1820, RenderY);
+    UK2Node_VariableGet* ResultCountGet = AddVariableGet(
+        Graph, PalCatalogResultCountVariableName, QueryX + 2080, RenderY + 320);
+    UK2Node_CallFunction* IncrementCount = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Add_IntInt"), QueryX + 2340, RenderY + 320);
+    UK2Node_VariableSet* StoreResultCount = AddVariableSet(
+        Graph, PalCatalogResultCountVariableName, QueryX + 2340, RenderY);
+    UK2Node_VariableGet* FinalCountGet = AddVariableGet(
+        Graph, PalCatalogResultCountVariableName, QueryX + 2600, RenderY + 520);
+    UK2Node_CallFunction* ResultCountPrefix = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("SelectString"), QueryX + 2860, RenderY + 680);
+    UK2Node_CallFunction* ResultCountString = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("BuildString_Int"), QueryX + 2860, RenderY + 520);
+    UK2Node_CallFunction* ResultCountToText = AddStaticCall(
+        Graph, UKismetTextLibrary::StaticClass(), TEXT("Conv_StringToText"), QueryX + 3120, RenderY + 520);
+    UK2Node_VariableGet* ResultCountTextGet = AddVariableGet(
+        Graph, ResultCountText->GetFName(), QueryX + 3120, RenderY + 680);
+    UK2Node_CallFunction* SetResultCountText = AddStaticCall(
+        Graph, UTextBlock::StaticClass(), TEXT("SetText"), QueryX + 3380, RenderY + 520);
+    if (!GetController || !CreateEntry || !CastEntry || !BridgeGet || !SelectedIdsGet || !IsSelected
+        || !InitializeEntry || !ResultsWrapForAdd || !AddEntry || !ResultCountGet || !IncrementCount
+        || !StoreResultCount || !FinalCountGet || !ResultCountPrefix || !ResultCountString || !ResultCountToText
+        || !ResultCountTextGet || !SetResultCountText
+        || !SetClassPin(CreateEntry, TEXT("WidgetType"), PalEntryClass)
+        || !Link(QueryBranch, UEdGraphSchema_K2::PN_Then, CreateEntry, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RenderSelf, UEdGraphSchema_K2::PN_Self, GetController, TEXT("WorldContextObject"))
+        || !SetPinDefault(GetController, TEXT("PlayerIndex"), TEXT("0"))
+        || !Link(GetController, UEdGraphSchema_K2::PN_ReturnValue, CreateEntry, TEXT("OwningPlayer"))
+        || !Link(CreateEntry, UEdGraphSchema_K2::PN_Then, CastEntry, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CreateEntry, UEdGraphSchema_K2::PN_ReturnValue, CastEntry, UEdGraphSchema_K2::PN_ObjectToCast)
+        || !Link(CastEntry, CastEntry->GetValidCastPin()->PinName, InitializeEntry, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CastEntry, CastEntry->GetCastResultPin()->PinName, InitializeEntry, UEdGraphSchema_K2::PN_Self)
+        || !Link(BridgeGet, PanelBridgeVariableName, InitializeEntry, TEXT("Bridge"))
+        || !Link(ForEachCatalogId, TEXT("Array Element"), InitializeEntry, TEXT("CharacterId"))
+        || !Link(PaldexNumber, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("PaldexNumber"))
+        || !Link(NameWithVariant, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("DisplayName"))
+        || !Link(SelectedSummaryTextGet, SelectedSummaryText->GetFName(), InitializeEntry, TEXT("SelectionSummary"))
+        || !Link(ElementDisplayText, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("ElementText"))
+        || !Link(WorkTextSource, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("WorkText"))
+        || !Link(TooltipToText, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Tooltip"))
+        || !Link(BridgeGet, PanelBridgeVariableName, SelectedIdsGet, UEdGraphSchema_K2::PN_Self)
+        || !Link(SelectedIdsGet, SpeciesFilterIdsVariableName, IsSelected, TEXT("TargetArray"))
+        || !Link(ForEachCatalogId, TEXT("Array Element"), IsSelected, TEXT("ItemToFind"))
+        || !Link(IsSelected, UEdGraphSchema_K2::PN_ReturnValue, InitializeEntry, TEXT("Selected"))
+        || !Link(InitializeEntry, UEdGraphSchema_K2::PN_Then, AddEntry, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ResultsWrapForAdd, ResultsWrap->GetFName(), AddEntry, UEdGraphSchema_K2::PN_Self)
+        || !Link(CastEntry, CastEntry->GetCastResultPin()->PinName, AddEntry, TEXT("Content"))
+        || !Link(AddEntry, UEdGraphSchema_K2::PN_Then, StoreResultCount, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ResultCountGet, PalCatalogResultCountVariableName, IncrementCount, TEXT("A"))
+        || !SetPinDefault(IncrementCount, TEXT("B"), TEXT("1"))
+        || !Link(IncrementCount, UEdGraphSchema_K2::PN_ReturnValue, StoreResultCount, PalCatalogResultCountVariableName)
+        || !Link(ForEachCatalogId, TEXT("Completed"), SetResultCountText, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(ResultCountString, TEXT("AppendTo"), TEXT(""))
+        || !SetPinDefault(ResultCountPrefix, TEXT("A"), TEXT("Results: "))
+        || !SetPinDefault(ResultCountPrefix, TEXT("B"), TEXT("结果："))
+        || !Link(LanguageIsEnglish, UEdGraphSchema_K2::PN_ReturnValue, ResultCountPrefix, TEXT("bPickA"))
+        || !Link(ResultCountPrefix, UEdGraphSchema_K2::PN_ReturnValue, ResultCountString, TEXT("Prefix"))
+        || !Link(FinalCountGet, PalCatalogResultCountVariableName, ResultCountString, TEXT("InInt"))
+        || !SetPinDefault(ResultCountString, TEXT("Suffix"), TEXT(""))
+        || !Link(ResultCountString, UEdGraphSchema_K2::PN_ReturnValue, ResultCountToText, TEXT("InString"))
+        || !Link(ResultCountTextGet, ResultCountText->GetFName(), SetResultCountText, UEdGraphSchema_K2::PN_Self)
+        || !Link(ResultCountToText, UEdGraphSchema_K2::PN_ReturnValue, SetResultCountText, TEXT("InText"))) {
+        return false;
+    }
+
+    return true;
+}
+
+bool BuildPanelPalCatalogEvents(
+    UWidgetBlueprint* Blueprint,
+    UClass* ModActorClass,
+    UEditableTextBox* SearchBox,
+    UButton* SearchButton,
+    UButton* ClearQueryButton,
+    UButton* ClearSelectionButton,
+    const TArray<UButton*>& SortModeButtons,
+    UButton* SortAscendingButton,
+    UButton* SortDescendingButton,
+    const TArray<UCheckBox*>& ElementToggles,
+    const TArray<UCheckBox*>& WorkToggles,
+    int32 Y) {
+    if (!Blueprint || !ModActorClass || !SearchBox || !SearchButton || !ClearQueryButton
+        || !ClearSelectionButton
+        || SortModeButtons.Num() != GetPalWorkDefinitions().Num() + 2 || SortModeButtons.Contains(nullptr)
+        || !SortAscendingButton || !SortDescendingButton
+        || ElementToggles.Num() != 9 || ElementToggles.Contains(nullptr)
+        || WorkToggles.Num() != GetPalWorkDefinitions().Num() || WorkToggles.Contains(nullptr)) {
+        return false;
+    }
+    UEdGraph* Graph = EventGraph(Blueprint);
+    if (!Graph) {
+        return false;
+    }
+    auto AddRenderCall = [&](UEdGraphNode* ExecSource, const FName& ExecPin, int32 X, int32 EventY) -> bool {
+        UK2Node_Self* Self = AddSelfNode(Graph, X, EventY + 160);
+        UK2Node_CallFunction* Render = AddStaticCall(
+            Graph, Blueprint->GeneratedClass, *PanelRenderPalCatalogEventName.ToString(), X + 260, EventY);
+        return Self && Render
+            && Link(ExecSource, ExecPin, Render, UEdGraphSchema_K2::PN_Execute)
+            && Link(Self, UEdGraphSchema_K2::PN_Self, Render, UEdGraphSchema_K2::PN_Self);
+    };
+
+    UK2Node_ComponentBoundEvent* SearchCommitted = AddEditableTextBoxCommittedEvent(Blueprint, SearchBox, -1600, Y);
+    UK2Node_ComponentBoundEvent* SearchClicked = AddButtonEvent(Blueprint, SearchButton, -1600, Y + 360);
+    if (!SearchCommitted || !SearchClicked
+        || !AddRenderCall(SearchCommitted, UEdGraphSchema_K2::PN_Then, -1320, Y)
+        || !AddRenderCall(SearchClicked, UEdGraphSchema_K2::PN_Then, -1320, Y + 360)) {
+        return false;
+    }
+
+    TArray<UCheckBox*> QueryToggles = ElementToggles;
+    QueryToggles.Append(WorkToggles);
+    int32 ToggleY = Y + 720;
+    for (UCheckBox* Toggle : QueryToggles) {
+        UK2Node_ComponentBoundEvent* Changed = AddCheckBoxStateChangedEvent(Blueprint, Toggle, -1600, ToggleY);
+        UK2Node_VariableGet* SuppressGet = AddVariableGet(
+            Graph, PalCatalogSuppressEventsVariableName, -1360, ToggleY + 160);
+        UK2Node_CallFunction* NotSuppressed = AddStaticCall(
+            Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), -1100, ToggleY + 160);
+        UK2Node_IfThenElse* ShouldRender = AddBranch(Graph, -840, ToggleY);
+        if (!Changed || !SuppressGet || !NotSuppressed || !ShouldRender
+            || !Link(Changed, UEdGraphSchema_K2::PN_Then, ShouldRender, UEdGraphSchema_K2::PN_Execute)
+            || !Link(SuppressGet, PalCatalogSuppressEventsVariableName, NotSuppressed, TEXT("A"))
+            || !Link(NotSuppressed, UEdGraphSchema_K2::PN_ReturnValue, ShouldRender, UEdGraphSchema_K2::PN_Condition)
+            || !AddRenderCall(ShouldRender, UEdGraphSchema_K2::PN_Then, -560, ToggleY)) {
+            return false;
+        }
+        ToggleY += 360;
+    }
+
+    UK2Node_ComponentBoundEvent* ClearQuery = AddButtonEvent(Blueprint, ClearQueryButton, -1600, ToggleY);
+    UK2Node_VariableSet* SuppressOn = AddVariableSet(Graph, PalCatalogSuppressEventsVariableName, -1320, ToggleY);
+    UK2Node_VariableGet* SearchBoxGet = AddVariableGet(Graph, SearchBox->GetFName(), -1040, ToggleY + 160);
+    UK2Node_CallFunction* ClearSearch = AddStaticCall(
+        Graph, UEditableTextBox::StaticClass(), TEXT("SetText"), -780, ToggleY);
+    if (!ClearQuery || !SuppressOn || !SearchBoxGet || !ClearSearch
+        || !Link(ClearQuery, UEdGraphSchema_K2::PN_Then, SuppressOn, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(SuppressOn, PalCatalogSuppressEventsVariableName, TEXT("true"))
+        || !Link(SuppressOn, UEdGraphSchema_K2::PN_Then, ClearSearch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SearchBoxGet, SearchBox->GetFName(), ClearSearch, UEdGraphSchema_K2::PN_Self)
+        || !SetPinDefaultText(ClearSearch, TEXT("InText"), FText::GetEmpty())) {
+        return false;
+    }
+    UEdGraphNode* ClearTail = ClearSearch;
+    int32 ClearX = -500;
+    for (UCheckBox* Toggle : QueryToggles) {
+        UK2Node_VariableGet* ToggleGet = AddVariableGet(Graph, Toggle->GetFName(), ClearX, ToggleY + 160);
+        UK2Node_CallFunction* SetUnchecked = AddStaticCall(
+            Graph, UCheckBox::StaticClass(), TEXT("SetIsChecked"), ClearX + 260, ToggleY);
+        if (!ToggleGet || !SetUnchecked
+            || !Link(ClearTail, UEdGraphSchema_K2::PN_Then, SetUnchecked, UEdGraphSchema_K2::PN_Execute)
+            || !Link(ToggleGet, Toggle->GetFName(), SetUnchecked, UEdGraphSchema_K2::PN_Self)
+            || !SetPinDefault(SetUnchecked, TEXT("InIsChecked"), TEXT("false"))) {
+            return false;
+        }
+        ClearTail = SetUnchecked;
+        ClearX += 520;
+    }
+    UK2Node_VariableSet* SuppressOff = AddVariableSet(
+        Graph, PalCatalogSuppressEventsVariableName, ClearX, ToggleY);
+    if (!SuppressOff
+        || !Link(ClearTail, UEdGraphSchema_K2::PN_Then, SuppressOff, UEdGraphSchema_K2::PN_Execute)
+        || !SetPinDefault(SuppressOff, PalCatalogSuppressEventsVariableName, TEXT("false"))
+        || !AddRenderCall(SuppressOff, UEdGraphSchema_K2::PN_Then, ClearX + 280, ToggleY)) {
+        return false;
+    }
+
+    const int32 SelectionY = ToggleY + 480;
+    UK2Node_ComponentBoundEvent* ClearSelection = AddButtonEvent(
+        Blueprint, ClearSelectionButton, -1600, SelectionY);
+    UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, -1360, SelectionY + 160);
+    UK2Node_VariableGet* SpeciesIdsGet = AddExternalVariableGet(
+        Graph, SpeciesFilterIdsVariableName, ModActorClass, -1100, SelectionY + 160);
+    UK2Node_CallArrayFunction* ClearSpeciesIds = AddArrayCall(Graph, TEXT("Array_Clear"), -840, SelectionY);
+    UEdGraphNode* SelectionTail = ClearSpeciesIds;
+    if (!ClearSelection || !BridgeGet || !SpeciesIdsGet || !ClearSpeciesIds
+        || !Link(ClearSelection, UEdGraphSchema_K2::PN_Then, ClearSpeciesIds, UEdGraphSchema_K2::PN_Execute)
+        || !Link(BridgeGet, PanelBridgeVariableName, SpeciesIdsGet, UEdGraphSchema_K2::PN_Self)
+        || !Link(SpeciesIdsGet, SpeciesFilterIdsVariableName, ClearSpeciesIds, TEXT("TargetArray"))
+        || !AppendExternalAssignment(
+            Graph, ModActorClass, BridgeGet, SelectionTail,
+            SpeciesFilterTextVariableName, TEXT(""), -560, SelectionY)
+        || !AppendExternalIntegerIncrement(
+            Graph, ModActorClass, BridgeGet, ControlRevisionVariableName, SelectionTail, 0, SelectionY)
+        || !AddRenderCall(SelectionTail, UEdGraphSchema_K2::PN_Then, 820, SelectionY)) {
+        return false;
+    }
+
+    const TArray<UButton*> SortDirectionButtons = {SortAscendingButton, SortDescendingButton};
+    auto AddSortEvent = [&](UButton* Button, bool bSetMode, int32 SortMode, bool bDescending, int32 EventY) -> bool {
+        UK2Node_ComponentBoundEvent* Clicked = AddButtonEvent(Blueprint, Button, -1600, EventY);
+        UK2Node_VariableSet* SetMode = bSetMode
+            ? AddVariableSet(Graph, PalCatalogSortModeVariableName, -1320, EventY)
+            : nullptr;
+        UK2Node_VariableSet* SetDirection = AddVariableSet(Graph, PalCatalogSortDescendingVariableName, -1060, EventY);
+        UK2Node_Self* Self = AddSelfNode(Graph, -800, EventY + 160);
+        UK2Node_CallFunction* Repopulate = AddStaticCall(
+            Graph, Blueprint->GeneratedClass, *PanelPopulatePalCatalogEventName.ToString(), -540, EventY);
+        if (!Clicked || !SetDirection || !Self || !Repopulate
+            || (bSetMode && !SetMode)
+            || !Link(Clicked, UEdGraphSchema_K2::PN_Then,
+                bSetMode ? static_cast<UEdGraphNode*>(SetMode) : static_cast<UEdGraphNode*>(SetDirection), UEdGraphSchema_K2::PN_Execute)) {
+            return false;
+        }
+        UEdGraphNode* Tail = bSetMode ? static_cast<UEdGraphNode*>(SetMode) : static_cast<UEdGraphNode*>(Clicked);
+        if (bSetMode) {
+            if (!SetPinDefault(SetMode, PalCatalogSortModeVariableName, FString::FromInt(SortMode))
+                || !Link(SetMode, UEdGraphSchema_K2::PN_Then, SetDirection, UEdGraphSchema_K2::PN_Execute)) {
+                return false;
+            }
+            Tail = SetMode;
+        }
+        if (!SetPinDefault(SetDirection, PalCatalogSortDescendingVariableName, bDescending ? TEXT("true") : TEXT("false"))
+            || !Link(SetDirection, UEdGraphSchema_K2::PN_Then, Repopulate, UEdGraphSchema_K2::PN_Execute)
+            || !Link(Self, UEdGraphSchema_K2::PN_Self, Repopulate, UEdGraphSchema_K2::PN_Self)) {
+            return false;
+        }
+        UEdGraphNode* VisualTail = Repopulate;
+        if (!AppendPanelSegmentVisualsConstant(
+                Graph,
+                bSetMode ? SortModeButtons : SortDirectionButtons,
+                bSetMode ? SortMode : (bDescending ? 1 : 0),
+                VisualTail,
+                120,
+                EventY)) {
+            return false;
+        }
+        return true;
+    };
+    const int32 SortY = SelectionY + 520;
+    for (int32 Index = 0; Index < SortModeButtons.Num(); ++Index) {
+        if (!AddSortEvent(
+                SortModeButtons[Index], true, Index, Index != 0, SortY + Index * 320)) {
+            return false;
+        }
+    }
+    const int32 DirectionY = SortY + SortModeButtons.Num() * 320;
+    if (!AddSortEvent(SortAscendingButton, false, 0, false, DirectionY)
+        || !AddSortEvent(SortDescendingButton, false, 0, true, DirectionY + 320)) {
+        return false;
+    }
+    return true;
 }
 
 bool BuildPanelPassiveCatalog(
@@ -5000,6 +7198,22 @@ bool BuildPanelClearFiltersEvent(
     }
     X += 600;
     if (bClearAll) {
+        UK2Node_VariableGet* SpeciesIdsGet = AddExternalVariableGet(
+            Graph, SpeciesFilterIdsVariableName, ModActorClass, X, Y + 160);
+        UK2Node_CallArrayFunction* ClearSpeciesIds = AddArrayCall(Graph, TEXT("Array_Clear"), X + 280, Y);
+        if (!SpeciesIdsGet || !ClearSpeciesIds
+            || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, ClearSpeciesIds, UEdGraphSchema_K2::PN_Execute)
+            || !Link(BridgeGet, PanelBridgeVariableName, SpeciesIdsGet, UEdGraphSchema_K2::PN_Self)
+            || !Link(SpeciesIdsGet, SpeciesFilterIdsVariableName, ClearSpeciesIds, TEXT("TargetArray"))) {
+            return false;
+        }
+        ExecTail = ClearSpeciesIds;
+        if (!AppendExternalAssignment(
+                Graph, ModActorClass, BridgeGet, ExecTail,
+                SpeciesFilterTextVariableName, TEXT(""), X + 560, Y)) {
+            return false;
+        }
+        X += 860;
         const TArray<FPanelControlAssignment> Assignments = {
             {LevelMinVariableName, TEXT("0")},
             {LevelMaxVariableName, TEXT("0")},
@@ -5072,13 +7286,13 @@ bool BuildPanelClearFiltersEvent(
             ExecTail = SetUnchecked;
             X += 540;
         }
-        if (!AppendTextAssignment(Graph, ExecTail, GenderStatus->GetFName(), TEXT("当前 / Current: 全部 / All"), X, Y)
+        if (!AppendTextAssignment(Graph, ExecTail, GenderStatus->GetFName(), TEXT("当前：全部"), X, Y)
             || !AppendPanelSegmentVisualsConstant(Graph, GenderButtons, 0, ExecTail, X + 560, Y)
-            || !AppendTextAssignment(Graph, ExecTail, LuckyStatus->GetFName(), TEXT("当前 / Current: 全部 / All"), X + 2300, Y)
+            || !AppendTextAssignment(Graph, ExecTail, LuckyStatus->GetFName(), TEXT("当前：全部"), X + 2300, Y)
             || !AppendPanelSegmentVisualsConstant(Graph, LuckyButtons, 0, ExecTail, X + 2860, Y)
-            || !AppendTextAssignment(Graph, ExecTail, BossStatus->GetFName(), TEXT("当前 / Current: 全部 / All"), X + 4600, Y)
+            || !AppendTextAssignment(Graph, ExecTail, BossStatus->GetFName(), TEXT("当前：全部"), X + 4600, Y)
             || !AppendPanelSegmentVisualsConstant(Graph, BossButtons, 0, ExecTail, X + 5160, Y)
-            || !AppendTextAssignment(Graph, ExecTail, CollectionStatus->GetFName(), TEXT("当前 / Current: 全部 / All"), X + 6900, Y)
+            || !AppendTextAssignment(Graph, ExecTail, CollectionStatus->GetFName(), TEXT("当前：全部"), X + 6900, Y)
             || !AppendPanelSegmentVisualsConstant(Graph, CollectionButtons, 0, ExecTail, X + 7460, Y)) {
             return false;
         }
@@ -5088,9 +7302,19 @@ bool BuildPanelClearFiltersEvent(
     UK2Node_Self* Self = AddSelfNode(Graph, X, Y + 160);
     UK2Node_CallFunction* PopulateCatalog = AddStaticCall(
         Graph, Blueprint->GeneratedClass, *PanelPopulatePassiveCatalogEventName.ToString(), X + 260, Y);
-    return Self && PopulateCatalog
-        && Link(ExecTail, UEdGraphSchema_K2::PN_Then, PopulateCatalog, UEdGraphSchema_K2::PN_Execute)
-        && Link(Self, UEdGraphSchema_K2::PN_Self, PopulateCatalog, UEdGraphSchema_K2::PN_Self);
+    if (!Self || !PopulateCatalog
+        || !Link(ExecTail, UEdGraphSchema_K2::PN_Then, PopulateCatalog, UEdGraphSchema_K2::PN_Execute)
+        || !Link(Self, UEdGraphSchema_K2::PN_Self, PopulateCatalog, UEdGraphSchema_K2::PN_Self)) {
+        return false;
+    }
+    if (!bClearAll) {
+        return true;
+    }
+    UK2Node_CallFunction* RenderPalCatalog = AddStaticCall(
+        Graph, Blueprint->GeneratedClass, *PanelRenderPalCatalogEventName.ToString(), X + 520, Y);
+    return RenderPalCatalog
+        && Link(PopulateCatalog, UEdGraphSchema_K2::PN_Then, RenderPalCatalog, UEdGraphSchema_K2::PN_Execute)
+        && Link(Self, UEdGraphSchema_K2::PN_Self, RenderPalCatalog, UEdGraphSchema_K2::PN_Self);
 }
 
 // __DEPRECATED_20260717__ [reason: replaced by the compact slider-and-toggle panel; retained for rollback]
@@ -5317,15 +7541,22 @@ bool BuildPanel(
     UWidgetBlueprint* Blueprint,
     UClass* ModActorClass,
     UClass* PassiveEntryClass,
+    UClass* PalEntryClass,
     UClass* PalUtilityClass,
     UClass* PalUIUtilityClass,
+    UClass* DatabaseCharacterParameterClass,
     UClass* PassiveSkillManagerClass,
     UScriptStruct* PassiveSkillDatabaseRowStruct,
+    UScriptStruct* CharacterParameterDatabaseRowStruct,
+    UScriptStruct* DropItemDatabaseRowStruct,
+    UEnum* ElementEnum,
+    UEnum* WorkSuitabilityEnum,
     UClass* MasterDataTablesUtilityClass) {
     UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildPanelV2 begin blueprint=%s"), *GetNameSafe(Blueprint));
-    if (!Blueprint || !Blueprint->WidgetTree || !ModActorClass || !PassiveEntryClass
-        || !PalUtilityClass || !PalUIUtilityClass || !PassiveSkillManagerClass
-        || !PassiveSkillDatabaseRowStruct || !MasterDataTablesUtilityClass) {
+    if (!Blueprint || !Blueprint->WidgetTree || !ModActorClass || !PassiveEntryClass || !PalEntryClass
+        || !PalUtilityClass || !PalUIUtilityClass || !DatabaseCharacterParameterClass || !PassiveSkillManagerClass
+        || !PassiveSkillDatabaseRowStruct || !CharacterParameterDatabaseRowStruct || !DropItemDatabaseRowStruct
+        || !ElementEnum || !WorkSuitabilityEnum || !MasterDataTablesUtilityClass) {
         return false;
     }
     UEdGraph* Graph = EventGraph(Blueprint);
@@ -5333,7 +7564,20 @@ bool BuildPanel(
         return false;
     }
     ClearGraph(Graph);
-    if (!EnsureMemberVariable(Blueprint, PanelBridgeVariableName, ObjectPin(ModActorClass))) {
+    if (!EnsureMemberVariable(Blueprint, PanelBridgeVariableName, ObjectPin(ModActorClass))
+        || !EnsureMemberVariable(Blueprint, PalCatalogLoadedVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PalCatalogIdsVariableName, NameArrayPin())
+        || !EnsureMemberVariable(Blueprint, PalCatalogZukanIndicesVariableName, IntArrayPin())
+        || !EnsureMemberVariable(Blueprint, PalCatalogTableVariableName, ObjectPin(UDataTable::StaticClass()))
+        || !EnsureMemberVariable(Blueprint, PalCatalogResultCountVariableName, IntPin(), TEXT("0"))
+        || !EnsureMemberVariable(Blueprint, PalCatalogSuppressEventsVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PalCatalogInsertIndexVariableName, IntPin(), TEXT("0"))
+        || !EnsureMemberVariable(Blueprint, PalCatalogInsertFoundVariableName, BoolPin(), TEXT("false"))
+        || !EnsureMemberVariable(Blueprint, PalCatalogSelectedNamesVariableName, StringPin())
+        || !EnsureMemberVariable(Blueprint, PalCatalogSelectedCountVariableName, IntPin(), TEXT("0"))
+        || !EnsureMemberVariable(Blueprint, PalCatalogSortKeysVariableName, IntArrayPin())
+        || !EnsureMemberVariable(Blueprint, PalCatalogSortModeVariableName, IntPin(), TEXT("0"))
+        || !EnsureMemberVariable(Blueprint, PalCatalogSortDescendingVariableName, BoolPin(), TEXT("false"))) {
         return false;
     }
 
@@ -5346,6 +7590,9 @@ bool BuildPanel(
     UWidgetSwitcher* Switcher = Blueprint->WidgetTree->ConstructWidget<UWidgetSwitcher>(UWidgetSwitcher::StaticClass(), TEXT("ESP_PageSwitcher"));
     UScrollBox* DisplayScroll = Blueprint->WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("ESP_DisplayScroll"));
     UVerticalBox* DisplayContent = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ESP_DisplayContent"));
+    UVerticalBox* FilterRoot = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ESP_FilterRoot"));
+    UHorizontalBox* FilterSubTabRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_FilterSubTabRow"));
+    UWidgetSwitcher* FilterSubSwitcher = Blueprint->WidgetTree->ConstructWidget<UWidgetSwitcher>(UWidgetSwitcher::StaticClass(), TEXT("ESP_FilterSubSwitcher"));
     UHorizontalBox* FilterPage = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_FilterPage"));
     USizeBox* PassiveColumnSize = Blueprint->WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("ESP_PassiveColumnSize"));
     UVerticalBox* PassiveColumn = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ESP_PassiveColumn"));
@@ -5354,14 +7601,18 @@ bool BuildPanel(
     USizeBox* FilterColumnSize = Blueprint->WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("ESP_FilterColumnSize"));
     UScrollBox* FilterScroll = Blueprint->WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("ESP_FilterScroll"));
     UVerticalBox* FilterContent = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ESP_FilterContent"));
+    UHorizontalBox* FilterActions = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_FilterActions"));
+    UVerticalBox* PalPage = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ESP_PalPage"));
     UVerticalBox* StylePage = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ESP_StylePage"));
     if (!Canvas || !Size || !Border || !Content || !HeaderRow || !TabRow || !Switcher
-        || !DisplayScroll || !DisplayContent || !FilterPage || !PassiveColumnSize || !PassiveColumn
-        || !PassiveScroll || !PassiveGroups || !FilterColumnSize || !FilterScroll || !FilterContent || !StylePage) {
+        || !DisplayScroll || !DisplayContent || !FilterRoot || !FilterSubTabRow || !FilterSubSwitcher
+        || !FilterPage || !FilterActions || !PassiveColumnSize || !PassiveColumn
+        || !PassiveScroll || !PassiveGroups || !FilterColumnSize || !FilterScroll || !FilterContent
+        || !PalPage || !StylePage) {
         return false;
     }
-    Size->SetWidthOverride(1180.0f);
-    Size->SetHeightOverride(680.0f);
+    Size->SetWidthOverride(-1.0f);
+    Size->SetHeightOverride(-1.0f);
     Border->SetBrush(FSlateRoundedBoxBrush(PanelV2Style::Surface, 7.0f, PanelV2Style::Border, 1.0f));
     Border->SetBrushColor(FLinearColor::White);
     Border->SetPadding(FMargin(18.0f, 14.0f, 14.0f, 14.0f));
@@ -5388,9 +7639,21 @@ bool BuildPanel(
     FilterPage->AddChild(FilterColumnSize);
     SetHorizontalLayout(PassiveColumnSize, FMargin(0.0f, 0.0f, 14.0f, 0.0f), ESlateSizeRule::Automatic);
     SetHorizontalLayout(FilterColumnSize, FMargin(0.0f), ESlateSizeRule::Fill);
+    FilterSubSwitcher->bIsVariable = true;
+    FilterSubSwitcher->AddChild(FilterPage);
+    FilterSubSwitcher->AddChild(PalPage);
+    FilterSubSwitcher->SetActiveWidgetIndex(0);
+    FilterRoot->AddChild(FilterActions);
+    FilterRoot->AddChild(FilterSubTabRow);
+    SetVerticalPadding(FilterActions, FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+    FilterRoot->AddChild(FilterSubSwitcher);
+    if (UVerticalBoxSlot* FilterSubSwitcherSlot = Cast<UVerticalBoxSlot>(FilterSubSwitcher->Slot)) {
+        FilterSubSwitcherSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+        FilterSubSwitcherSlot->SetPadding(FMargin(0.0f, 6.0f, 0.0f, 0.0f));
+    }
     Switcher->bIsVariable = true;
     Switcher->AddChild(DisplayScroll);
-    Switcher->AddChild(FilterPage);
+    Switcher->AddChild(FilterRoot);
     Switcher->AddChild(StylePage);
     Switcher->SetActiveWidgetIndex(0);
     Content->AddChild(HeaderRow);
@@ -5403,13 +7666,13 @@ bool BuildPanel(
     Border->AddChild(Content);
     Size->AddChild(Border);
     UCanvasPanelSlot* PanelSlot = Canvas->AddChildToCanvas(Size);
-    PanelSlot->SetPosition(FVector2D(24.0f, 24.0f));
-    PanelSlot->SetSize(FVector2D(1180.0f, 680.0f));
+    PanelSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+    PanelSlot->SetOffsets(FMargin(16.0f));
     Blueprint->WidgetTree->RootWidget = Canvas;
 
     UTextBlock* Title = AddPanelTextV2(Blueprint, HeaderRow, TEXT("ESP_TitleText"), TEXT("帕鲁资源 ESP"), 22);
     UCheckBox* RuntimeEnabled = AddPanelToggleV2(
-        Blueprint, DisplayContent, TEXT("ESP_RuntimeRow"), TEXT("ESP_RuntimeText"), TEXT("ESP_RuntimeToggle"), TEXT("启用 Mod"), true);
+        Blueprint, DisplayContent, TEXT("ESP_RuntimeRow"), TEXT("ESP_RuntimeText"), TEXT("ESP_RuntimeToggle"), TEXT("启用模组"), true);
     SetHorizontalLayout(Title, FMargin(0.0f), ESlateSizeRule::Fill);
 
     UButton* DisplayTab = AddPanelButtonV2(Blueprint, TabRow, TEXT("ESP_DisplayTabButton"), TEXT("ESP_DisplayTabText"), TEXT("显示内容"));
@@ -5418,6 +7681,14 @@ bool BuildPanel(
     ConfigurePanelSegmentButtonV2(DisplayTab, true);
     ConfigurePanelSegmentButtonV2(FilterTab, false);
     ConfigurePanelSegmentButtonV2(StyleTab, false);
+    StyleTab->SetVisibility(ESlateVisibility::Collapsed);
+    StylePage->SetVisibility(ESlateVisibility::Collapsed);
+    UButton* FilterConditionsTab = AddPanelButtonV2(
+        Blueprint, FilterSubTabRow, TEXT("ESP_FilterConditionsTabButton"), TEXT("ESP_FilterConditionsTabText"), TEXT("常规筛选"));
+    UButton* FilterPalTab = AddPanelButtonV2(
+        Blueprint, FilterSubTabRow, TEXT("ESP_FilterPalTabButton"), TEXT("ESP_FilterPalTabText"), TEXT("帕鲁种类"));
+    ConfigurePanelSegmentButtonV2(FilterConditionsTab, true);
+    ConfigurePanelSegmentButtonV2(FilterPalTab, false);
 
     UTextBlock* StyleHeading = AddPanelTextV2(Blueprint, DisplayContent, TEXT("ESP_StyleHeadingText"), TEXT("显示内容"), 15);
     UCheckBox* TopGuide = AddPanelToggleV2(
@@ -5435,9 +7706,142 @@ bool BuildPanel(
 
     UTextBlock* StylePlaceholder = AddPanelTextV2(Blueprint, StylePage, TEXT("ESP_StylePlaceholderText"), TEXT("显示样式将在后续版本提供"), 16, true);
 
+    UTextBlock* PalHeading = AddPanelTextV2(
+        Blueprint, PalPage, TEXT("ESP_PalHeadingText"), TEXT("帕鲁种类筛选"), 16);
+    UTextBlock* PalSummary = AddPanelTextV2(
+        Blueprint, PalPage, TEXT("ESP_PalSummaryText"),
+        TEXT("查询条件必须全部命中；卡片多选用于世界目标，未选择时显示全部种类"), 12, true);
+    UTextBlock* PalSortHeading = AddPanelTextV2(
+        Blueprint, PalPage, TEXT("ESP_PalSortHeadingText"), TEXT("排序（重新读取当前游戏数据）"), 12, true);
+    // __DEPRECATED_20260719__ [reason: ESP_PalSortRow remains the old HorizontalBox object in existing assets]
+    // New widget types require a new UObject name during same-process WidgetTree regeneration.
+    UWrapBox* PalSortRow = Blueprint->WidgetTree->ConstructWidget<UWrapBox>(
+        UWrapBox::StaticClass(), TEXT("ESP_PalSortWrap"));
+    if (PalSortRow) {
+        PalSortRow->SetInnerSlotPadding(FVector2D(5.0f, 4.0f));
+        PalPage->AddChild(PalSortRow);
+        SetVerticalPadding(PalSortRow, FMargin(0.0f, 3.0f, 0.0f, 5.0f));
+    }
+    TArray<UButton*> PalSortModeButtons;
+    if (PalSortRow) {
+        PalSortModeButtons.Add(AddPanelButtonV2(
+            Blueprint, PalSortRow, TEXT("ESP_PalSortIdButton"), TEXT("ESP_PalSortIdText"), TEXT("图鉴编号"), true));
+        PalSortModeButtons.Add(AddPanelButtonV2(
+            Blueprint, PalSortRow, TEXT("ESP_PalSortSprintButton"), TEXT("ESP_PalSortSprintText"), TEXT("冲刺速度")));
+        for (const FPalWorkDefinition& Definition : GetPalWorkDefinitions()) {
+            const FName ButtonName(*FString::Printf(
+                TEXT("ESP_PalSortWork%sButton"), *Definition.EnumName.ToString()));
+            const FName TextName(*FString::Printf(
+                TEXT("ESP_PalSortWork%sText"), *Definition.EnumName.ToString()));
+            PalSortModeButtons.Add(AddPanelButtonV2(
+                Blueprint, PalSortRow, ButtonName, TextName, *Definition.Chinese));
+        }
+    }
+    UButton* PalSortAscendingButton = PalSortRow
+        ? AddPanelButtonV2(Blueprint, PalSortRow, TEXT("ESP_PalSortAscendingButton"), TEXT("ESP_PalSortAscendingText"), TEXT("升序"))
+        : nullptr;
+    UButton* PalSortDescendingButton = PalSortRow
+        ? AddPanelButtonV2(Blueprint, PalSortRow, TEXT("ESP_PalSortDescendingButton"), TEXT("ESP_PalSortDescendingText"), TEXT("降序"))
+        : nullptr;
+    if (PalSortAscendingButton) {
+        ConfigurePanelSegmentButtonV2(PalSortAscendingButton, true);
+    }
+    UTextBlock* PalSearchLabel = AddPanelTextV2(
+        Blueprint, PalPage, TEXT("ESP_PalSearchLabelText"), TEXT("按名称或图鉴编号搜索"), 12, true);
+    UHorizontalBox* PalSearchRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(
+        UHorizontalBox::StaticClass(), TEXT("ESP_PalSearchRow"));
+    if (PalSearchRow) {
+        PalPage->AddChild(PalSearchRow);
+        SetVerticalPadding(PalSearchRow, FMargin(0.0f, 4.0f, 0.0f, 5.0f));
+    }
+    UEditableTextBox* PalSearchBox = PalSearchRow
+        ? AddPanelSearchBoxV2(Blueprint, PalSearchRow, TEXT("ESP_PalSearchBox"))
+        : nullptr;
+    UButton* PalSearchButton = PalSearchRow
+        ? AddPanelButtonV2(Blueprint, PalSearchRow, TEXT("ESP_PalSearchButton"), TEXT("ESP_PalSearchText"), TEXT("搜索"))
+        : nullptr;
+    UButton* PalClearQueryButton = PalSearchRow
+        ? AddPanelButtonV2(Blueprint, PalSearchRow, TEXT("ESP_PalClearQueryButton"), TEXT("ESP_PalClearQueryText"), TEXT("清空查询"))
+        : nullptr;
+    UButton* PalClearSelectionButton = PalSearchRow
+        ? AddPanelButtonV2(Blueprint, PalSearchRow, TEXT("ESP_PalClearSelectionButton"), TEXT("ESP_PalClearSelectionText"), TEXT("清空已选帕鲁"))
+        : nullptr;
+    SetHorizontalLayout(PalSearchButton, FMargin(0.0f, 0.0f, 6.0f, 0.0f), ESlateSizeRule::Automatic);
+    SetHorizontalLayout(PalClearQueryButton, FMargin(0.0f, 0.0f, 6.0f, 0.0f), ESlateSizeRule::Automatic);
+    SetHorizontalLayout(PalClearSelectionButton, FMargin(0.0f), ESlateSizeRule::Automatic);
+    UTextBlock* PalSelectedSummary = AddPanelTextV2(
+        Blueprint, PalPage, TEXT("ESP_PalSelectedSummaryText"), TEXT("已选中：无"), 12, true);
+
+    UHorizontalBox* PalQueryRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(
+        UHorizontalBox::StaticClass(), TEXT("ESP_PalQueryRow"));
+    UVerticalBox* PalElementColumn = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(
+        UVerticalBox::StaticClass(), TEXT("ESP_PalElementColumn"));
+    UVerticalBox* PalWorkColumn = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(
+        UVerticalBox::StaticClass(), TEXT("ESP_PalWorkColumn"));
+    UTextBlock* PalElementHeading = PalElementColumn
+        ? AddPanelTextV2(Blueprint, PalElementColumn, TEXT("ESP_PalElementHeadingText"), TEXT("属性（全部命中）"), 12, true)
+        : nullptr;
+    UTextBlock* PalWorkHeading = PalWorkColumn
+        ? AddPanelTextV2(Blueprint, PalWorkColumn, TEXT("ESP_PalWorkHeadingText"), TEXT("工作适应性（全部具备）"), 12, true)
+        : nullptr;
+    UWrapBox* PalElementWrap = Blueprint->WidgetTree->ConstructWidget<UWrapBox>(
+        UWrapBox::StaticClass(), TEXT("ESP_PalElementWrap"));
+    UWrapBox* PalWorkWrap = Blueprint->WidgetTree->ConstructWidget<UWrapBox>(
+        UWrapBox::StaticClass(), TEXT("ESP_PalWorkWrap"));
+    if (PalQueryRow && PalElementColumn && PalWorkColumn && PalElementWrap && PalWorkWrap) {
+        PalElementWrap->SetInnerSlotPadding(FVector2D(5.0f, 4.0f));
+        PalWorkWrap->SetInnerSlotPadding(FVector2D(5.0f, 4.0f));
+        PalElementColumn->AddChild(PalElementWrap);
+        PalWorkColumn->AddChild(PalWorkWrap);
+        PalQueryRow->AddChild(PalElementColumn);
+        PalQueryRow->AddChild(PalWorkColumn);
+        SetHorizontalLayout(PalElementColumn, FMargin(0.0f, 0.0f, 16.0f, 0.0f), ESlateSizeRule::Fill);
+        SetHorizontalLayout(PalWorkColumn, FMargin(0.0f), ESlateSizeRule::Fill);
+        PalPage->AddChild(PalQueryRow);
+        SetVerticalPadding(PalQueryRow, FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+    }
+    const TArray<TPair<FName, FString>> PalElementDefinitions = {
+        {TEXT("Normal"), TEXT("普通")}, {TEXT("Fire"), TEXT("火")},
+        {TEXT("Water"), TEXT("水")}, {TEXT("Leaf"), TEXT("草")},
+        {TEXT("Electricity"), TEXT("雷")}, {TEXT("Ice"), TEXT("冰")},
+        {TEXT("Earth"), TEXT("地")}, {TEXT("Dark"), TEXT("暗")},
+        {TEXT("Dragon"), TEXT("龙")},
+    };
+    TArray<UCheckBox*> PalElementToggles;
+    for (const TPair<FName, FString>& Definition : PalElementDefinitions) {
+        const FName ToggleName(*FString::Printf(TEXT("ESP_PalElement%sToggle"), *Definition.Key.ToString()));
+        const FName TextName(*FString::Printf(TEXT("ESP_PalElement%sText"), *Definition.Key.ToString()));
+        PalElementToggles.Add(AddPanelFilterChipV2(
+            Blueprint, PalElementWrap, ToggleName, TextName, *Definition.Value));
+    }
+    const TArray<FPalWorkDefinition>& PalWorkDefinitions = GetPalWorkDefinitions();
+    TArray<UCheckBox*> PalWorkToggles;
+    for (const FPalWorkDefinition& Definition : PalWorkDefinitions) {
+        const FName ToggleName(*FString::Printf(TEXT("ESP_PalWork%sToggle"), *Definition.EnumName.ToString()));
+        const FName TextName(*FString::Printf(TEXT("ESP_PalWork%sText"), *Definition.EnumName.ToString()));
+        PalWorkToggles.Add(AddPanelFilterChipV2(
+            Blueprint, PalWorkWrap, ToggleName, TextName, *Definition.Chinese));
+    }
+    UTextBlock* PalResultCount = AddPanelTextV2(
+        Blueprint, PalPage, TEXT("ESP_PalResultCountText"), TEXT("结果：0"), 12, true);
+    UScrollBox* PalResultsScroll = Blueprint->WidgetTree->ConstructWidget<UScrollBox>(
+        UScrollBox::StaticClass(), TEXT("ESP_PalResultsScroll"));
+    UWrapBox* PalResultsWrap = Blueprint->WidgetTree->ConstructWidget<UWrapBox>(
+        UWrapBox::StaticClass(), TEXT("ESP_PalResultsWrap"));
+    if (PalResultsScroll && PalResultsWrap) {
+        ConfigureScroll(PalResultsScroll);
+        PalResultsWrap->bIsVariable = true;
+        PalResultsWrap->SetInnerSlotPadding(FVector2D(10.0f, 10.0f));
+        PalResultsScroll->AddChild(PalResultsWrap);
+        PalPage->AddChild(PalResultsScroll);
+        if (UVerticalBoxSlot* ResultsSlot = Cast<UVerticalBoxSlot>(PalResultsScroll->Slot)) {
+            ResultsSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+        }
+    }
+
     UTextBlock* PassiveHeading = AddPanelTextV2(Blueprint, PassiveColumn, TEXT("ESP_PassiveHeadingText"), TEXT("被动技能"), 16);
     UTextBlock* PassiveSummary = AddPanelTextV2(
-        Blueprint, PassiveColumn, TEXT("ESP_PassiveSummaryText"), TEXT("左键：必须包含（最多 4 个，AND）；右键：排除"), 12, true);
+        Blueprint, PassiveColumn, TEXT("ESP_PassiveSummaryText"), TEXT("左键：必须包含（最多 4 个，全部命中）；右键：排除"), 12, true);
     UTextBlock* PassiveSearchLabel = AddPanelTextV2(
         Blueprint, PassiveColumn, TEXT("ESP_PassiveSearchLabelText"), TEXT("搜索被动技能"), 12, true);
     UHorizontalBox* PassiveSearchRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(
@@ -5462,8 +7866,8 @@ bool BuildPanel(
         PassiveColumn->AddChild(PassiveActions);
         SetVerticalPadding(PassiveActions, FMargin(0.0f, 4.0f, 0.0f, 8.0f));
     }
-    UButton* ClearAllFilters = PassiveActions
-        ? AddPanelButtonV2(Blueprint, PassiveActions, TEXT("ESP_ClearAllFiltersButton"), TEXT("ESP_ClearAllFiltersText"), TEXT("筛选设置为默认"))
+    UButton* ClearAllFilters = FilterActions
+        ? AddPanelButtonV2(Blueprint, FilterActions, TEXT("ESP_ClearAllFiltersButton"), TEXT("ESP_ClearAllFiltersText"), TEXT("筛选设置为默认"), true)
         : nullptr;
     UButton* ClearPassiveFilters = PassiveActions
         ? AddPanelButtonV2(Blueprint, PassiveActions, TEXT("ESP_ClearPassiveFiltersButton"), TEXT("ESP_ClearPassiveFiltersText"), TEXT("清空词条"))
@@ -5532,23 +7936,23 @@ bool BuildPanel(
         Blueprint, FilterContent,
         TEXT("ESP_DistanceMaxLabelText"), TEXT("ESP_DistanceMaxRow"),
         TEXT("ESP_DistanceMaxSlider"), TEXT("ESP_DistanceMaxInput"), TEXT("ESP_DistanceMaxUnitText"),
-        TEXT("最大距离"), TEXT("m"), 330.0f, 0.0f, 330.0f, 10.0f);
+        TEXT("最大距离"), TEXT("米"), 330.0f, 0.0f, 330.0f, 10.0f);
     UTextBlock* IvHeading = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_IvHeadingText"), TEXT("个体值下限（0 = 不限）"), 13, true);
     const FPanelNumericControlV2 IvHpMin = AddPanelNumericControlV2(
         Blueprint, FilterContent,
         TEXT("ESP_IvHpMinLabelText"), TEXT("ESP_IvHpMinRow"),
         TEXT("ESP_IvHpMinSlider"), TEXT("ESP_IvHpMinInput"), TEXT("ESP_IvHpMinUnitText"),
-        TEXT("生命 HP"), TEXT(""), 0.0f, 0.0f, 100.0f, 1.0f);
+        TEXT("生命"), TEXT(""), 0.0f, 0.0f, 100.0f, 1.0f);
     const FPanelNumericControlV2 IvAttackMin = AddPanelNumericControlV2(
         Blueprint, FilterContent,
         TEXT("ESP_IvAttackMinLabelText"), TEXT("ESP_IvAttackMinRow"),
         TEXT("ESP_IvAttackMinSlider"), TEXT("ESP_IvAttackMinInput"), TEXT("ESP_IvAttackMinUnitText"),
-        TEXT("攻击 ATK"), TEXT(""), 0.0f, 0.0f, 100.0f, 1.0f);
+        TEXT("攻击"), TEXT(""), 0.0f, 0.0f, 100.0f, 1.0f);
     const FPanelNumericControlV2 IvDefenseMin = AddPanelNumericControlV2(
         Blueprint, FilterContent,
         TEXT("ESP_IvDefenseMinLabelText"), TEXT("ESP_IvDefenseMinRow"),
         TEXT("ESP_IvDefenseMinSlider"), TEXT("ESP_IvDefenseMinInput"), TEXT("ESP_IvDefenseMinUnitText"),
-        TEXT("防御 DEF"), TEXT(""), 0.0f, 0.0f, 100.0f, 1.0f);
+        TEXT("防御"), TEXT(""), 0.0f, 0.0f, 100.0f, 1.0f);
 
     UTextBlock* ElementHeading = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_ElementHeadingText"), TEXT("属性（任一匹配）"), 13, true);
     UTextBlock* ElementStatus = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_ElementStatusText"), TEXT("未选择：全部"), 12, true);
@@ -5578,7 +7982,7 @@ bool BuildPanel(
     };
 
     UTextBlock* GenderHeading = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_GenderHeadingText"), TEXT("性别"), 13, true);
-    UTextBlock* GenderStatus = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_GenderStatusText"), TEXT("当前 / Current: 全部 / All"), 12, true);
+    UTextBlock* GenderStatus = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_GenderStatusText"), TEXT("当前：全部"), 12, true);
     UHorizontalBox* GenderRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_GenderRow"));
     if (GenderRow) {
         FilterContent->AddChild(GenderRow);
@@ -5598,7 +8002,7 @@ bool BuildPanel(
     ConfigurePanelSegmentButtonV2(GenderFemale, false);
 
     UTextBlock* LuckyHeading = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_LuckyHeadingText"), TEXT("闪光个体"), 13, true);
-    UTextBlock* LuckyStatus = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_LuckyStatusText"), TEXT("当前 / Current: 全部 / All"), 12, true);
+    UTextBlock* LuckyStatus = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_LuckyStatusText"), TEXT("当前：全部"), 12, true);
     UHorizontalBox* LuckyRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_LuckyRow"));
     if (LuckyRow) {
         FilterContent->AddChild(LuckyRow);
@@ -5617,8 +8021,8 @@ bool BuildPanel(
     ConfigurePanelSegmentButtonV2(LuckyOnly, false);
     ConfigurePanelSegmentButtonV2(LuckyExclude, false);
 
-    UTextBlock* BossHeading = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_BossHeadingText"), TEXT("Boss 个体"), 13, true);
-    UTextBlock* BossStatus = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_BossStatusText"), TEXT("当前 / Current: 全部 / All"), 12, true);
+    UTextBlock* BossHeading = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_BossHeadingText"), TEXT("首领个体"), 13, true);
+    UTextBlock* BossStatus = AddPanelTextV2(Blueprint, FilterContent, TEXT("ESP_BossStatusText"), TEXT("当前：全部"), 12, true);
     UHorizontalBox* BossRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_BossRow"));
     if (BossRow) {
         FilterContent->AddChild(BossRow);
@@ -5628,10 +8032,10 @@ bool BuildPanel(
         ? AddPanelButtonV2(Blueprint, BossRow, TEXT("ESP_BossAllButton"), TEXT("ESP_BossAllText"), TEXT("全部"))
         : nullptr;
     UButton* BossOnly = BossRow
-        ? AddPanelButtonV2(Blueprint, BossRow, TEXT("ESP_BossOnlyButton"), TEXT("ESP_BossOnlyText"), TEXT("仅 Boss"))
+        ? AddPanelButtonV2(Blueprint, BossRow, TEXT("ESP_BossOnlyButton"), TEXT("ESP_BossOnlyText"), TEXT("仅首领"))
         : nullptr;
     UButton* BossExclude = BossRow
-        ? AddPanelButtonV2(Blueprint, BossRow, TEXT("ESP_BossExcludeButton"), TEXT("ESP_BossExcludeText"), TEXT("排除 Boss"))
+        ? AddPanelButtonV2(Blueprint, BossRow, TEXT("ESP_BossExcludeButton"), TEXT("ESP_BossExcludeText"), TEXT("排除首领"))
         : nullptr;
     ConfigurePanelSegmentButtonV2(BossAll, true);
     ConfigurePanelSegmentButtonV2(BossOnly, false);
@@ -5640,7 +8044,7 @@ bool BuildPanel(
     UTextBlock* CollectionHeading = AddPanelTextV2(
         Blueprint, FilterContent, TEXT("ESP_CollectionHeadingText"), TEXT("图鉴收集（捕捉 5 只完成）"), 13, true);
     UTextBlock* CollectionStatus = AddPanelTextV2(
-        Blueprint, FilterContent, TEXT("ESP_CollectionStatusText"), TEXT("当前 / Current: 全部 / All"), 12, true);
+        Blueprint, FilterContent, TEXT("ESP_CollectionStatusText"), TEXT("当前：全部"), 12, true);
     UHorizontalBox* CollectionRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(
         UHorizontalBox::StaticClass(), TEXT("ESP_CollectionRow"));
     if (CollectionRow) {
@@ -5659,8 +8063,12 @@ bool BuildPanel(
     ConfigurePanelSegmentButtonV2(CollectionAll, true);
     ConfigurePanelSegmentButtonV2(CollectionIncomplete, false);
     ConfigurePanelSegmentButtonV2(CollectionCompleteButton, false);
+    if (GenderStatus) GenderStatus->SetVisibility(ESlateVisibility::Collapsed);
+    if (LuckyStatus) LuckyStatus->SetVisibility(ESlateVisibility::Collapsed);
+    if (BossStatus) BossStatus->SetVisibility(ESlateVisibility::Collapsed);
+    if (CollectionStatus) CollectionStatus->SetVisibility(ESlateVisibility::Collapsed);
 
-    UTextBlock* LanguageHeading = AddPanelTextV2(Blueprint, DisplayContent, TEXT("ESP_LanguageHeadingText"), TEXT("Language"), 13, true);
+    UTextBlock* LanguageHeading = AddPanelTextV2(Blueprint, DisplayContent, TEXT("ESP_LanguageHeadingText"), TEXT("语言"), 13, true);
     UHorizontalBox* LanguageRow = Blueprint->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ESP_LanguageRow"));
     if (LanguageRow) {
         DisplayContent->AddChild(LanguageRow);
@@ -5670,7 +8078,7 @@ bool BuildPanel(
         ? AddPanelButtonV2(Blueprint, LanguageRow, TEXT("ESP_ChineseButton"), TEXT("ESP_ChineseText"), TEXT("中文"))
         : nullptr;
     UButton* English = LanguageRow
-        ? AddPanelButtonV2(Blueprint, LanguageRow, TEXT("ESP_EnglishButton"), TEXT("ESP_EnglishText"), TEXT("English"))
+        ? AddPanelButtonV2(Blueprint, LanguageRow, TEXT("ESP_EnglishButton"), TEXT("ESP_EnglishText"), TEXT("英文"))
         : nullptr;
     ConfigurePanelSegmentButtonV2(Chinese, true);
     ConfigurePanelSegmentButtonV2(English, false);
@@ -5728,12 +8136,22 @@ bool BuildPanel(
         ? AddPanelButtonV2(Blueprint, Advanced, TEXT("ESP_AdvancedCollapseButton"), TEXT("ESP_AdvancedCollapseText"), TEXT("收起"))
         : nullptr;
 
-    if (!Title || !RuntimeEnabled || !DisplayTab || !FilterTab || !StyleTab || !StylePlaceholder
+    if (!Title || !RuntimeEnabled || !DisplayTab || !FilterTab || !StyleTab
+        || !FilterConditionsTab || !FilterPalTab || !StylePlaceholder
         || !StyleHeading || !TopGuide || !ShowName || !ShowLevel || !ShowDistance || !ShowIv
         || !ShowPassiveSkills
+        || !PalHeading || !PalSummary || !PalSortHeading || !PalSortRow
+        || PalSortModeButtons.Num() != PalWorkDefinitions.Num() + 2 || PalSortModeButtons.Contains(nullptr)
+        || !PalSortAscendingButton || !PalSortDescendingButton
+        || !PalSearchLabel || !PalSearchRow || !PalSearchBox || !PalSearchButton
+        || !PalClearQueryButton || !PalClearSelectionButton || !PalQueryRow
+        || !PalElementColumn || !PalWorkColumn || !PalElementHeading || !PalWorkHeading
+        || !PalElementWrap || !PalWorkWrap || PalElementToggles.Num() != 9 || PalElementToggles.Contains(nullptr)
+        || PalWorkToggles.Num() != PalWorkDefinitions.Num() || PalWorkToggles.Contains(nullptr)
+        || !PalSelectedSummary || !PalResultCount || !PalResultsScroll || !PalResultsWrap
         || !PassiveHeading || !PassiveSummary || !PassiveSearchLabel || !PassiveSearchRow
         || !PassiveSearchBox || !PassiveSearchButton || !PassiveClearSearchButton
-        || !PassiveActions || !ClearAllFilters || !ClearPassiveFilters
+        || !FilterActions || !PassiveActions || !ClearAllFilters || !ClearPassiveFilters
         || !PassiveRainbow || !PassiveSpecial || !PassiveGold || !PassiveGold2 || !PassiveNormal
         || !PassiveNegative1 || !PassiveNegative2 || !PassiveNegative3
         || PassiveAreas.Num() != 8 || PassiveAreas.Contains(nullptr)
@@ -5839,7 +8257,12 @@ bool BuildPanel(
         -1400,
         {}
     );
-    if (!LegacyInitializeCompatibility || !PanelInitializeV2 || !PopulatePassiveCatalog) {
+    UK2Node_CustomEvent* PopulatePalCatalog = AddCustomEvent(
+        Blueprint, Graph, *PanelPopulatePalCatalogEventName.ToString(), -1900, -1040, {});
+    UK2Node_CustomEvent* RenderPalCatalog = AddCustomEvent(
+        Blueprint, Graph, *PanelRenderPalCatalogEventName.ToString(), -1900, -680, {});
+    if (!LegacyInitializeCompatibility || !PanelInitializeV2 || !PopulatePassiveCatalog
+        || !PopulatePalCatalog || !RenderPalCatalog) {
         return false;
     }
 
@@ -5924,13 +8347,13 @@ bool BuildPanel(
     const TArray<UButton*> GenderButtons = {GenderAll, GenderMale, GenderFemale};
     if (!BuildPanelControlEvent(
             Blueprint, GenderAll, ModActorClass, {{GenderFilterIdVariableName, TEXT("0")}},
-            TEXT("ESP_GenderStatusText"), TEXT("当前 / Current: 全部 / All"), Y, &GenderButtons, 0)
+            TEXT("ESP_GenderStatusText"), TEXT("当前：全部"), Y, &GenderButtons, 0)
         || !BuildPanelControlEvent(
             Blueprint, GenderMale, ModActorClass, {{GenderFilterIdVariableName, TEXT("1")}},
-            TEXT("ESP_GenderStatusText"), TEXT("当前 / Current: 雄性 / Male"), Y + 360, &GenderButtons, 1)
+            TEXT("ESP_GenderStatusText"), TEXT("当前：雄性"), Y + 360, &GenderButtons, 1)
         || !BuildPanelControlEvent(
             Blueprint, GenderFemale, ModActorClass, {{GenderFilterIdVariableName, TEXT("2")}},
-            TEXT("ESP_GenderStatusText"), TEXT("当前 / Current: 雌性 / Female"), Y + 720, &GenderButtons, 2)) {
+            TEXT("ESP_GenderStatusText"), TEXT("当前：雌性"), Y + 720, &GenderButtons, 2)) {
         return false;
     }
     Y += 1080;
@@ -5938,13 +8361,13 @@ bool BuildPanel(
     const TArray<UButton*> LuckyButtons = {LuckyAll, LuckyOnly, LuckyExclude};
     if (!BuildPanelControlEvent(
             Blueprint, LuckyAll, ModActorClass, {{LuckyFilterIdVariableName, TEXT("0")}},
-            TEXT("ESP_LuckyStatusText"), TEXT("当前 / Current: 全部 / All"), Y, &LuckyButtons, 0)
+            TEXT("ESP_LuckyStatusText"), TEXT("当前：全部"), Y, &LuckyButtons, 0)
         || !BuildPanelControlEvent(
             Blueprint, LuckyOnly, ModActorClass, {{LuckyFilterIdVariableName, TEXT("1")}},
-            TEXT("ESP_LuckyStatusText"), TEXT("当前 / Current: 仅闪光 / Only Lucky"), Y + 360, &LuckyButtons, 1)
+            TEXT("ESP_LuckyStatusText"), TEXT("当前：仅闪光"), Y + 360, &LuckyButtons, 1)
         || !BuildPanelControlEvent(
             Blueprint, LuckyExclude, ModActorClass, {{LuckyFilterIdVariableName, TEXT("2")}},
-            TEXT("ESP_LuckyStatusText"), TEXT("当前 / Current: 排除闪光 / Exclude Lucky"), Y + 720, &LuckyButtons, 2)) {
+            TEXT("ESP_LuckyStatusText"), TEXT("当前：排除闪光"), Y + 720, &LuckyButtons, 2)) {
         return false;
     }
     Y += 1080;
@@ -5952,13 +8375,13 @@ bool BuildPanel(
     const TArray<UButton*> BossButtons = {BossAll, BossOnly, BossExclude};
     if (!BuildPanelControlEvent(
             Blueprint, BossAll, ModActorClass, {{BossFilterIdVariableName, TEXT("0")}},
-            TEXT("ESP_BossStatusText"), TEXT("当前 / Current: 全部 / All"), Y, &BossButtons, 0)
+            TEXT("ESP_BossStatusText"), TEXT("当前：全部"), Y, &BossButtons, 0)
         || !BuildPanelControlEvent(
             Blueprint, BossOnly, ModActorClass, {{BossFilterIdVariableName, TEXT("1")}},
-            TEXT("ESP_BossStatusText"), TEXT("当前 / Current: 仅 Boss / Only Boss"), Y + 360, &BossButtons, 1)
+            TEXT("ESP_BossStatusText"), TEXT("当前：仅首领"), Y + 360, &BossButtons, 1)
         || !BuildPanelControlEvent(
             Blueprint, BossExclude, ModActorClass, {{BossFilterIdVariableName, TEXT("2")}},
-            TEXT("ESP_BossStatusText"), TEXT("当前 / Current: 排除 Boss / Exclude Boss"), Y + 720, &BossButtons, 2)) {
+            TEXT("ESP_BossStatusText"), TEXT("当前：排除首领"), Y + 720, &BossButtons, 2)) {
         return false;
     }
     Y += 1080;
@@ -5966,13 +8389,13 @@ bool BuildPanel(
     const TArray<UButton*> CollectionButtons = {CollectionAll, CollectionIncomplete, CollectionCompleteButton};
     if (!BuildPanelControlEvent(
             Blueprint, CollectionAll, ModActorClass, {{CollectionFilterIdVariableName, TEXT("0")}},
-            TEXT("ESP_CollectionStatusText"), TEXT("当前 / Current: 全部 / All"), Y, &CollectionButtons, 0)
+            TEXT("ESP_CollectionStatusText"), TEXT("当前：全部"), Y, &CollectionButtons, 0)
         || !BuildPanelControlEvent(
             Blueprint, CollectionIncomplete, ModActorClass, {{CollectionFilterIdVariableName, TEXT("1")}},
-            TEXT("ESP_CollectionStatusText"), TEXT("当前 / Current: 未完成 / Incomplete"), Y + 360, &CollectionButtons, 1)
+            TEXT("ESP_CollectionStatusText"), TEXT("当前：未完成"), Y + 360, &CollectionButtons, 1)
         || !BuildPanelControlEvent(
             Blueprint, CollectionCompleteButton, ModActorClass, {{CollectionFilterIdVariableName, TEXT("2")}},
-            TEXT("ESP_CollectionStatusText"), TEXT("当前 / Current: 已完成 / Complete"), Y + 720, &CollectionButtons, 2)) {
+            TEXT("ESP_CollectionStatusText"), TEXT("当前：已完成"), Y + 720, &CollectionButtons, 2)) {
         return false;
     }
     Y += 1080;
@@ -5985,7 +8408,8 @@ bool BuildPanel(
         return false;
     }
     Y += 900;
-    const TArray<UButton*> TabButtons = {DisplayTab, FilterTab, StyleTab};
+    const TArray<UButton*> TabButtons = {DisplayTab, FilterTab};
+    const TArray<UButton*> FilterSubTabButtons = {FilterConditionsTab, FilterPalTab};
     const TArray<UWrapBox*> PassiveCatalogGroups = {
         PassiveRainbow, PassiveSpecial, PassiveGold, PassiveGold2, PassiveNormal,
         PassiveNegative1, PassiveNegative2, PassiveNegative3,
@@ -5993,23 +8417,37 @@ bool BuildPanel(
     const TArray<FPanelNumericControlV2> FilterNumericControls = {
         LevelMin, LevelMax, DistanceMax, IvHpMin, IvAttackMin, IvDefenseMin,
     };
-    if (!BuildPanelTabEvent(Blueprint, DisplayTab, Switcher, TabButtons, 0, Y)
-        || !BuildPanelTabEvent(Blueprint, FilterTab, Switcher, TabButtons, 1, Y + 360)
-        || !BuildPanelTabEvent(Blueprint, StyleTab, Switcher, TabButtons, 2, Y + 720)
+    if (!BuildPanelTabEvent(Blueprint, DisplayTab, Switcher, TabButtons, 0, Y, ModActorClass, PanelMainPageVariableName)
+        || !BuildPanelTabEvent(Blueprint, FilterTab, Switcher, TabButtons, 1, Y + 360, ModActorClass, PanelMainPageVariableName)
+        || !BuildPanelTabEvent(Blueprint, FilterConditionsTab, FilterSubSwitcher, FilterSubTabButtons, 0, Y + 1080, ModActorClass, PanelFilterPageVariableName)
+        || !BuildPanelTabEvent(Blueprint, FilterPalTab, FilterSubSwitcher, FilterSubTabButtons, 1, Y + 1440, ModActorClass, PanelFilterPageVariableName)
+        || !BuildPanelSetPageStateEvent(Blueprint, Switcher, FilterSubSwitcher, TabButtons, FilterSubTabButtons, Y + 1800)
         || !BuildPanelPassiveCatalog(
             Blueprint, ModActorClass, PassiveEntryClass, PalUtilityClass, PalUIUtilityClass,
             PassiveSkillManagerClass, PassiveSkillDatabaseRowStruct, MasterDataTablesUtilityClass,
-            PassiveCatalogGroups, PassiveSearchBox, PopulatePassiveCatalog, Y + 1080)
+            PassiveCatalogGroups, PassiveSearchBox, PopulatePassiveCatalog, Y + 1440)
+        || !BuildPanelPalCatalog(
+            Blueprint, ModActorClass, PalEntryClass, PalUtilityClass, PalUIUtilityClass,
+            DatabaseCharacterParameterClass, CharacterParameterDatabaseRowStruct, DropItemDatabaseRowStruct,
+            ElementEnum, WorkSuitabilityEnum, MasterDataTablesUtilityClass,
+            PalSearchBox, PalSearchButton, PalClearQueryButton, PalClearSelectionButton,
+            PalElementToggles, PalWorkToggles, PalResultsWrap, PalResultCount, PalSelectedSummary,
+            PopulatePalCatalog, RenderPalCatalog, Y + 1800)
+        || !BuildPanelPalCatalogEvents(
+            Blueprint, ModActorClass, PalSearchBox, PalSearchButton,
+            PalClearQueryButton, PalClearSelectionButton,
+            PalSortModeButtons, PalSortAscendingButton, PalSortDescendingButton,
+            PalElementToggles, PalWorkToggles, Y + 2160)
         || !BuildPanelPassiveSearchEvents(
-            Blueprint, PassiveSearchBox, PassiveSearchButton, PassiveClearSearchButton, Y + 1440)
+            Blueprint, PassiveSearchBox, PassiveSearchButton, PassiveClearSearchButton, Y + 2520)
         || !BuildPanelClearFiltersEvent(
             Blueprint, ClearPassiveFilters, ModActorClass, false, {}, ElementToggles,
             GenderStatus, GenderButtons, LuckyStatus, LuckyButtons, BossStatus, BossButtons,
-            CollectionStatus, CollectionButtons, Y + 2520)
+            CollectionStatus, CollectionButtons, Y + 3240)
         || !BuildPanelClearFiltersEvent(
             Blueprint, ClearAllFilters, ModActorClass, true, FilterNumericControls, ElementToggles,
             GenderStatus, GenderButtons, LuckyStatus, LuckyButtons, BossStatus, BossButtons,
-            CollectionStatus, CollectionButtons, Y + 2880)) {
+            CollectionStatus, CollectionButtons, Y + 3600)) {
         return false;
     }
     Y += 3600;
@@ -6021,7 +8459,7 @@ bool BuildPanel(
 
     const TArray<FPanelTranslation> Translations = {
         {TEXT("ESP_TitleText"), TEXT("帕鲁资源 ESP"), TEXT("Pal & Resource ESP")},
-        {TEXT("ESP_RuntimeText"), TEXT("启用 Mod"), TEXT("Enable Mod")},
+        {TEXT("ESP_RuntimeText"), TEXT("启用模组"), TEXT("Enable Mod")},
         {TEXT("ESP_StyleHeadingText"), TEXT("显示"), TEXT("Display")},
         {TEXT("ESP_TopGuideText"), TEXT("顶部引导线"), TEXT("Top guide lines")},
         {TEXT("ESP_ShowNameText"), TEXT("姓名"), TEXT("Name")},
@@ -6031,10 +8469,58 @@ bool BuildPanel(
         {TEXT("ESP_ShowPassiveSkillsText"), TEXT("词条"), TEXT("Passive skills")},
         {TEXT("ESP_DisplayTabText"), TEXT("显示内容"), TEXT("Display")},
         {TEXT("ESP_FilterTabText"), TEXT("筛选"), TEXT("Filters")},
+        {TEXT("ESP_FilterConditionsTabText"), TEXT("常规筛选"), TEXT("General")},
+        {TEXT("ESP_FilterPalTabText"), TEXT("帕鲁种类"), TEXT("Pal species")},
         {TEXT("ESP_StyleTabText"), TEXT("显示样式（开发中）"), TEXT("Style (coming later)")},
+        {TEXT("ESP_PalHeadingText"), TEXT("帕鲁种类筛选"), TEXT("Pal species filter")},
+        {TEXT("ESP_PalSummaryText"), TEXT("查询条件必须全部命中；卡片多选用于世界目标，未选择时显示全部种类"), TEXT("Queries use AND; selected cards filter world targets, and no selection means all species")},
+        {TEXT("ESP_PalSortHeadingText"), TEXT("排序（重新读取当前游戏数据）"), TEXT("Sort (reload current game data)")},
+        {TEXT("ESP_PalSortIdText"), TEXT("图鉴编号"), TEXT("Paldex number")},
+        {TEXT("ESP_PalSortSprintText"), TEXT("冲刺速度"), TEXT("Sprint speed")},
+        {TEXT("ESP_PalSortWorkEmitFlameText"), TEXT("生火"), TEXT("Kindling")},
+        {TEXT("ESP_PalSortWorkWateringText"), TEXT("浇水"), TEXT("Watering")},
+        {TEXT("ESP_PalSortWorkSeedingText"), TEXT("播种"), TEXT("Planting")},
+        {TEXT("ESP_PalSortWorkGenerateElectricityText"), TEXT("发电"), TEXT("Electricity")},
+        {TEXT("ESP_PalSortWorkHandcraftText"), TEXT("手工作业"), TEXT("Handiwork")},
+        {TEXT("ESP_PalSortWorkCollectionText"), TEXT("采集"), TEXT("Gathering")},
+        {TEXT("ESP_PalSortWorkDeforestText"), TEXT("伐木"), TEXT("Lumbering")},
+        {TEXT("ESP_PalSortWorkMiningText"), TEXT("采矿"), TEXT("Mining")},
+        {TEXT("ESP_PalSortWorkProductMedicineText"), TEXT("制药"), TEXT("Medicine")},
+        {TEXT("ESP_PalSortWorkCoolText"), TEXT("冷却"), TEXT("Cooling")},
+        {TEXT("ESP_PalSortWorkTransportText"), TEXT("搬运"), TEXT("Transporting")},
+        {TEXT("ESP_PalSortWorkMonsterFarmText"), TEXT("牧场"), TEXT("Ranching")},
+        {TEXT("ESP_PalSortAscendingText"), TEXT("升序"), TEXT("Ascending")},
+        {TEXT("ESP_PalSortDescendingText"), TEXT("降序"), TEXT("Descending")},
+        {TEXT("ESP_PalSearchLabelText"), TEXT("按名称或图鉴编号搜索"), TEXT("Search by name or Paldex number")},
+        {TEXT("ESP_PalSearchText"), TEXT("搜索"), TEXT("Search")},
+        {TEXT("ESP_PalClearQueryText"), TEXT("清空查询"), TEXT("Clear query")},
+        {TEXT("ESP_PalClearSelectionText"), TEXT("清空已选帕鲁"), TEXT("Clear selected Pals")},
+        {TEXT("ESP_PalElementHeadingText"), TEXT("属性（全部命中）"), TEXT("Elements (match all)")},
+        {TEXT("ESP_PalWorkHeadingText"), TEXT("工作适应性（全部具备）"), TEXT("Work suitability (match all)")},
+        {TEXT("ESP_PalElementNormalText"), TEXT("普通"), TEXT("Normal")},
+        {TEXT("ESP_PalElementFireText"), TEXT("火"), TEXT("Fire")},
+        {TEXT("ESP_PalElementWaterText"), TEXT("水"), TEXT("Water")},
+        {TEXT("ESP_PalElementLeafText"), TEXT("草"), TEXT("Grass")},
+        {TEXT("ESP_PalElementElectricityText"), TEXT("雷"), TEXT("Electric")},
+        {TEXT("ESP_PalElementIceText"), TEXT("冰"), TEXT("Ice")},
+        {TEXT("ESP_PalElementEarthText"), TEXT("地"), TEXT("Ground")},
+        {TEXT("ESP_PalElementDarkText"), TEXT("暗"), TEXT("Dark")},
+        {TEXT("ESP_PalElementDragonText"), TEXT("龙"), TEXT("Dragon")},
+        {TEXT("ESP_PalWorkEmitFlameText"), TEXT("生火"), TEXT("Kindling")},
+        {TEXT("ESP_PalWorkWateringText"), TEXT("浇水"), TEXT("Watering")},
+        {TEXT("ESP_PalWorkSeedingText"), TEXT("播种"), TEXT("Planting")},
+        {TEXT("ESP_PalWorkGenerateElectricityText"), TEXT("发电"), TEXT("Electricity")},
+        {TEXT("ESP_PalWorkHandcraftText"), TEXT("手工作业"), TEXT("Handiwork")},
+        {TEXT("ESP_PalWorkCollectionText"), TEXT("采集"), TEXT("Gathering")},
+        {TEXT("ESP_PalWorkDeforestText"), TEXT("伐木"), TEXT("Lumbering")},
+        {TEXT("ESP_PalWorkMiningText"), TEXT("采矿"), TEXT("Mining")},
+        {TEXT("ESP_PalWorkProductMedicineText"), TEXT("制药"), TEXT("Medicine")},
+        {TEXT("ESP_PalWorkCoolText"), TEXT("冷却"), TEXT("Cooling")},
+        {TEXT("ESP_PalWorkTransportText"), TEXT("搬运"), TEXT("Transporting")},
+        {TEXT("ESP_PalWorkMonsterFarmText"), TEXT("牧场"), TEXT("Ranching")},
         {TEXT("ESP_StylePlaceholderText"), TEXT("显示样式将在后续版本提供"), TEXT("Display styles will be added later")},
         {TEXT("ESP_PassiveHeadingText"), TEXT("被动技能"), TEXT("Passive skills")},
-        {TEXT("ESP_PassiveSummaryText"), TEXT("左键：必须包含（最多 4 个，AND）；右键：排除"), TEXT("Left: must include (max 4, AND); right: exclude")},
+        {TEXT("ESP_PassiveSummaryText"), TEXT("左键：必须包含（最多 4 个，全部命中）；右键：排除"), TEXT("Left: must include (max 4, AND); right: exclude")},
         {TEXT("ESP_PassiveSearchLabelText"), TEXT("搜索被动技能"), TEXT("Search passive skills")},
         {TEXT("ESP_PassiveSearchText"), TEXT("搜索"), TEXT("Search")},
         {TEXT("ESP_PassiveClearSearchText"), TEXT("清空"), TEXT("Clear")},
@@ -6054,10 +8540,11 @@ bool BuildPanel(
         {TEXT("ESP_LevelMinLabelText"), TEXT("最低等级（0 = 不限）"), TEXT("Minimum level (0 = any)")},
         {TEXT("ESP_LevelMaxLabelText"), TEXT("最高等级（0 = 不限）"), TEXT("Maximum level (0 = any)")},
         {TEXT("ESP_DistanceMaxLabelText"), TEXT("最大距离"), TEXT("Maximum distance")},
+        {TEXT("ESP_DistanceMaxUnitText"), TEXT("米"), TEXT("m")},
         {TEXT("ESP_IvHeadingText"), TEXT("个体值下限（0 = 不限）"), TEXT("Minimum IVs (0 = any)")},
-        {TEXT("ESP_IvHpMinLabelText"), TEXT("生命 HP"), TEXT("HP")},
-        {TEXT("ESP_IvAttackMinLabelText"), TEXT("攻击 ATK"), TEXT("Attack")},
-        {TEXT("ESP_IvDefenseMinLabelText"), TEXT("防御 DEF"), TEXT("Defense")},
+        {TEXT("ESP_IvHpMinLabelText"), TEXT("生命"), TEXT("HP")},
+        {TEXT("ESP_IvAttackMinLabelText"), TEXT("攻击"), TEXT("Attack")},
+        {TEXT("ESP_IvDefenseMinLabelText"), TEXT("防御"), TEXT("Defense")},
         {TEXT("ESP_ElementHeadingText"), TEXT("属性（任一匹配）"), TEXT("Elements (match any)")},
         {TEXT("ESP_ElementStatusText"), TEXT("未选择：全部"), TEXT("None selected: all")},
         {TEXT("ESP_ElementNormalText"), TEXT("普通"), TEXT("Normal")},
@@ -6077,10 +8564,13 @@ bool BuildPanel(
         {TEXT("ESP_LuckyAllText"), TEXT("全部"), TEXT("All")},
         {TEXT("ESP_LuckyOnlyText"), TEXT("仅闪光"), TEXT("Only Lucky")},
         {TEXT("ESP_LuckyExcludeText"), TEXT("排除闪光"), TEXT("Exclude Lucky")},
-        {TEXT("ESP_BossHeadingText"), TEXT("Boss 个体"), TEXT("Alpha / Boss Pal")},
+        {TEXT("ESP_BossHeadingText"), TEXT("首领个体"), TEXT("Alpha / Boss Pal")},
         {TEXT("ESP_BossAllText"), TEXT("全部"), TEXT("All")},
-        {TEXT("ESP_BossOnlyText"), TEXT("仅 Boss"), TEXT("Only Boss")},
-        {TEXT("ESP_BossExcludeText"), TEXT("排除 Boss"), TEXT("Exclude Boss")},
+        {TEXT("ESP_BossOnlyText"), TEXT("仅首领"), TEXT("Only Boss")},
+        {TEXT("ESP_BossExcludeText"), TEXT("排除首领"), TEXT("Exclude Boss")},
+        {TEXT("ESP_LanguageHeadingText"), TEXT("语言"), TEXT("Language")},
+        {TEXT("ESP_ChineseText"), TEXT("中文"), TEXT("Chinese")},
+        {TEXT("ESP_EnglishText"), TEXT("英文"), TEXT("English")},
         {TEXT("ESP_CollectionHeadingText"), TEXT("图鉴收集（捕捉 5 只完成）"), TEXT("Paldex collection (5 captures complete)")},
         {TEXT("ESP_CollectionAllText"), TEXT("全部"), TEXT("All")},
         {TEXT("ESP_CollectionIncompleteText"), TEXT("未完成"), TEXT("Incomplete")},
@@ -6097,8 +8587,10 @@ bool BuildPanel(
     };
     const TArray<UButton*> LanguageButtons = {Chinese, English};
     if (!BuildPanelInitializeLanguage(Blueprint, Translations, LanguageButtons, Y)
-        || !BuildPanelLanguageEvent(Blueprint, Chinese, ModActorClass, 0, Translations, Y + 720, &LanguageButtons)
-        || !BuildPanelLanguageEvent(Blueprint, English, ModActorClass, 1, Translations, Y + 1440, &LanguageButtons)) {
+        || !BuildPanelLanguageEvent(Blueprint, Chinese, ModActorClass, 0, Translations, Y + 720, &LanguageButtons, true)
+        || !BuildPanelLanguageEvent(Blueprint, English, ModActorClass, 1, Translations, Y + 1440, &LanguageButtons, true)
+        || !BuildHandledKeyOverride(Blueprint, TEXT("OnKeyDown"))
+        || !BuildHandledKeyOverride(Blueprint, TEXT("OnKeyUp"))) {
         return false;
     }
 
@@ -6108,10 +8600,17 @@ bool BuildPanel(
     return Blueprint->Status != BS_Error;
 }
 
-bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* OverlayClass, UClass* PanelClass) {
+bool BuildModActor(
+    UBlueprint* Blueprint,
+    UClass* PalMonsterClass,
+    UClass* OverlayClass,
+    UClass* PanelClass,
+    UClass* PalPlayerControllerClass) {
     UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildModActor begin blueprint=%s pal_class=%s overlay_class=%s panel_class=%s"), *GetNameSafe(Blueprint), *GetNameSafe(PalMonsterClass), *GetNameSafe(OverlayClass), *GetNameSafe(PanelClass));
     UEdGraph* Graph = EventGraph(Blueprint);
-    if (!Graph || !PanelClass || !PrepareModActorControls(Blueprint)) {
+    if (!Graph || !PanelClass || !PalPlayerControllerClass
+        || !PalPlayerControllerClass->FindFunctionByName(TEXT("SetDisableInputFlag"))
+        || !PrepareModActorControls(Blueprint)) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildModActor event graph missing blueprint=%s"), *GetNameSafe(Blueprint));
         return false;
     }
@@ -6130,6 +8629,11 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
 
     if (!EnsureMemberVariable(Blueprint, PanelVariableName, ObjectPin(PanelClass))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildModActor panel variable creation failed"));
+        return false;
+    }
+    if (!EnsureMemberVariable(Blueprint, PanelMainPageVariableName, IntPin())
+        || !EnsureMemberVariable(Blueprint, PanelFilterPageVariableName, IntPin())) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildModActor panel page variable creation failed"));
         return false;
     }
 
@@ -6170,6 +8674,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_CustomEvent* ClearTarget = AddCustomEvent(Blueprint, Graph, TEXT("PalworldResourceESP_ClearTarget"), -900, 920, {
         TPair<FName, FEdGraphPinType>(FName("SessionIndex"), IntPin())
     });
+    UK2Node_CustomEvent* RemoveTarget = AddCustomEvent(Blueprint, Graph, TEXT("PalworldResourceESP_RemoveTarget"), -900, 1080, {
+        TPair<FName, FEdGraphPinType>(FName("Target"), ObjectPin(PalMonsterClass)),
+        TPair<FName, FEdGraphPinType>(FName("SessionIndex"), IntPin())
+    });
     UK2Node_CustomEvent* SetDisplayStyle = AddCustomEvent(Blueprint, Graph, TEXT("PalworldResourceESP_SetDisplayStyle"), -900, 1200, {
         TPair<FName, FEdGraphPinType>(FName("ShowTopGuideLine"), BoolPin()),
         TPair<FName, FEdGraphPinType>(FName("ShowName"), BoolPin()),
@@ -6186,12 +8694,14 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         TPair<FName, FEdGraphPinType>(FName("LuckyFilterId"), IntPin()),
         TPair<FName, FEdGraphPinType>(FName("BossFilterId"), IntPin()),
         TPair<FName, FEdGraphPinType>(FName("CollectionFilterId"), IntPin()),
-        TPair<FName, FEdGraphPinType>(FName("ElementFilterMask"), IntPin())
+        TPair<FName, FEdGraphPinType>(FName("SpeciesFilterText"), StringPin()),
+        TPair<FName, FEdGraphPinType>(FName("ElementFilterMask"), IntPin()),
+        TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin())
     });
     UK2Node_CustomEvent* TogglePanel = AddCustomEvent(Blueprint, Graph, TEXT("PalworldResourceESP_TogglePanel"), -900, 1520, {});
     UK2Node_CustomEvent* ApplyPersistedPanelState = AddCustomEvent(
         Blueprint, Graph, *ApplyPersistedPanelStateEventName.ToString(), -900, 3200, {});
-    if (!PostBeginPlay || !BridgeReady || !Reset || !SetTarget || !ClearTarget || !SetDisplayStyle
+    if (!PostBeginPlay || !BridgeReady || !Reset || !SetTarget || !ClearTarget || !RemoveTarget || !SetDisplayStyle
         || !TogglePanel || !ApplyPersistedPanelState) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildModActor custom event creation failed post=%s ready=%s reset=%s set=%s clear=%s toggle=%s"), PostBeginPlay ? TEXT("ok") : TEXT("null"), BridgeReady ? TEXT("ok") : TEXT("null"), Reset ? TEXT("ok") : TEXT("null"), SetTarget ? TEXT("ok") : TEXT("null"), ClearTarget ? TEXT("ok") : TEXT("null"), TogglePanel ? TEXT("ok") : TEXT("null"));
         return false;
@@ -6218,14 +8728,29 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_StringToName"), 2180, 3440);
     UK2Node_VariableGet* RestoreExcludeIdsAddGet = AddVariableGet(Graph, PassiveExcludeIdsVariableName, 2180, 3560);
     UK2Node_CallArrayFunction* RestoreExcludeIdsAdd = AddArrayCall(Graph, TEXT("Array_AddUnique"), 2460, 3200);
-    UK2Node_VariableGet* RestoreRevisionGet = AddVariableGet(Graph, PassiveFilterRevisionVariableName, 2740, 3360);
+    UK2Node_VariableGet* RestoreSpeciesIdsClearGet = AddVariableGet(
+        Graph, SpeciesFilterIdsVariableName, 2740, 3520);
+    UK2Node_CallArrayFunction* RestoreSpeciesIdsClear = AddArrayCall(Graph, TEXT("Array_Clear"), 3020, 3200);
+    UK2Node_VariableGet* RestoreSpeciesTextGet = AddVariableGet(
+        Graph, SpeciesFilterTextVariableName, 3020, 3520);
+    UK2Node_CallFunction* RestoreParseSpecies = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("ParseIntoArray"), 3300, 3440);
+    UK2Node_MacroInstance* RestoreForEachSpecies = AddForEachLoop(Graph, 3580, 3200);
+    UK2Node_CallFunction* RestoreSpeciesToName = AddStaticCall(
+        Graph, UKismetStringLibrary::StaticClass(), TEXT("Conv_StringToName"), 3860, 3440);
+    UK2Node_VariableGet* RestoreSpeciesIdsAddGet = AddVariableGet(
+        Graph, SpeciesFilterIdsVariableName, 3860, 3560);
+    UK2Node_CallArrayFunction* RestoreSpeciesIdsAdd = AddArrayCall(Graph, TEXT("Array_AddUnique"), 4140, 3200);
+    UK2Node_VariableGet* RestoreRevisionGet = AddVariableGet(Graph, PassiveFilterRevisionVariableName, 4420, 3360);
     UK2Node_CallFunction* RestoreRevisionAdd = AddStaticCall(
-        Graph, UKismetMathLibrary::StaticClass(), TEXT("Add_IntInt"), 3020, 3360);
-    UK2Node_VariableSet* RestoreRevisionSet = AddVariableSet(Graph, PassiveFilterRevisionVariableName, 3300, 3200);
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("Add_IntInt"), 4700, 3360);
+    UK2Node_VariableSet* RestoreRevisionSet = AddVariableSet(Graph, PassiveFilterRevisionVariableName, 4980, 3200);
     if (!RestoreFilterIdsClearGet || !RestoreFilterIdsClear || !RestoreExcludeIdsClearGet || !RestoreExcludeIdsClear
         || !RestoreIncludeTextGet || !RestoreParseIncludes || !RestoreForEachInclude || !RestoreIncludeToName
         || !RestoreFilterIdsAddGet || !RestoreFilterIdsAdd || !RestoreExcludeTextGet || !RestoreParseExcludes
         || !RestoreForEachExclude || !RestoreExcludeToName || !RestoreExcludeIdsAddGet || !RestoreExcludeIdsAdd
+        || !RestoreSpeciesIdsClearGet || !RestoreSpeciesIdsClear || !RestoreSpeciesTextGet || !RestoreParseSpecies
+        || !RestoreForEachSpecies || !RestoreSpeciesToName || !RestoreSpeciesIdsAddGet || !RestoreSpeciesIdsAdd
         || !RestoreRevisionGet || !RestoreRevisionAdd || !RestoreRevisionSet
         || !Link(ApplyPersistedPanelState, UEdGraphSchema_K2::PN_Then, RestoreFilterIdsClear, UEdGraphSchema_K2::PN_Execute)
         || !Link(RestoreFilterIdsClearGet, PassiveFilterIdsVariableName, RestoreFilterIdsClear, TEXT("TargetArray"))
@@ -6249,7 +8774,18 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(RestoreForEachExclude, TEXT("LoopBody"), RestoreExcludeIdsAdd, UEdGraphSchema_K2::PN_Execute)
         || !Link(RestoreExcludeIdsAddGet, PassiveExcludeIdsVariableName, RestoreExcludeIdsAdd, TEXT("TargetArray"))
         || !Link(RestoreExcludeToName, UEdGraphSchema_K2::PN_ReturnValue, RestoreExcludeIdsAdd, TEXT("NewItem"))
-        || !Link(RestoreForEachExclude, TEXT("Completed"), RestoreRevisionSet, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RestoreForEachExclude, TEXT("Completed"), RestoreSpeciesIdsClear, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RestoreSpeciesIdsClearGet, SpeciesFilterIdsVariableName, RestoreSpeciesIdsClear, TEXT("TargetArray"))
+        || !Link(RestoreSpeciesTextGet, SpeciesFilterTextVariableName, RestoreParseSpecies, TEXT("SourceString"))
+        || !SetPinDefault(RestoreParseSpecies, TEXT("Delimiter"), TEXT("|"))
+        || !SetPinDefault(RestoreParseSpecies, TEXT("CullEmptyStrings"), TEXT("true"))
+        || !Link(RestoreParseSpecies, UEdGraphSchema_K2::PN_ReturnValue, RestoreForEachSpecies, TEXT("Array"))
+        || !Link(RestoreSpeciesIdsClear, UEdGraphSchema_K2::PN_Then, RestoreForEachSpecies, TEXT("Exec"))
+        || !Link(RestoreForEachSpecies, TEXT("Array Element"), RestoreSpeciesToName, TEXT("InString"))
+        || !Link(RestoreForEachSpecies, TEXT("LoopBody"), RestoreSpeciesIdsAdd, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RestoreSpeciesIdsAddGet, SpeciesFilterIdsVariableName, RestoreSpeciesIdsAdd, TEXT("TargetArray"))
+        || !Link(RestoreSpeciesToName, UEdGraphSchema_K2::PN_ReturnValue, RestoreSpeciesIdsAdd, TEXT("NewItem"))
+        || !Link(RestoreForEachSpecies, TEXT("Completed"), RestoreRevisionSet, UEdGraphSchema_K2::PN_Execute)
         || !Link(RestoreRevisionGet, PassiveFilterRevisionVariableName, RestoreRevisionAdd, TEXT("A"))
         || !SetPinDefault(RestoreRevisionAdd, TEXT("B"), TEXT("1"))
         || !Link(RestoreRevisionAdd, UEdGraphSchema_K2::PN_ReturnValue, RestoreRevisionSet, PassiveFilterRevisionVariableName)) {
@@ -6269,15 +8805,20 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableGet* PanelGet = AddVariableGet(Graph, PanelVariableName, -620, 1640);
     UK2Node_CallFunction* PanelValid = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("IsValid"), -380, 1640);
     UK2Node_IfThenElse* PanelBranch = AddBranch(Graph, -120, 1520);
+    UK2Node_CallFunction* EnableGameInput = AddStaticCall(Graph, AActor::StaticClass(), TEXT("EnableInput"), 140, 1320);
     UK2Node_CallFunction* RemovePanel = AddStaticCall(Graph, UUserWidget::StaticClass(), TEXT("RemoveFromParent"), 140, 1440);
     UK2Node_VariableSet* ClearPanel = AddVariableSet(Graph, PanelVariableName, 420, 1440);
     UK2Node_CallFunction* CloseController = AddStaticCall(Graph, UGameplayStatics::StaticClass(), TEXT("GetPlayerController"), 420, 1600);
     UK2Node_Self* CloseWorldContext = AddSelfNode(Graph, 140, 1680);
+    UK2Node_DynamicCast* CastClosePalController = AddDynamicCast(Graph, PalPlayerControllerClass, -100, 1320);
+    UK2Node_CallFunction* ClearPalInputDisable = AddStaticCall(
+        Graph, PalPlayerControllerClass, TEXT("SetDisableInputFlag"), 20, 1320);
     UK2Node_VariableSet* HideCursor = AddExternalVariableSet(Graph, TEXT("bShowMouseCursor"), APlayerController::StaticClass(), 700, 1440);
     UK2Node_CallFunction* GameOnly = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("SetInputMode_GameOnly"), 980, 1440);
 
     UK2Node_CallFunction* OpenController = AddStaticCall(Graph, UGameplayStatics::StaticClass(), TEXT("GetPlayerController"), 140, 1920);
     UK2Node_Self* OpenWorldContext = AddSelfNode(Graph, -120, 2000);
+    UK2Node_DynamicCast* CastOpenPalController = AddDynamicCast(Graph, PalPlayerControllerClass, 160, 1760);
     UK2Node_CallFunction* CreatePanel = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("Create"), 420, 1760);
     UK2Node_DynamicCast* CastPanel = AddDynamicCast(Graph, PanelClass, 700, 1760);
     UK2Node_VariableSet* StorePanel = AddVariableSet(Graph, PanelVariableName, 980, 1760);
@@ -6286,8 +8827,11 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     // __DEPRECATED_20260717__ [reason: V2 initializes sliders and all visible toggle states]
     // UK2Node_CallFunction* InitializePanel = AddStaticCall(Graph, PanelClass, *PanelInitializeControlsEventName.ToString(), 1540, 1760);
     UK2Node_CallFunction* InitializePanel = AddStaticCall(Graph, PanelClass, *PanelInitializeControlsV2EventName.ToString(), 1540, 1760);
+    UK2Node_CallFunction* InitializePageState = AddStaticCall(Graph, PanelClass, *PanelSetPageStateEventName.ToString(), 1820, 1760);
     UK2Node_CallFunction* InitializeLanguage = AddStaticCall(Graph, PanelClass, *PanelInitializeLanguageEventName.ToString(), 1820, 1760);
     UK2Node_CallFunction* PopulatePassiveCatalog = AddStaticCall(Graph, PanelClass, *PanelPopulatePassiveCatalogEventName.ToString(), 2100, 1760);
+    UK2Node_CallFunction* PopulatePalCatalog = AddStaticCall(
+        Graph, PanelClass, *PanelPopulatePalCatalogEventName.ToString(), 2380, 1760);
     UK2Node_VariableGet* PanelDisplayLimit = AddVariableGet(Graph, DisplayTargetLimitVariableName, 1260, 2080);
     UK2Node_VariableGet* PanelLevelMin = AddVariableGet(Graph, LevelMinVariableName, 1540, 2080);
     UK2Node_VariableGet* PanelLevelMax = AddVariableGet(Graph, LevelMaxVariableName, 1820, 2080);
@@ -6317,6 +8861,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableGet* PanelElementDark = AddVariableGet(Graph, ElementDarkVariableName, 6580, 2200);
     UK2Node_VariableGet* PanelElementDragon = AddVariableGet(Graph, ElementDragonVariableName, 6860, 2200);
     UK2Node_VariableGet* PanelShowName = AddVariableGet(Graph, ShowNameVariableName, 4620, 2080);
+    UK2Node_VariableGet* PanelMainPage = AddVariableGet(Graph, PanelMainPageVariableName, 4900, 2200);
+    UK2Node_VariableGet* PanelFilterPage = AddVariableGet(Graph, PanelFilterPageVariableName, 5180, 2200);
     UK2Node_VariableGet* PanelLanguage = AddVariableGet(Graph, LanguageIdVariableName, 4900, 2080);
     UK2Node_VariableGet* PanelExpandRainbow = AddVariableGet(Graph, PassiveRainbowExpandedVariableName, 5180, 2080);
     UK2Node_VariableGet* PanelExpandLegend = AddVariableGet(Graph, PassiveLegendExpandedVariableName, 5460, 2080);
@@ -6329,20 +8875,26 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_CallFunction* AddPanelToViewport = AddStaticCall(Graph, UUserWidget::StaticClass(), TEXT("AddToViewport"), 2100, 1760);
     UK2Node_VariableSet* ShowCursor = AddExternalVariableSet(Graph, TEXT("bShowMouseCursor"), APlayerController::StaticClass(), 2380, 1760);
     UK2Node_CallFunction* UiOnly = AddStaticCall(Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("SetInputMode_UIOnlyEx"), 2660, 1760);
+    UK2Node_CallFunction* FocusPanel = AddStaticCall(Graph, UWidget::StaticClass(), TEXT("SetKeyboardFocus"), 2940, 1760);
+    UK2Node_CallFunction* SetPalInputDisable = AddStaticCall(
+        Graph, PalPlayerControllerClass, TEXT("SetDisableInputFlag"), 3080, 1760);
+    UK2Node_CallFunction* DisableGameInput = AddStaticCall(Graph, AActor::StaticClass(), TEXT("DisableInput"), 2940, 1760);
 
-    if (!PanelGet || !PanelValid || !PanelBranch || !RemovePanel || !ClearPanel || !CloseController || !CloseWorldContext
+    if (!PanelGet || !PanelValid || !PanelBranch || !EnableGameInput || !RemovePanel || !ClearPanel || !CloseController || !CloseWorldContext
+        || !CastClosePalController || !ClearPalInputDisable
         || !HideCursor || !GameOnly || !OpenController || !OpenWorldContext || !CreatePanel || !CastPanel || !StorePanel
-        || !SetPanelBridge || !ActorSelf || !InitializePanel || !InitializeLanguage || !PanelDisplayLimit || !PanelLevelMin
+        || !CastOpenPalController
+        || !SetPanelBridge || !ActorSelf || !InitializePanel || !InitializePageState || !InitializeLanguage || !PanelDisplayLimit || !PanelLevelMin
         || !PanelLevelMax || !PanelDistanceMax || !PanelShowLevel || !PanelShowDistance || !PanelShowIv
         || !PanelShowPassiveSkills || !PanelIvHpMin || !PanelIvAttackMin || !PanelIvDefenseMin
         || !PanelRuntimeEnabled || !PanelTopGuide || !PanelGenderFilter || !PanelLuckyFilter || !PanelBossFilter
         || !PanelCollectionFilter
         || !PanelElementNormal || !PanelElementFire || !PanelElementWater || !PanelElementLeaf
         || !PanelElementElectricity || !PanelElementIce || !PanelElementEarth || !PanelElementDark || !PanelElementDragon
-        || !PanelShowName || !PanelLanguage || !PanelExpandRainbow || !PanelExpandLegend || !PanelExpandGold3
+        || !PanelShowName || !PanelMainPage || !PanelFilterPage || !PanelLanguage || !PanelExpandRainbow || !PanelExpandLegend || !PanelExpandGold3
         || !PanelExpandGold2 || !PanelExpandNormal || !PanelExpandNegative1 || !PanelExpandNegative2 || !PanelExpandNegative3
-        || !PopulatePassiveCatalog
-        || !AddPanelToViewport || !ShowCursor || !UiOnly
+        || !PopulatePassiveCatalog || !PopulatePalCatalog
+        || !AddPanelToViewport || !ShowCursor || !UiOnly || !FocusPanel || !SetPalInputDisable || !DisableGameInput
         || !SetClassPin(CreatePanel, TEXT("WidgetType"), PanelClass)
         || !SetPinDefault(CloseController, TEXT("PlayerIndex"), TEXT("0"))
         || !SetPinDefault(OpenController, TEXT("PlayerIndex"), TEXT("0"))
@@ -6350,11 +8902,22 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !SetPinDefault(ShowCursor, TEXT("bShowMouseCursor"), TEXT("true"))
         || !SetPinDefault(GameOnly, TEXT("bFlushInput"), TEXT("true"))
         || !SetPinDefault(UiOnly, TEXT("bFlushInput"), TEXT("true"))
+        || !SetPinDefault(ClearPalInputDisable, TEXT("flagName"), PanelInputDisableFlag)
+        || !SetPinDefault(ClearPalInputDisable, TEXT("isDisable"), TEXT("false"))
+        || !SetPinDefault(SetPalInputDisable, TEXT("flagName"), PanelInputDisableFlag)
+        || !SetPinDefault(SetPalInputDisable, TEXT("isDisable"), TEXT("true"))
         || !SetPinDefault(AddPanelToViewport, TEXT("ZOrder"), TEXT("100"))
         || !Link(TogglePanel, UEdGraphSchema_K2::PN_Then, PanelBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(PanelGet, PanelVariableName, PanelValid, TEXT("Object"))
         || !Link(PanelValid, UEdGraphSchema_K2::PN_ReturnValue, PanelBranch, UEdGraphSchema_K2::PN_Condition)
-        || !Link(PanelBranch, UEdGraphSchema_K2::PN_Then, RemovePanel, UEdGraphSchema_K2::PN_Execute)
+        || !Link(PanelBranch, UEdGraphSchema_K2::PN_Then, CastClosePalController, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CloseController, UEdGraphSchema_K2::PN_ReturnValue, CastClosePalController, UEdGraphSchema_K2::PN_ObjectToCast)
+        || !Link(CastClosePalController, CastClosePalController->GetValidCastPin()->PinName, ClearPalInputDisable, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CastClosePalController, CastClosePalController->GetCastResultPin()->PinName, ClearPalInputDisable, UEdGraphSchema_K2::PN_Self)
+        || !Link(ClearPalInputDisable, UEdGraphSchema_K2::PN_Then, EnableGameInput, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CloseController, UEdGraphSchema_K2::PN_ReturnValue, EnableGameInput, UEdGraphSchema_K2::PN_Self)
+        || !Link(CloseController, UEdGraphSchema_K2::PN_ReturnValue, EnableGameInput, TEXT("PlayerController"))
+        || !Link(EnableGameInput, UEdGraphSchema_K2::PN_Then, RemovePanel, UEdGraphSchema_K2::PN_Execute)
         || !Link(PanelGet, PanelVariableName, RemovePanel, UEdGraphSchema_K2::PN_Self)
         || !Link(RemovePanel, UEdGraphSchema_K2::PN_Then, ClearPanel, UEdGraphSchema_K2::PN_Execute)
         || !Link(ClearPanel, UEdGraphSchema_K2::PN_Then, HideCursor, UEdGraphSchema_K2::PN_Execute)
@@ -6362,8 +8925,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(CloseController, UEdGraphSchema_K2::PN_ReturnValue, HideCursor, UEdGraphSchema_K2::PN_Self)
         || !Link(HideCursor, UEdGraphSchema_K2::PN_Then, GameOnly, UEdGraphSchema_K2::PN_Execute)
         || !Link(CloseController, UEdGraphSchema_K2::PN_ReturnValue, GameOnly, TEXT("PlayerController"))
-        || !Link(PanelBranch, UEdGraphSchema_K2::PN_Else, CreatePanel, UEdGraphSchema_K2::PN_Execute)
+        || !Link(PanelBranch, UEdGraphSchema_K2::PN_Else, CastOpenPalController, UEdGraphSchema_K2::PN_Execute)
         || !Link(OpenWorldContext, UEdGraphSchema_K2::PN_Self, OpenController, TEXT("WorldContextObject"))
+        || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, CastOpenPalController, UEdGraphSchema_K2::PN_ObjectToCast)
+        || !Link(CastOpenPalController, CastOpenPalController->GetValidCastPin()->PinName, CreatePanel, UEdGraphSchema_K2::PN_Execute)
         || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, CreatePanel, TEXT("OwningPlayer"))
         || !Link(CreatePanel, UEdGraphSchema_K2::PN_Then, CastPanel, UEdGraphSchema_K2::PN_Execute)
         || !Link(CreatePanel, UEdGraphSchema_K2::PN_ReturnValue, CastPanel, UEdGraphSchema_K2::PN_ObjectToCast)
@@ -6412,18 +8977,31 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(PanelExpandNegative1, PassiveNegative1ExpandedVariableName, InitializePanel, TEXT("ExpandNegative1"))
         || !Link(PanelExpandNegative2, PassiveNegative2ExpandedVariableName, InitializePanel, TEXT("ExpandNegative2"))
         || !Link(PanelExpandNegative3, PassiveNegative3ExpandedVariableName, InitializePanel, TEXT("ExpandNegative3"))
-        || !Link(InitializePanel, UEdGraphSchema_K2::PN_Then, InitializeLanguage, UEdGraphSchema_K2::PN_Execute)
+         || !Link(InitializePanel, UEdGraphSchema_K2::PN_Then, InitializePageState, UEdGraphSchema_K2::PN_Execute)
+         || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, InitializePageState, UEdGraphSchema_K2::PN_Self)
+         || !Link(PanelMainPage, PanelMainPageVariableName, InitializePageState, TEXT("MainPage"))
+         || !Link(PanelFilterPage, PanelFilterPageVariableName, InitializePageState, TEXT("FilterPage"))
+         || !Link(InitializePageState, UEdGraphSchema_K2::PN_Then, InitializeLanguage, UEdGraphSchema_K2::PN_Execute)
         || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, InitializeLanguage, UEdGraphSchema_K2::PN_Self)
         || !Link(PanelLanguage, LanguageIdVariableName, InitializeLanguage, TEXT("LanguageId"))
         || !Link(InitializeLanguage, UEdGraphSchema_K2::PN_Then, PopulatePassiveCatalog, UEdGraphSchema_K2::PN_Execute)
         || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, PopulatePassiveCatalog, UEdGraphSchema_K2::PN_Self)
-        || !Link(PopulatePassiveCatalog, UEdGraphSchema_K2::PN_Then, AddPanelToViewport, UEdGraphSchema_K2::PN_Execute)
+        || !Link(PopulatePassiveCatalog, UEdGraphSchema_K2::PN_Then, PopulatePalCatalog, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, PopulatePalCatalog, UEdGraphSchema_K2::PN_Self)
+        || !Link(PopulatePalCatalog, UEdGraphSchema_K2::PN_Then, AddPanelToViewport, UEdGraphSchema_K2::PN_Execute)
         || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, AddPanelToViewport, UEdGraphSchema_K2::PN_Self)
         || !Link(AddPanelToViewport, UEdGraphSchema_K2::PN_Then, ShowCursor, UEdGraphSchema_K2::PN_Execute)
         || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, ShowCursor, UEdGraphSchema_K2::PN_Self)
         || !Link(ShowCursor, UEdGraphSchema_K2::PN_Then, UiOnly, UEdGraphSchema_K2::PN_Execute)
         || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, UiOnly, TEXT("PlayerController"))
-        || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, UiOnly, TEXT("InWidgetToFocus"))) {
+        || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, UiOnly, TEXT("InWidgetToFocus"))
+        || !Link(UiOnly, UEdGraphSchema_K2::PN_Then, FocusPanel, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CastPanel, CastPanel->GetCastResultPin()->PinName, FocusPanel, UEdGraphSchema_K2::PN_Self)
+        || !Link(FocusPanel, UEdGraphSchema_K2::PN_Then, SetPalInputDisable, UEdGraphSchema_K2::PN_Execute)
+        || !Link(CastOpenPalController, CastOpenPalController->GetCastResultPin()->PinName, SetPalInputDisable, UEdGraphSchema_K2::PN_Self)
+        || !Link(SetPalInputDisable, UEdGraphSchema_K2::PN_Then, DisableGameInput, UEdGraphSchema_K2::PN_Execute)
+        || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, DisableGameInput, UEdGraphSchema_K2::PN_Self)
+        || !Link(OpenController, UEdGraphSchema_K2::PN_ReturnValue, DisableGameInput, TEXT("PlayerController"))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildModActor panel toggle graph failed"));
         return false;
     }
@@ -6438,6 +9016,9 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_CallFunction* AddToViewport = AddStaticCall(Graph, UUserWidget::StaticClass(), TEXT("AddToViewport"), 980, 760);
     UK2Node_CallFunction* AddExistingTarget = AddStaticCall(Graph, OverlayClass, *OverlayAddTargetEventName.ToString(), 140, 560);
     UK2Node_CallFunction* AddNewTarget = AddStaticCall(Graph, OverlayClass, *OverlayAddTargetEventName.ToString(), 1260, 760);
+    UK2Node_VariableGet* ExistingLanguageId = AddVariableGet(Graph, LanguageIdVariableName, 420, 120);
+    UK2Node_VariableSet* StoreExistingLanguageId = AddExternalVariableSet(
+        Graph, OverlayLanguageIdVariableName, OverlayClass, 700, 120);
     UK2Node_VariableGet* ExistingTopGuideEnabled = AddVariableGet(Graph, ShowTopGuideLineVariableName, 420, 360);
     UK2Node_VariableSet* StoreExistingTopGuideEnabled = AddExternalVariableSet(Graph, OverlayTopGuideEnabledVariableName, OverlayClass, 700, 360);
     UK2Node_VariableGet* ExistingShowName = AddVariableGet(Graph, ShowNameVariableName, 700, 200);
@@ -6462,6 +9043,9 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreExistingPassiveFilterIds = AddExternalVariableSet(Graph, OverlayPassiveFilterIdsVariableName, OverlayClass, 2940, -200);
     UK2Node_VariableGet* ExistingPassiveExcludeIds = AddVariableGet(Graph, PassiveExcludeIdsVariableName, 2940, -280);
     UK2Node_VariableSet* StoreExistingPassiveExcludeIds = AddExternalVariableSet(Graph, OverlayPassiveExcludeIdsVariableName, OverlayClass, 3220, -280);
+    UK2Node_VariableGet* ExistingSpeciesFilterIds = AddVariableGet(Graph, SpeciesFilterIdsVariableName, 3220, -360);
+    UK2Node_VariableSet* StoreExistingSpeciesFilterIds = AddExternalVariableSet(
+        Graph, OverlaySpeciesFilterIdsVariableName, OverlayClass, 3500, -360);
     UK2Node_VariableGet* ExistingGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 1260, 280);
     UK2Node_VariableSet* StoreExistingGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 1540, 360);
     UK2Node_VariableGet* ExistingLuckyFilter = AddVariableGet(Graph, LuckyFilterIdVariableName, 1540, 280);
@@ -6476,6 +9060,9 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreExistingGenderDiagnostic = AddVariableSet(Graph, BridgeGenderDiagnosticVariableName, 700, 520);
     UK2Node_VariableGet* ExistingGenderDiagnosticCode = AddExternalVariableGet(Graph, OverlayGenderDiagnosticCodeVariableName, OverlayClass, 420, 640);
     UK2Node_VariableSet* StoreExistingGenderDiagnosticCode = AddVariableSet(Graph, BridgeGenderDiagnosticCodeVariableName, 980, 520);
+    UK2Node_VariableGet* NewLanguageId = AddVariableGet(Graph, LanguageIdVariableName, 1540, 320);
+    UK2Node_VariableSet* StoreNewLanguageId = AddExternalVariableSet(
+        Graph, OverlayLanguageIdVariableName, OverlayClass, 1820, 320);
     UK2Node_VariableGet* NewTopGuideEnabled = AddVariableGet(Graph, ShowTopGuideLineVariableName, 1540, 560);
     UK2Node_VariableSet* StoreNewTopGuideEnabled = AddExternalVariableSet(Graph, OverlayTopGuideEnabledVariableName, OverlayClass, 1820, 560);
     UK2Node_VariableGet* NewShowName = AddVariableGet(Graph, ShowNameVariableName, 1820, 400);
@@ -6500,6 +9087,9 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StoreNewPassiveFilterIds = AddExternalVariableSet(Graph, OverlayPassiveFilterIdsVariableName, OverlayClass, 4060, 0);
     UK2Node_VariableGet* NewPassiveExcludeIds = AddVariableGet(Graph, PassiveExcludeIdsVariableName, 4060, -80);
     UK2Node_VariableSet* StoreNewPassiveExcludeIds = AddExternalVariableSet(Graph, OverlayPassiveExcludeIdsVariableName, OverlayClass, 4340, -80);
+    UK2Node_VariableGet* NewSpeciesFilterIds = AddVariableGet(Graph, SpeciesFilterIdsVariableName, 4340, -160);
+    UK2Node_VariableSet* StoreNewSpeciesFilterIds = AddExternalVariableSet(
+        Graph, OverlaySpeciesFilterIdsVariableName, OverlayClass, 4620, -160);
     UK2Node_VariableGet* NewGenderFilter = AddVariableGet(Graph, GenderFilterIdVariableName, 2380, 480);
     UK2Node_VariableSet* StoreNewGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 2660, 560);
     UK2Node_VariableGet* NewLuckyFilter = AddVariableGet(Graph, LuckyFilterIdVariableName, 2660, 480);
@@ -6515,7 +9105,8 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableGet* NewGenderDiagnosticCode = AddExternalVariableGet(Graph, OverlayGenderDiagnosticCodeVariableName, OverlayClass, 1540, 880);
     UK2Node_VariableSet* StoreNewGenderDiagnosticCode = AddVariableSet(Graph, BridgeGenderDiagnosticCodeVariableName, 2100, 720);
     if (!OverlayGet || !OverlayValid || !OverlayBranch || !CreateWidget || !CastOverlay || !StoreOverlay || !AddToViewport
-        || !AddExistingTarget || !AddNewTarget || !ExistingTopGuideEnabled || !StoreExistingTopGuideEnabled
+        || !AddExistingTarget || !AddNewTarget
+        || !ExistingLanguageId || !StoreExistingLanguageId || !ExistingTopGuideEnabled || !StoreExistingTopGuideEnabled
         || !ExistingShowName || !StoreExistingShowName
         || !ExistingShowLevel || !StoreExistingShowLevel || !ExistingShowDistance || !StoreExistingShowDistance
         || !ExistingShowIv || !StoreExistingShowIv || !ExistingShowPassiveSkills || !StoreExistingShowPassiveSkills
@@ -6524,18 +9115,21 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !ExistingIvDefenseMin || !StoreExistingIvDefenseMin
         || !ExistingPassiveFilterIds || !StoreExistingPassiveFilterIds
         || !ExistingPassiveExcludeIds || !StoreExistingPassiveExcludeIds
+        || !ExistingSpeciesFilterIds || !StoreExistingSpeciesFilterIds
         || !ExistingGenderFilter || !StoreExistingGenderFilter || !ExistingLuckyFilter || !StoreExistingLuckyFilter
         || !ExistingBossFilter || !StoreExistingBossFilter || !ExistingCollectionFilter || !StoreExistingCollectionFilter
         || !ExistingElementFilter || !StoreExistingElementFilter
         || !ExistingGenderDiagnostic || !StoreExistingGenderDiagnostic
         || !ExistingGenderDiagnosticCode || !StoreExistingGenderDiagnosticCode
-        || !NewTopGuideEnabled || !StoreNewTopGuideEnabled || !NewShowName || !StoreNewShowName
+        || !NewLanguageId || !StoreNewLanguageId || !NewTopGuideEnabled || !StoreNewTopGuideEnabled
+        || !NewShowName || !StoreNewShowName
         || !NewShowLevel || !StoreNewShowLevel
         || !NewShowDistance || !StoreNewShowDistance || !NewShowIv || !StoreNewShowIv
         || !NewShowPassiveSkills || !StoreNewShowPassiveSkills || !NewIvMin || !StoreNewIvMin
         || !NewIvHpMin || !StoreNewIvHpMin || !NewIvAttackMin || !StoreNewIvAttackMin
         || !NewIvDefenseMin || !StoreNewIvDefenseMin || !NewPassiveFilterIds || !StoreNewPassiveFilterIds
         || !NewPassiveExcludeIds || !StoreNewPassiveExcludeIds
+        || !NewSpeciesFilterIds || !StoreNewSpeciesFilterIds
         || !NewGenderFilter || !StoreNewGenderFilter
         || !NewLuckyFilter || !StoreNewLuckyFilter || !NewBossFilter || !StoreNewBossFilter
         || !NewCollectionFilter || !StoreNewCollectionFilter
@@ -6563,7 +9157,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(SetTarget, TEXT("Target"), AddNewTarget, TEXT("Target"))
         || !Link(SetTarget, TEXT("Level"), AddNewTarget, TEXT("Level"))
         || !Link(SetTarget, TEXT("DistanceMeters"), AddNewTarget, TEXT("DistanceMeters"))
-        || !Link(AddExistingTarget, UEdGraphSchema_K2::PN_Then, StoreExistingTopGuideEnabled, UEdGraphSchema_K2::PN_Execute)
+        || !Link(AddExistingTarget, UEdGraphSchema_K2::PN_Then, StoreExistingLanguageId, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ExistingLanguageId, LanguageIdVariableName, StoreExistingLanguageId, OverlayLanguageIdVariableName)
+        || !Link(OverlayGet, OverlayVariableName, StoreExistingLanguageId, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreExistingLanguageId, UEdGraphSchema_K2::PN_Then, StoreExistingTopGuideEnabled, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingTopGuideEnabled, ShowTopGuideLineVariableName, StoreExistingTopGuideEnabled, OverlayTopGuideEnabledVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingTopGuideEnabled, UEdGraphSchema_K2::PN_Self)
         || !Link(StoreExistingTopGuideEnabled, UEdGraphSchema_K2::PN_Then, StoreExistingShowName, UEdGraphSchema_K2::PN_Execute)
@@ -6601,7 +9198,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StoreExistingPassiveFilterIds, UEdGraphSchema_K2::PN_Then, StoreExistingPassiveExcludeIds, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingPassiveExcludeIds, PassiveExcludeIdsVariableName, StoreExistingPassiveExcludeIds, OverlayPassiveExcludeIdsVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingPassiveExcludeIds, UEdGraphSchema_K2::PN_Self)
-        || !Link(StoreExistingPassiveExcludeIds, UEdGraphSchema_K2::PN_Then, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreExistingPassiveExcludeIds, UEdGraphSchema_K2::PN_Then, StoreExistingSpeciesFilterIds, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ExistingSpeciesFilterIds, SpeciesFilterIdsVariableName, StoreExistingSpeciesFilterIds, OverlaySpeciesFilterIdsVariableName)
+        || !Link(OverlayGet, OverlayVariableName, StoreExistingSpeciesFilterIds, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreExistingSpeciesFilterIds, UEdGraphSchema_K2::PN_Then, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(ExistingGenderFilter, GenderFilterIdVariableName, StoreExistingGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(OverlayGet, OverlayVariableName, StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Self)
         || !Link(StoreExistingGenderFilter, UEdGraphSchema_K2::PN_Then, StoreExistingLuckyFilter, UEdGraphSchema_K2::PN_Execute)
@@ -6622,7 +9222,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StoreExistingGenderDiagnostic, UEdGraphSchema_K2::PN_Then, StoreExistingGenderDiagnosticCode, UEdGraphSchema_K2::PN_Execute)
         || !Link(OverlayGet, OverlayVariableName, ExistingGenderDiagnosticCode, UEdGraphSchema_K2::PN_Self)
         || !Link(ExistingGenderDiagnosticCode, OverlayGenderDiagnosticCodeVariableName, StoreExistingGenderDiagnosticCode, BridgeGenderDiagnosticCodeVariableName)
-        || !Link(AddNewTarget, UEdGraphSchema_K2::PN_Then, StoreNewTopGuideEnabled, UEdGraphSchema_K2::PN_Execute)
+        || !Link(AddNewTarget, UEdGraphSchema_K2::PN_Then, StoreNewLanguageId, UEdGraphSchema_K2::PN_Execute)
+        || !Link(NewLanguageId, LanguageIdVariableName, StoreNewLanguageId, OverlayLanguageIdVariableName)
+        || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewLanguageId, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreNewLanguageId, UEdGraphSchema_K2::PN_Then, StoreNewTopGuideEnabled, UEdGraphSchema_K2::PN_Execute)
         || !Link(NewTopGuideEnabled, ShowTopGuideLineVariableName, StoreNewTopGuideEnabled, OverlayTopGuideEnabledVariableName)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewTopGuideEnabled, UEdGraphSchema_K2::PN_Self)
         || !Link(StoreNewTopGuideEnabled, UEdGraphSchema_K2::PN_Then, StoreNewShowName, UEdGraphSchema_K2::PN_Execute)
@@ -6660,7 +9263,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StoreNewPassiveFilterIds, UEdGraphSchema_K2::PN_Then, StoreNewPassiveExcludeIds, UEdGraphSchema_K2::PN_Execute)
         || !Link(NewPassiveExcludeIds, PassiveExcludeIdsVariableName, StoreNewPassiveExcludeIds, OverlayPassiveExcludeIdsVariableName)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewPassiveExcludeIds, UEdGraphSchema_K2::PN_Self)
-        || !Link(StoreNewPassiveExcludeIds, UEdGraphSchema_K2::PN_Then, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StoreNewPassiveExcludeIds, UEdGraphSchema_K2::PN_Then, StoreNewSpeciesFilterIds, UEdGraphSchema_K2::PN_Execute)
+        || !Link(NewSpeciesFilterIds, SpeciesFilterIdsVariableName, StoreNewSpeciesFilterIds, OverlaySpeciesFilterIdsVariableName)
+        || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewSpeciesFilterIds, UEdGraphSchema_K2::PN_Self)
+        || !Link(StoreNewSpeciesFilterIds, UEdGraphSchema_K2::PN_Then, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(NewGenderFilter, GenderFilterIdVariableName, StoreNewGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(CastOverlay, CastOverlay->GetCastResultPin()->PinName, StoreNewGenderFilter, UEdGraphSchema_K2::PN_Self)
         || !Link(StoreNewGenderFilter, UEdGraphSchema_K2::PN_Then, StoreNewLuckyFilter, UEdGraphSchema_K2::PN_Execute)
@@ -6689,6 +9295,7 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_CallFunction* StyleOverlayValid = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("IsValid"), -380, 2440);
     UK2Node_IfThenElse* StyleOverlayBranch = AddBranch(Graph, -120, 2320);
     UK2Node_VariableSet* StyleTopGuide = AddExternalVariableSet(Graph, OverlayTopGuideEnabledVariableName, OverlayClass, 140, 2320);
+    UK2Node_VariableSet* StyleLanguage = AddExternalVariableSet(Graph, OverlayLanguageIdVariableName, OverlayClass, 280, 2400);
     UK2Node_VariableSet* StyleName = AddExternalVariableSet(Graph, OverlayShowNameVariableName, OverlayClass, 420, 2320);
     UK2Node_VariableSet* StyleLevel = AddExternalVariableSet(Graph, OverlayShowLevelVariableName, OverlayClass, 700, 2320);
     UK2Node_VariableSet* StyleDistance = AddExternalVariableSet(Graph, OverlayShowDistanceVariableName, OverlayClass, 980, 2320);
@@ -6702,14 +9309,19 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
     UK2Node_VariableSet* StylePassiveFilterIds = AddExternalVariableSet(Graph, OverlayPassiveFilterIdsVariableName, OverlayClass, 2520, 2160);
     UK2Node_VariableGet* StylePassiveExcludeIdsGet = AddVariableGet(Graph, PassiveExcludeIdsVariableName, 2800, 2080);
     UK2Node_VariableSet* StylePassiveExcludeIds = AddExternalVariableSet(Graph, OverlayPassiveExcludeIdsVariableName, OverlayClass, 2800, 2160);
+    UK2Node_VariableGet* StyleSpeciesFilterIdsGet = AddVariableGet(Graph, SpeciesFilterIdsVariableName, 3080, 2080);
+    UK2Node_VariableSet* StyleSpeciesFilterIds = AddExternalVariableSet(
+        Graph, OverlaySpeciesFilterIdsVariableName, OverlayClass, 3080, 2160);
     UK2Node_VariableSet* StyleGenderFilter = AddExternalVariableSet(Graph, OverlayGenderFilterIdVariableName, OverlayClass, 1540, 2320);
     UK2Node_VariableSet* StyleLuckyFilter = AddExternalVariableSet(Graph, OverlayLuckyFilterIdVariableName, OverlayClass, 1820, 2320);
     UK2Node_VariableSet* StyleBossFilter = AddExternalVariableSet(Graph, OverlayBossFilterIdVariableName, OverlayClass, 2100, 2320);
     UK2Node_VariableSet* StyleCollectionFilter = AddExternalVariableSet(Graph, OverlayCollectionFilterIdVariableName, OverlayClass, 2240, 2400);
     UK2Node_VariableSet* StyleElementFilter = AddExternalVariableSet(Graph, OverlayElementFilterMaskVariableName, OverlayClass, 2380, 2320);
-    if (!StyleOverlayGet || !StyleOverlayValid || !StyleOverlayBranch || !StyleTopGuide || !StyleName || !StyleLevel || !StyleDistance
+    if (!StyleOverlayGet || !StyleOverlayValid || !StyleOverlayBranch || !StyleTopGuide || !StyleLanguage
+        || !StyleName || !StyleLevel || !StyleDistance
         || !StyleIv || !StylePassiveSkills || !StyleIvMin || !StyleIvHpMin || !StyleIvAttackMin || !StyleIvDefenseMin
         || !StylePassiveFilterIdsGet || !StylePassiveFilterIds || !StylePassiveExcludeIdsGet || !StylePassiveExcludeIds
+        || !StyleSpeciesFilterIdsGet || !StyleSpeciesFilterIds
         || !StyleGenderFilter || !StyleLuckyFilter || !StyleBossFilter || !StyleCollectionFilter || !StyleElementFilter
         || !Link(SetDisplayStyle, UEdGraphSchema_K2::PN_Then, StyleOverlayBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleOverlayValid, TEXT("Object"))
@@ -6717,7 +9329,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StyleOverlayBranch, UEdGraphSchema_K2::PN_Then, StyleTopGuide, UEdGraphSchema_K2::PN_Execute)
         || !Link(SetDisplayStyle, TEXT("ShowTopGuideLine"), StyleTopGuide, OverlayTopGuideEnabledVariableName)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleTopGuide, UEdGraphSchema_K2::PN_Self)
-        || !Link(StyleTopGuide, UEdGraphSchema_K2::PN_Then, StyleName, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StyleTopGuide, UEdGraphSchema_K2::PN_Then, StyleLanguage, UEdGraphSchema_K2::PN_Execute)
+        || !Link(SetDisplayStyle, TEXT("LanguageId"), StyleLanguage, OverlayLanguageIdVariableName)
+        || !Link(StyleOverlayGet, OverlayVariableName, StyleLanguage, UEdGraphSchema_K2::PN_Self)
+        || !Link(StyleLanguage, UEdGraphSchema_K2::PN_Then, StyleName, UEdGraphSchema_K2::PN_Execute)
         || !Link(SetDisplayStyle, TEXT("ShowName"), StyleName, OverlayShowNameVariableName)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleName, UEdGraphSchema_K2::PN_Self)
         || !Link(StyleName, UEdGraphSchema_K2::PN_Then, StyleLevel, UEdGraphSchema_K2::PN_Execute)
@@ -6752,7 +9367,10 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         || !Link(StylePassiveFilterIds, UEdGraphSchema_K2::PN_Then, StylePassiveExcludeIds, UEdGraphSchema_K2::PN_Execute)
         || !Link(StylePassiveExcludeIdsGet, PassiveExcludeIdsVariableName, StylePassiveExcludeIds, OverlayPassiveExcludeIdsVariableName)
         || !Link(StyleOverlayGet, OverlayVariableName, StylePassiveExcludeIds, UEdGraphSchema_K2::PN_Self)
-        || !Link(StylePassiveExcludeIds, UEdGraphSchema_K2::PN_Then, StyleGenderFilter, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StylePassiveExcludeIds, UEdGraphSchema_K2::PN_Then, StyleSpeciesFilterIds, UEdGraphSchema_K2::PN_Execute)
+        || !Link(StyleSpeciesFilterIdsGet, SpeciesFilterIdsVariableName, StyleSpeciesFilterIds, OverlaySpeciesFilterIdsVariableName)
+        || !Link(StyleOverlayGet, OverlayVariableName, StyleSpeciesFilterIds, UEdGraphSchema_K2::PN_Self)
+        || !Link(StyleSpeciesFilterIds, UEdGraphSchema_K2::PN_Then, StyleGenderFilter, UEdGraphSchema_K2::PN_Execute)
         || !Link(SetDisplayStyle, TEXT("GenderFilterId"), StyleGenderFilter, OverlayGenderFilterIdVariableName)
         || !Link(StyleOverlayGet, OverlayVariableName, StyleGenderFilter, UEdGraphSchema_K2::PN_Self)
         || !Link(StyleGenderFilter, UEdGraphSchema_K2::PN_Then, StyleLuckyFilter, UEdGraphSchema_K2::PN_Execute)
@@ -6806,6 +9424,23 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
         return false;
     }
 
+    UK2Node_VariableGet* RemoveOverlayGet = AddVariableGet(Graph, OverlayVariableName, -620, 1520);
+    UK2Node_CallFunction* RemoveOverlayValid = AddStaticCall(
+        Graph, UKismetSystemLibrary::StaticClass(), TEXT("IsValid"), -380, 1520);
+    UK2Node_IfThenElse* RemoveOverlayBranch = AddBranch(Graph, -120, 1400);
+    UK2Node_CallFunction* RemoveOverlayTarget = AddStaticCall(
+        Graph, OverlayClass, *OverlayRemoveTargetEventName.ToString(), 140, 1400);
+    if (!RemoveOverlayGet || !RemoveOverlayValid || !RemoveOverlayBranch || !RemoveOverlayTarget
+        || !Link(RemoveTarget, UEdGraphSchema_K2::PN_Then, RemoveOverlayBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RemoveOverlayGet, OverlayVariableName, RemoveOverlayValid, TEXT("Object"))
+        || !Link(RemoveOverlayValid, UEdGraphSchema_K2::PN_ReturnValue, RemoveOverlayBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(RemoveOverlayBranch, UEdGraphSchema_K2::PN_Then, RemoveOverlayTarget, UEdGraphSchema_K2::PN_Execute)
+        || !Link(RemoveOverlayGet, OverlayVariableName, RemoveOverlayTarget, UEdGraphSchema_K2::PN_Self)
+        || !Link(RemoveTarget, TEXT("Target"), RemoveOverlayTarget, TEXT("Target"))) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildModActor target removal graph failed"));
+        return false;
+    }
+
     FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
     UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildModActor compiling nodes_after=%d"), Graph->Nodes.Num());
     FKismetEditorUtilities::CompileBlueprint(Blueprint);
@@ -6815,6 +9450,80 @@ bool BuildModActor(UBlueprint* Blueprint, UClass* PalMonsterClass, UClass* Overl
 
 } // namespace
 
+bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPRichTextAssets() {
+    UWidgetBlueprint* PassiveTooltip = LoadObject<UWidgetBlueprint>(
+        nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPPassiveTooltip"));
+    if (!PassiveTooltip) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] rich-text tooltip-only dependency missing"));
+        return false;
+    }
+    if (!BuildPassiveTooltip(PassiveTooltip)) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] rich-text tooltip-only build failed"));
+        return false;
+    }
+    PassiveTooltip->MarkPackageDirty();
+    TArray<UPackage*> Packages{PassiveTooltip->GetOutermost()};
+    const bool bSaved = UEditorLoadingAndSavingUtils::SavePackages(Packages, true);
+    UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] rich-text tooltip-only build saved=%s packages=%d"),
+        bSaved ? TEXT("true") : TEXT("false"), Packages.Num());
+    return bSaved;
+
+#if 0
+    // __DEPRECATED_20260719__ [reason: scoped rich-text generation must not recompile startup-path assets]
+    UBlueprint* ModActor = LoadBlueprint(TEXT("/Game/Mods/PalworldResourceESP/ModActor"));
+    UWidgetBlueprint* PassiveTooltip = LoadObject<UWidgetBlueprint>(
+        nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPPassiveTooltip"));
+    UWidgetBlueprint* PalEntry = LoadObject<UWidgetBlueprint>(
+        nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPPalEntry"));
+    UClass* PalUtilityClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalUtility"));
+    UClass* DatabaseCharacterParameterClass = LoadClass<UObject>(
+        nullptr, TEXT("/Script/Pal.PalDatabaseCharacterParameter"));
+    if (!ModActor || !PassiveTooltip || !PalEntry
+        || !PalUtilityClass || !DatabaseCharacterParameterClass) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] rich-text scoped build dependency missing"));
+        return false;
+    }
+    if (!PrepareModActorControls(ModActor)) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] rich-text scoped ModActor audit buffer preparation failed"));
+        return false;
+    }
+    UClass* ModActorClass = ModActor->GeneratedClass;
+    if (!ModActorClass || !ModActorClass->FindPropertyByName(RichTextAuditBufferVariableName)) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] rich-text scoped ModActor audit buffer missing"));
+        return false;
+    }
+    if (!BuildPassiveTooltip(PassiveTooltip)) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] rich-text scoped tooltip build failed"));
+        return false;
+    }
+    UClass* PassiveTooltipClass = PassiveTooltip->GeneratedClass;
+    if (!PassiveTooltipClass || !BuildPalEntry(
+            PalEntry, ModActorClass, PalUtilityClass, DatabaseCharacterParameterClass, PassiveTooltipClass)) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] rich-text scoped Pal entry build failed"));
+        return false;
+    }
+    UDataTable* PassiveRichTextStyle = LoadObject<UDataTable>(nullptr, PassiveRichTextStylePath);
+    if (!PassiveRichTextStyle) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] rich-text scoped style table missing"));
+        return false;
+    }
+    ModActor->MarkPackageDirty();
+    PassiveTooltip->MarkPackageDirty();
+    PalEntry->MarkPackageDirty();
+    PassiveRichTextStyle->MarkPackageDirty();
+    TArray<UPackage*> Packages{
+        ModActor->GetOutermost(),
+        PassiveTooltip->GetOutermost(),
+        PalEntry->GetOutermost(),
+        PassiveRichTextStyle->GetOutermost(),
+    };
+    const bool bSaved = UEditorLoadingAndSavingUtils::SavePackages(Packages, true);
+    UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] rich-text scoped build saved=%s packages=%d"),
+        bSaved ? TEXT("true") : TEXT("false"), Packages.Num());
+    return bSaved;
+#endif
+}
+
 bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     UBlueprint* ModActor = LoadBlueprint(TEXT("/Game/Mods/PalworldResourceESP/ModActor"));
     UBlueprint* Bridge = LoadBlueprint(TEXT("/Game/Mods/PalworldResourceESP/BP_ESPBridge"));
@@ -6822,12 +9531,15 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     UWidgetBlueprint* Panel = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPPanel"));
     UWidgetBlueprint* PassiveTooltip = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPPassiveTooltip"));
     UWidgetBlueprint* PassiveEntry = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPPassiveEntry"));
+    UWidgetBlueprint* PalEntry = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Mods/PalworldResourceESP/WBP_ESPPalEntry"));
     UClass* PalMonsterClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalMonsterCharacter"));
+    UClass* PalPlayerControllerClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalPlayerController"));
     UClass* CharacterParameterComponentClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalCharacterParameterComponent"));
     UClass* IndividualParameterClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalIndividualCharacterParameter"));
     UScriptStruct* IndividualSaveParameterStruct = LoadObject<UScriptStruct>(nullptr, TEXT("/Script/Pal.PalIndividualCharacterSaveParameter"));
     UEnum* GenderEnum = LoadObject<UEnum>(nullptr, TEXT("/Script/Pal.EPalGenderType"));
     UEnum* ElementEnum = LoadObject<UEnum>(nullptr, TEXT("/Script/Pal.EPalElementType"));
+    UEnum* WorkSuitabilityEnum = LoadObject<UEnum>(nullptr, TEXT("/Script/Pal.EPalWorkSuitability"));
     UClass* PalUtilityClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalUtility"));
     UClass* PalUIUtilityClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalUIUtility"));
     UClass* DatabaseCharacterParameterClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalDatabaseCharacterParameter"));
@@ -6835,14 +9547,21 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     UClass* PlayerRecordDataUtilityClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalPlayerRecordDataUtility"));
     UClass* PassiveSkillManagerClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalPassiveSkillManager"));
     UScriptStruct* PassiveSkillDatabaseRowStruct = LoadObject<UScriptStruct>(nullptr, TEXT("/Script/Pal.PalPassiveSkillDatabaseRow"));
+    UScriptStruct* CharacterParameterDatabaseRowStruct = LoadObject<UScriptStruct>(
+        nullptr, TEXT("/Script/Pal.PalCharacterParameterDatabaseRow"));
+    UScriptStruct* DropItemDatabaseRowStruct = LoadObject<UScriptStruct>(
+        nullptr, TEXT("/Script/Pal.PalDropItemDatabaseRow"));
     UClass* MasterDataTablesUtilityClass = LoadClass<UObject>(nullptr, TEXT("/Script/Pal.PalMasterDataTablesUtility"));
     UClass* OverlayClass = Overlay ? Overlay->GeneratedClass : nullptr;
-    if (!ModActor || !Bridge || !Overlay || !Panel || !PassiveTooltip || !PassiveEntry
-        || !PalMonsterClass || !CharacterParameterComponentClass
+    if (!ModActor || !Bridge || !Overlay || !Panel || !PassiveTooltip || !PassiveEntry || !PalEntry
+        || !PalMonsterClass || !PalPlayerControllerClass || !CharacterParameterComponentClass
         || !IndividualParameterClass || !IndividualSaveParameterStruct || !GenderEnum || !ElementEnum
+        || !WorkSuitabilityEnum
         || !PalUtilityClass || !PalUIUtilityClass || !DatabaseCharacterParameterClass
         || !PlayerRecordDataClass || !PlayerRecordDataUtilityClass
-        || !PassiveSkillManagerClass || !PassiveSkillDatabaseRowStruct || !MasterDataTablesUtilityClass) {
+        || !PassiveSkillManagerClass || !PassiveSkillDatabaseRowStruct
+        || !CharacterParameterDatabaseRowStruct || !DropItemDatabaseRowStruct
+        || !MasterDataTablesUtilityClass) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] required asset or class missing"));
         return false;
     }
@@ -6881,6 +9600,14 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] passive entry build failed"));
         return false;
     }
+    // __DEPRECATED_20260719__ [reason: Pal entries now receive the shared rich-text tooltip class]
+    // if (!BuildPalEntry(PalEntry, ModActorClass, PalUtilityClass, DatabaseCharacterParameterClass)) {
+    if (!BuildPalEntry(
+            PalEntry, ModActorClass, PalUtilityClass, DatabaseCharacterParameterClass, PassiveTooltipClass)) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] Pal entry build failed"));
+        return false;
+    }
+    UClass* PalEntryClass = PalEntry->GeneratedClass;
     UDataTable* PassiveRichTextStyle = LoadObject<UDataTable>(nullptr, PassiveRichTextStylePath);
     if (!PassiveRichTextStyle) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] passive rich-text style table missing"));
@@ -6888,18 +9615,28 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     }
     UClass* PassiveEntryClass = PassiveEntry->GeneratedClass;
     if (!BuildPanel(
-            Panel, ModActorClass, PassiveEntryClass, PalUtilityClass, PalUIUtilityClass,
-            PassiveSkillManagerClass, PassiveSkillDatabaseRowStruct, MasterDataTablesUtilityClass)) {
+            Panel, ModActorClass, PassiveEntryClass, PalEntryClass, PalUtilityClass, PalUIUtilityClass,
+            DatabaseCharacterParameterClass, PassiveSkillManagerClass, PassiveSkillDatabaseRowStruct,
+            CharacterParameterDatabaseRowStruct, DropItemDatabaseRowStruct, ElementEnum,
+            WorkSuitabilityEnum, MasterDataTablesUtilityClass)) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] panel build failed"));
         return false;
+    }
+    if (UUserWidget* PanelDefaults = Panel->GeneratedClass
+            ? Panel->GeneratedClass->GetDefaultObject<UUserWidget>()
+            : nullptr) {
+        PanelDefaults->bIsFocusable = true;
+        PanelDefaults->bStopAction = true;
     }
     Overlay->MarkPackageDirty();
     Panel->MarkPackageDirty();
     PassiveTooltip->MarkPackageDirty();
     PassiveEntry->MarkPackageDirty();
+    PalEntry->MarkPackageDirty();
     PassiveRichTextStyle->MarkPackageDirty();
     TArray<UPackage*> WidgetPackages{
         Overlay->GetOutermost(), Panel->GetOutermost(), PassiveTooltip->GetOutermost(), PassiveEntry->GetOutermost(),
+        PalEntry->GetOutermost(),
         PassiveRichTextStyle->GetOutermost(),
     };
     if (!UEditorLoadingAndSavingUtils::SavePackages(WidgetPackages, true)) {
@@ -6907,7 +9644,7 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
     }
     OverlayClass = Overlay->GeneratedClass;
     UClass* PanelClass = Panel->GeneratedClass;
-    if (!BuildModActor(ModActor, PalMonsterClass, OverlayClass, PanelClass)) {
+    if (!BuildModActor(ModActor, PalMonsterClass, OverlayClass, PanelClass, PalPlayerControllerClass)) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] ModActor build failed"));
         return false;
     }

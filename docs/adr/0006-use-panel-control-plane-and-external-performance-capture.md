@@ -20,14 +20,14 @@ Add a dedicated `WBP_ESPPanel` controlled by `Shift+Y` and keep it separate from
 
 - Lua owns the key bind and invokes Blueprint panel methods.
 - The key callback records one pending request and never schedules another GameThread callback. The existing 250 ms runtime tick consumes the request only after reconciliation is idle, then returns without starting discovery in the same tick.
-- While open, the panel owns input through `UIOnlyEx`; closing restores `GameOnly`. Both transitions flush pending input.
+- While open, the panel owns input through `UIOnlyEx`, applies the Pal SDK's reversible `PalPlayerController::SetDisableInputFlag` under the unique `PalworldResourceESP_Panel` flag, and returns `Handled` for otherwise-unconsumed key-down/key-up events. Text boxes retain first chance to consume editing input. Closing clears only this Mod's flag, restores `GameOnly`, and flushes pending input.
 - The panel writes only scalar control properties and a monotonically increasing revision on the passive `ModActor`.
 - User-facing numeric controls pair a Slider for rapid adjustment with a compact integer SpinBox for exact entry. Level remains one grouped two-endpoint range; visible targets are clamped to 1-100.
 - Distance exposes only a 0-330m maximum control. Its lower bound is fixed at 0m, and the deprecated `ESP_DistanceMin` property is neither displayed nor read by Lua.
 - Runtime, top-guide, level, and distance visibility each use one compact toggle. Recreated panel widgets initialize numeric and toggle controls from the passive `ModActor`; programmatic initialization still crosses only the Blueprint-to-Blueprint boundary.
 - Binary display controls use a 28x24 checkbox with a visible light outline in both states, a medium-gray unchecked fill, and a green checked fill so unchecked rows cannot blend into the panel surface.
 - Gender uses an all/male/female segmented selector backed by the scalar `ESP_GenderFilterId`. Exactly one segment uses the green accent; click handlers update the accent immediately, and panel initialization restores it from the current scalar value. Blueprint reads each already-admitted wild Pal's typed gender, normalizes it to `0/1/2`, and rejects non-matching targets before projection and drawing. The human-player gate remains earlier and cannot be changed by this selector.
-- The panel uses a restrained neutral surface, green state accent, compact rounded controls, and a fixed 1180x680 frame with `Display`, `Filters`, and pending `Display style` tabs. The filter page is split between a scrollable expandable passive-skill catalog and regular filters so the full workflow remains usable at 720p-class heights.
+- The panel uses a restrained neutral surface, green state accent, compact rounded controls, and a viewport-filling frame with a 16px margin. It exposes `Display` and `Filters` tabs; the filter page is split between a scrollable expandable passive-skill catalog and regular filters so the full workflow remains usable at 720p-class heights.
 - Passive skills use eight visible Rank-only groups: Rainbow (`>=5`), Legend (`4`), Gold III (`3`), Gold II (`2`), Normal (`1`), and negative I/II/III (`-1/-2/-3`). Rank 0 and unknown ranks remain hidden instead of being guessed from acquisition weight. Dynamic catalog text inherits the cooked UMG font. Empty, `None`, and missing-data rows fail closed before widget creation. A committed localized-name search rebuilds the catalog only on Enter, focus loss, or an explicit Search action. Hover uses a dedicated rich-text tooltip with project-owned styles for confirmed numeric tags. Clear-passive and clear-all actions update both the Blueprint-owned filter state and visible controls.
 - Visible distance is computed from live player and target locations in the Blueprint paint pass. The snapshot distance remains the filter and ordering value.
 - Lua polls those properties every 250 ms and applies changes on the GameThread.
@@ -103,6 +103,10 @@ The delayed chunking option is therefore rejected for the functional baseline. T
 ## Panel Toggle Serialization Amendment (2026-07-18)
 
 A Steam run ended immediately after `PANEL_TOGGLE_REQUESTED` while a synchronous reconciliation was active; no dispatch/completion marker or new dump was produced. This does not prove a native stack cause, but the old key callback scheduled a second GameThread callback while reconciliation already owned that thread. Panel toggles now share the existing runtime tick with reconciliation. Requests remain pending until reconciliation is idle, a toggle tick performs no discovery, and stale lifecycle requests are skipped. The delayed callback path remains only as dated deprecated source for rollback history.
+
+## Pal Input Isolation Amendment (2026-07-19)
+
+`UIOnlyEx`, keyboard focus, `bStopAction`, and the generic Actor `DisableInput` call did not prevent Palworld shortcuts such as Escape, Backspace, and T from changing game UI or cursor state. The panel now uses the game's public `PalPlayerController::SetDisableInputFlag` contract with a Mod-owned flag and clears that same flag on close. Panel `OnKeyDown` and `OnKeyUp` overrides return `Handled` only after a focused child has had the opportunity to consume the event, preserving editable-text behavior while blocking unconsumed gameplay shortcuts. An unconditional `OnPreviewKeyDown` handler is rejected because it would intercept letters and IME editing before the search fields receive them.
 
 ## Follow-ups
 

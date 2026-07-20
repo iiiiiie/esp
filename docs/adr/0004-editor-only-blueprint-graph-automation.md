@@ -20,7 +20,9 @@ The external PMK is a build workspace, not a source of record. Its `Binaries`, `
 
 Cross-asset Widget dependencies must remain valid throughout repeated generation. `WBP_ESPPassiveTooltip` establishes its rich-text initialization event before `WBP_ESPPassiveEntry` is generated, and the entry establishes its public initialization event before `WBP_ESPPanel` is generated. A WidgetTree-only intermediate compile is allowed only on first creation, when the generated control properties do not yet exist; later runs preserve the previous public event until the final replacement graph compiles.
 
-Passive-skill descriptions use a project-owned `DT_ESPRichTextStyle` and a dedicated `WBP_ESPPassiveTooltip`. The tooltip recognizes the confirmed Palworld numeric and status tags without depending on game UI assets that are absent from the pinned PMK. An unparented tooltip subtree inside `WBP_ESPPassiveEntry` is not supported because UE 5.1 removes it from the generated Widget properties.
+The rich-text repair command is a tooltip-only scoped generator. It may compile and save `WBP_ESPPassiveTooltip`, but it must not prepare, compile, mark dirty, or save `ModActor`, `WBP_ESPPalEntry`, or `DT_ESPRichTextStyle`. Those startup-path assets change only through the complete generator, where their dependency order is rebuilt as one transaction. A 2026-07-19 scoped build that also recompiled those assets produced a reproducible Login-map startup access violation despite clean Blueprint compilation and Cook output.
+
+Passive-skill descriptions use a dedicated `WBP_ESPPassiveTooltip`. Pal's runtime formatter emits rich-text attributes with pipe delimiters such as `id=|...|`, while UE 5.1's stock rich-text parser accepts quoted attributes. The tooltip therefore normalizes pipe delimiters to quotes immediately before assigning the text, then loads the current game's `/Game/Pal/DataTable/Text/RchTextData/DT_PalRichTextStyle` and six `BP_PalRichText*Decorator` classes. The project-owned `DT_ESPRichTextStyle` remains a load-failure fallback because those game assets are absent from the pinned PMK build workspace. This preserves current-game IDs and style rows without committing a versioned game-data copy. An unparented tooltip subtree inside `WBP_ESPPassiveEntry` is not supported because UE 5.1 removes it from the generated Widget properties.
 
 The generated catalog prefers the current game's localized `SkillDesc` row and substitutes all `{EffectValue1..4}` placeholders. Some standard Pal passives intentionally have neither `OverrideDescMsgID` nor `OverrideSummaryTextId`, while a small set of current localized descriptions contains tags that the pinned PMK cannot faithfully reproduce. For confirmed stable internal IDs, the canonical generator therefore embeds a narrowly-scoped Chinese/English fallback description. A fallback overrides the live description only for its exact internal ID; every other passive continues to use current game localization. The fallback list is source-controlled and must be revalidated when the pinned Palworld data fingerprint changes.
 
@@ -69,11 +71,12 @@ Positive:
 Negative:
 - The experimental PMK editor target must be rebuilt once after adding the plugin.
 - Generated assets should be regenerated when the graph contract changes.
+- Renaming or removing the runtime game style table or decorator paths degrades the tooltip to the project-owned fallback and requires a compatibility update.
 - The exact-ID fallback list and Rank grouping rules require review after game data updates.
 - The sync step must verify the external PMK destination before replacing the build-workspace copy.
 
 ## Follow-ups
 
 - [x] Validate the generated bridge events in a Steam single-player smoke test.
-- [x] Keep the editor-only plugin out of the final LogicMod package; the rich-text/search pak contains exactly sixteen asset files and no DLL.
-- [x] Regenerate and cook `WBP_ESPPanel`, `WBP_ESPPassiveEntry`, `WBP_ESPPassiveTooltip`, and `DT_ESPRichTextStyle`; retain eight canonical source assets in `LogicMod/Content`.
+- [x] Keep the editor-only plugin out of the final LogicMod package; the current rich-text/catalog pak contains exactly eighteen asset files and no DLL.
+- [x] Regenerate and cook `WBP_ESPPanel`, `WBP_ESPPassiveEntry`, `WBP_ESPPassiveTooltip`, `WBP_ESPPalEntry`, and `DT_ESPRichTextStyle`; retain nine canonical source assets in `LogicMod/Content`.

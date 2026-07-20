@@ -1,3 +1,4 @@
 node_modules/
 npm-debug.log*
 /PalworldResourceESP/Scripts/user-settings.log
+.playwright-cli/

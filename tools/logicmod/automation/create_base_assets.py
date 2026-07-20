@@ -82,5 +82,12 @@ create_blueprint(
     unreal.WidgetBlueprintFactory,
     unreal.UserWidget,
 )
+create_blueprint(
+    asset_tools,
+    "WBP_ESPPalEntry",
+    unreal.WidgetBlueprint,
+    unreal.WidgetBlueprintFactory,
+    unreal.UserWidget,
+)
 
 unreal.log("[ESP_ASSET_CREATE] complete")

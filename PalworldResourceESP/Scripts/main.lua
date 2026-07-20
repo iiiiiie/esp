@@ -10,6 +10,7 @@ local MOD_NAME = "PalworldResourceESP"
 local BRIDGE_READY_EVENT = "PalworldResourceESP_LuaBridgeReady"
 local BRIDGE_METHOD_RESET_SESSION = "PalworldResourceESP_ResetSession"
 local BRIDGE_METHOD_SET_TARGET = "PalworldResourceESP_SetTarget"
+local BRIDGE_METHOD_REMOVE_TARGET = "PalworldResourceESP_RemoveTarget"
 local BRIDGE_METHOD_CLEAR_TARGET = "PalworldResourceESP_ClearTarget"
 local BRIDGE_METHOD_TOGGLE_PANEL = "PalworldResourceESP_TogglePanel"
 local BRIDGE_METHOD_SET_DISPLAY_STYLE = "PalworldResourceESP_SetDisplayStyle"
@@ -124,6 +125,7 @@ local state = {
     event_queue_head = 1,
     event_queue_scheduled = false,
     event_queue_overflow_logged = false,
+    event_queue_keys = {},
     lifecycle_hooks_registered = false,
     load_map_hooks_registered = false,
     bridge_event_registered = false,
@@ -135,8 +137,11 @@ local state = {
     bridge_target_actor = nil,
     bridge_target_session = nil,
     bridge_target_count = 0,
+    bridge_target_keys = {},
+    bridge_target_order = {},
     bridge_gender_logged = false,
     bridge_gender_pending_reason = nil,
+    rich_text_audit_consumed_bytes = 0,
     draw_hook_registered = false,
     reconcile_started = false,
     reconcile_handle = nil,
@@ -168,6 +173,9 @@ local state = {
     lucky_filter_id = 0,
     boss_filter_id = 0,
     collection_filter_id = 0,
+    species_filter_text = "",
+    panel_main_page = 0,
+    panel_filter_page = 0,
     element_filter_mask = 0,
     language_id = 0,
     settings_path = nil,
@@ -362,6 +370,9 @@ local SETTINGS_PROPERTIES = {
     { name = "lucky", property = "ESP_LuckyFilterId" },
     { name = "boss", property = "ESP_BossFilterId" },
     { name = "collection", property = "ESP_CollectionFilterId" },
+    { name = "species_filters", property = "ESP_SpeciesFilterText" },
+    { name = "panel_main_page", property = "ESP_PanelMainPage" },
+    { name = "panel_filter_page", property = "ESP_PanelFilterPage" },
     { name = "element_normal", property = "ESP_ElementNormal" },
     { name = "element_fire", property = "ESP_ElementFire" },
     { name = "element_water", property = "ESP_ElementWater" },
@@ -493,7 +504,7 @@ local function schedule_user_settings_save(values)
     end
     local normalized = user_settings.normalize(values)
     state.settings_loaded = normalized
-    state.settings_loaded_version = "v10"
+    state.settings_loaded_version = "v12"
     local serialized = user_settings.serialize(normalized)
     if serialized == state.settings_last_serialized then
         state.settings_pending = nil
@@ -530,7 +541,7 @@ local function flush_user_settings_if_due()
     state.settings_pending = nil
     state.settings_save_due_at = nil
     state.settings_save_error_logged = false
-    debug_event("USER_SETTINGS_SAVED", "version=v10")
+    debug_event("USER_SETTINGS_SAVED", "version=v12")
 end
 
 local function safe_call_no_args(object, method_name)
@@ -930,6 +941,14 @@ local function classify_actor(actor, player_gate_already_passed)
     return "wild", component, parameter, save_parameter
 end
 
+local function actor_key(actor)
+    local ok, full_name = safe_call_no_args(actor, "GetFullName")
+    if ok and type(full_name) == "string" and full_name ~= "" then
+        return full_name
+    end
+    return nil
+end
+
 local function runtime_enabled()
     return config.ENABLED and state.runtime_profile.runtime_enabled
 end
@@ -940,6 +959,7 @@ local function clear_event_queue(reason)
     state.event_queue_head = 1
     state.event_queue_scheduled = false
     state.event_queue_overflow_logged = false
+    state.event_queue_keys = {}
     if pending > 0 then
         debug_event("EVENT_QUEUE_CLEARED", string.format("reason=%s pending=%d", reason, pending))
     end
@@ -1363,12 +1383,15 @@ end
 
 local function add_entity_candidate(actor, source, generation, context)
     if state.world_transitioning or not state.gameplay_active then
-        return false
+        return false, state.world_transitioning and "world_transitioning" or "gameplay_inactive"
     end
 
     actor = unwrap(actor)
-    if not runtime_enabled() or not is_valid(actor) then
-        return false
+    if not runtime_enabled() then
+        return false, "runtime_inactive"
+    end
+    if not is_valid(actor) then
+        return false, "actor_invalid"
     end
 
     if #generation.records >= config.MAX_ADMITTED_ENTITIES then
@@ -1381,7 +1404,7 @@ local function add_entity_candidate(actor, source, generation, context)
                 config.MAX_ADMITTED_ENTITIES
             ))
         end
-        return false
+        return false, "admission_budget"
     end
 
     context = context or {}
@@ -1389,13 +1412,14 @@ local function add_entity_candidate(actor, source, generation, context)
     context.accepted_at = now()
     local normalized, rejection = state.entity_registry:admit(entity_runtime, actor, context)
     if normalized == nil then
-        record_rejection(rejection and rejection.reason or "adapter_rejected")
-        return false
+        local rejection_reason = rejection and rejection.reason or "adapter_rejected"
+        record_rejection(rejection_reason)
+        return false, rejection_reason
     end
 
     local added, record = entity_snapshot.add(generation, normalized)
     if not added then
-        return false
+        return false, "duplicate"
     end
 
     state.metrics.accepted = state.metrics.accepted + 1
@@ -1425,7 +1449,7 @@ local function add_entity_candidate(actor, source, generation, context)
             record.ordinal
         ))
     end
-    return true
+    return true, nil
 end
 
 local function select_target()
@@ -1703,10 +1727,15 @@ end
 
 local sync_bridge_target
 
+local admit_begin_play_target
+
+local remove_bridge_target
+
 local process_reconcile_batch
 
 local process_event_queue
 
+--[[ __DEPRECATED_20260720__ [reason: delayed callbacks must not retain UObject wrappers]
 local function event_queue_has_pending()
     return state.event_queue_head <= #state.event_queue
 end
@@ -1786,6 +1815,219 @@ process_event_queue = function(profile_generation)
         return
     end
     schedule_event_queue_process()
+end
+]]
+
+local RETRYABLE_EVENT_REJECTIONS = {
+    actor_not_resolved = true,
+    bridge_unavailable = true,
+    gameplay_inactive = true,
+    world_transitioning = true,
+    parameter_component_unavailable = true,
+    individual_parameter_unavailable = true,
+    save_parameter_unavailable = true,
+    owner_uid_unavailable = true,
+    trainer_unavailable = true,
+}
+
+local function event_rejection_is_retryable(reason)
+    return RETRYABLE_EVENT_REJECTIONS[reason] == true
+end
+
+local function event_queue_has_pending()
+    return state.event_queue_head <= #state.event_queue
+end
+
+local function event_queue_pending_count()
+    return math.max(0, #state.event_queue - state.event_queue_head + 1)
+end
+
+local function actor_lookup_identity(actor)
+    local key = actor_key(actor)
+    if key == nil then
+        return nil, nil
+    end
+    local object_path = key:match("^%S+%s+(.+)$")
+    if object_path == nil or object_path == "" then
+        return nil, nil
+    end
+    return key, object_path
+end
+
+local function remember_bridge_target(actor, key)
+    local _, object_path = actor_lookup_identity(actor)
+    state.bridge_target_keys[key] = object_path or true
+    state.bridge_target_order[#state.bridge_target_order + 1] = key
+end
+
+local function forget_bridge_target(key)
+    state.bridge_target_keys[key] = nil
+    for index, ordered_key in ipairs(state.bridge_target_order) do
+        if ordered_key == key then
+            table.remove(state.bridge_target_order, index)
+            break
+        end
+    end
+end
+
+local function resolve_event_actor(object_path)
+    if type(StaticFindObject) ~= "function" or type(object_path) ~= "string" then
+        return nil
+    end
+    local ok, actor = pcall(StaticFindObject, object_path)
+    actor = ok and unwrap(actor) or nil
+    if is_valid(actor) then
+        return actor
+    end
+    return nil
+end
+
+local function schedule_event_queue_process(delay_ms)
+    if state.event_queue_scheduled or not event_queue_has_pending() then
+        return
+    end
+    if type(ExecuteInGameThreadWithDelay) ~= "function" then
+        log_event("EVENT_QUEUE_UNAVAILABLE", "api=ExecuteInGameThreadWithDelay")
+        return
+    end
+
+    local delay = math.max(
+        config.EVENT_QUEUE_DELAY_MS,
+        math.floor(tonumber(delay_ms) or config.EVENT_QUEUE_DELAY_MS)
+    )
+    state.event_queue_scheduled = true
+    local profile_generation = state.profile_generation
+    local ok, err = pcall(function()
+        ExecuteInGameThreadWithDelay(delay, function()
+            process_event_queue(profile_generation)
+        end)
+    end)
+    if not ok then
+        state.event_queue_scheduled = false
+        log_event("EVENT_QUEUE_SCHEDULE_FAILED", tostring(err))
+    end
+end
+
+local function enqueue_event_retry(actor, rejection_reason)
+    actor = unwrap(actor)
+    if not is_valid(actor) or not event_rejection_is_retryable(rejection_reason) then
+        return false
+    end
+
+    local key, object_path = actor_lookup_identity(actor)
+    if key == nil or state.bridge_target_keys[key] or state.event_queue_keys[key] then
+        return false
+    end
+    if event_queue_pending_count() >= config.MAX_EVENT_QUEUE then
+        state.metrics.event_queue_overflow = state.metrics.event_queue_overflow + 1
+        if not state.event_queue_overflow_logged then
+            state.event_queue_overflow_logged = true
+            log_event("EVENT_QUEUE_OVERFLOW", string.format("limit=%d", config.MAX_EVENT_QUEUE))
+        end
+        return false
+    end
+
+    local queue_was_empty = not event_queue_has_pending()
+    state.event_queue[#state.event_queue + 1] = {
+        key = key,
+        object_path = object_path,
+        attempts = 0,
+        lifecycle_generation = state.lifecycle_generation,
+    }
+    state.event_queue_keys[key] = true
+    state.metrics.notifications_deferred = state.metrics.notifications_deferred + 1
+    if queue_was_empty then
+        log_event("EVENT_READINESS_QUEUE_STARTED", string.format(
+            "reason=%s retry_delay_ms=%d max_attempts=%d",
+            rejection_reason,
+            config.EVENT_READINESS_RETRY_DELAY_MS,
+            config.MAX_EVENT_READINESS_ATTEMPTS
+        ))
+    end
+    schedule_event_queue_process(config.EVENT_READINESS_RETRY_DELAY_MS)
+    return true
+end
+
+local function finish_event_queue_entry(entry)
+    if entry ~= nil and entry.key ~= nil then
+        state.event_queue_keys[entry.key] = nil
+    end
+end
+
+process_event_queue = function(profile_generation)
+    state.event_queue_scheduled = false
+    if profile_generation ~= state.profile_generation
+        or not runtime_enabled()
+        or not state.runtime_profile.event_admission then
+        clear_event_queue("stale_event_callback")
+        return
+    end
+    if not event_queue_has_pending() then
+        clear_event_queue("event_queue_empty")
+        return
+    end
+    if state.world_transitioning or not state.gameplay_active then
+        schedule_event_queue_process(config.EVENT_READINESS_RETRY_DELAY_MS)
+        return
+    end
+    if state.reconcile_job ~= nil then
+        schedule_event_queue_process(config.EVENT_QUEUE_DELAY_MS)
+        return
+    end
+
+    local entry = state.event_queue[state.event_queue_head]
+    state.event_queue_head = state.event_queue_head + 1
+    if entry == nil or entry.key == nil or not state.event_queue_keys[entry.key]
+        or entry.lifecycle_generation ~= state.lifecycle_generation then
+        finish_event_queue_entry(entry)
+    else
+        local started_at = os.clock()
+        local actor = resolve_event_actor(entry.object_path)
+        local added = false
+        local rejection_reason = "actor_not_resolved"
+        local ok, err = true, nil
+        if actor ~= nil then
+            ok, added, rejection_reason = pcall(function()
+                return admit_begin_play_target(actor, "begin_play_retry")
+            end)
+        end
+        local elapsed = os.clock() - started_at
+        state.metrics.event_callback_max_seconds = math.max(
+            state.metrics.event_callback_max_seconds,
+            elapsed
+        )
+
+        if ok and added then
+            finish_event_queue_entry(entry)
+        elseif ok and event_rejection_is_retryable(rejection_reason)
+            and entry.attempts + 1 < config.MAX_EVENT_READINESS_ATTEMPTS then
+            entry.attempts = entry.attempts + 1
+            state.event_queue[#state.event_queue + 1] = entry
+        else
+            finish_event_queue_entry(entry)
+            state.metrics.event_queue_rejected = state.metrics.event_queue_rejected + 1
+            if not ok then
+                log_event("ERROR_EVENT_CANDIDATE", tostring(err))
+            else
+                debug_event("EVENT_TARGET_DROPPED", string.format(
+                    "reason=%s attempts=%d",
+                    rejection_reason or "rejected",
+                    entry.attempts + 1
+                ))
+            end
+        end
+    end
+
+    if not event_queue_has_pending() then
+        state.event_queue = {}
+        state.event_queue_head = 1
+        return
+    end
+    local next_delay = config.EVENT_QUEUE_DELAY_MS
+    if event_queue_pending_count() == 1 then
+        next_delay = config.EVENT_READINESS_RETRY_DELAY_MS
+    end
+    schedule_event_queue_process(next_delay)
 end
 
 local function abandon_reconcile_job(job, reason)
@@ -2081,8 +2323,12 @@ local function clear_bridge_cache(reason)
     state.bridge_target_actor = nil
     state.bridge_target_session = nil
     state.bridge_target_count = 0
+    state.bridge_target_keys = {}
+    state.bridge_target_order = {}
+    state.bridge_target_order = {}
     state.bridge_gender_logged = false
     state.bridge_gender_pending_reason = nil
+    state.rich_text_audit_consumed_bytes = 0
     state.settings_bridge_applied = false
     state.control_revision = -1
     state.control_pending_logged = false
@@ -2108,6 +2354,24 @@ local function register_blueprint_bridge_discovery()
                 return
             end
 
+            if is_a(actor, resolve_class("monster")) then
+                local event_ok, added, rejection_reason = pcall(function()
+                    return admit_begin_play_target(actor, "begin_play")
+                end)
+                if not event_ok then
+                    state.metrics.event_queue_rejected = state.metrics.event_queue_rejected + 1
+                    log_event("ERROR_BEGIN_PLAY_ADMISSION", tostring(added))
+                elseif not added then
+                    local deferred = enqueue_event_retry(actor, rejection_reason)
+                    local key = actor_key(actor)
+                    local already_pending = key ~= nil and state.event_queue_keys[key] == true
+                    local already_displayed = key ~= nil and state.bridge_target_keys[key] ~= nil
+                    if not deferred and not already_pending and not already_displayed then
+                        state.metrics.event_queue_rejected = state.metrics.event_queue_rejected + 1
+                    end
+                end
+            end
+
             local class_ok, class_full_name = pcall(function()
                 return actor:GetClass():GetFullName()
             end)
@@ -2121,8 +2385,11 @@ local function register_blueprint_bridge_discovery()
             state.bridge_target_actor = nil
             state.bridge_target_session = nil
             state.bridge_target_count = 0
+            state.bridge_target_keys = {}
+            state.bridge_target_order = {}
             state.bridge_gender_logged = false
             state.bridge_gender_pending_reason = nil
+            state.rich_text_audit_consumed_bytes = 0
             state.settings_bridge_applied = false
             state.control_revision = -1
             state.control_pending_logged = false
@@ -2157,6 +2424,34 @@ local function call_bridge(method_name, ...)
         return false
     end
 
+    return true
+end
+
+local function evict_oldest_bridge_target()
+    while #state.bridge_target_order > 0 do
+        local key = table.remove(state.bridge_target_order, 1)
+        local object_path = state.bridge_target_keys[key]
+        if object_path ~= nil then
+            local actor = type(object_path) == "string" and resolve_event_actor(object_path) or nil
+            if actor ~= nil
+                and not call_bridge(BRIDGE_METHOD_REMOVE_TARGET, actor, state.session_index) then
+                table.insert(state.bridge_target_order, 1, key)
+                return false
+            end
+            state.bridge_target_keys[key] = nil
+            state.bridge_target_count = math.max(0, state.bridge_target_count - 1)
+            log_event("EVENT_TARGET_EVICTED", string.format(
+                "session=%d active=%d reason=display_window_rollover resolved=%s",
+                state.session_index,
+                state.bridge_target_count,
+                tostring(actor ~= nil)
+            ))
+            return true
+        end
+    end
+    state.bridge_target_count = 0
+    state.bridge_target_keys = {}
+    state.bridge_target_order = {}
     return true
 end
 
@@ -2262,6 +2557,8 @@ sync_bridge_target = function()
         end
         state.bridge_session_sent = session_index
         state.bridge_target_count = 0
+        state.bridge_target_keys = {}
+        state.bridge_target_order = {}
         debug_event("BRIDGE_SESSION", string.format("session=%d", session_index))
     end
 
@@ -2278,6 +2575,9 @@ sync_bridge_target = function()
         state.metrics.bridge_sync_seconds = state.metrics.bridge_sync_seconds + (os.clock() - started_at)
         return
     end
+    state.bridge_target_count = 0
+    state.bridge_target_keys = {}
+    state.bridge_target_order = {}
 
     local display_limit = math.max(0, tonumber(config.MAX_DISPLAY_TARGETS) or 0)
     local submitted = 0
@@ -2307,6 +2607,10 @@ sync_bridge_target = function()
                 state.metrics.bridge_sync_seconds = state.metrics.bridge_sync_seconds + (os.clock() - started_at)
                 return
             end
+            local key = actor_key(record.actor)
+            if key ~= nil then
+                remember_bridge_target(record.actor, key)
+            end
             submitted = submitted + 1
             state.metrics.bridge_set_calls = state.metrics.bridge_set_calls + 1
         end
@@ -2324,6 +2628,126 @@ sync_bridge_target = function()
         state.candidate_count,
         display_limit
     ))
+end
+
+local function ensure_bridge_session()
+    if not config.BLUEPRINT_BRIDGE_ENABLED or not is_valid(state.bridge_actor) then
+        return false
+    end
+    if state.bridge_session_sent == state.session_index then
+        return true
+    end
+    if not call_bridge(BRIDGE_METHOD_RESET_SESSION, state.session_index) then
+        return false
+    end
+    state.bridge_session_sent = state.session_index
+    state.bridge_target_count = 0
+    state.bridge_target_keys = {}
+    state.bridge_target_order = {}
+    debug_event("BRIDGE_SESSION", string.format("session=%d", state.session_index))
+    return true
+end
+
+admit_begin_play_target = function(actor, source)
+    actor = unwrap(actor)
+    if not is_valid(actor) then
+        return false, "actor_invalid"
+    end
+    if not is_a(actor, resolve_class("monster")) then
+        return false, "not_monster"
+    end
+    if not runtime_enabled() or not state.runtime_profile.event_admission then
+        return false, "runtime_inactive"
+    end
+    if state.world_transitioning then
+        return false, "world_transitioning"
+    end
+    if not state.gameplay_active then
+        return false, "gameplay_inactive"
+    end
+
+    local key = actor_key(actor)
+    if key == nil or state.bridge_target_keys[key] then
+        return false, "duplicate"
+    end
+    local display_limit = math.max(0, tonumber(config.MAX_DISPLAY_TARGETS) or 0)
+    if not ensure_bridge_session() then
+        return false, "bridge_unavailable"
+    end
+
+    source = source or "begin_play"
+    local started_at = os.clock()
+    local generation = entity_snapshot.begin_generation(state.entity_store, source, now())
+    local added, rejection_reason = add_entity_candidate(actor, source, generation, {
+        source = source,
+        camera_location = get_camera_location(find_player_controller()),
+    })
+    if not added then
+        return false, rejection_reason
+    end
+    local matched = added and filter_engine.filter(generation.records, config.ACTIVE_FILTERS) or {}
+    local record = matched[1]
+    if record == nil then
+        return false, "filter_rejected"
+    end
+    if display_limit < 1 then
+        return false, "display_budget_full"
+    end
+    if state.bridge_target_count >= display_limit and not evict_oldest_bridge_target() then
+        return false, "display_budget_full"
+    end
+
+    local level = display_snapshot_integer(record, "level")
+    local distance = display_snapshot_integer(record, "distance_m")
+    if not call_bridge(BRIDGE_METHOD_SET_TARGET, actor, state.session_index, level, distance) then
+        return false, "bridge_unavailable"
+    end
+
+    remember_bridge_target(actor, key)
+    state.bridge_target_count = state.bridge_target_count + 1
+    state.metrics.event_queue_admitted = state.metrics.event_queue_admitted + 1
+    state.metrics.bridge_set_calls = state.metrics.bridge_set_calls + 1
+    local elapsed = os.clock() - started_at
+    state.metrics.event_callback_max_seconds = math.max(state.metrics.event_callback_max_seconds, elapsed)
+    log_event("EVENT_TARGET_ADDED", string.format(
+        "session=%d active=%d elapsed_ms=%.3f source=%s",
+        state.session_index,
+        state.bridge_target_count,
+        elapsed * 1000.0,
+        source
+    ))
+    return true, nil
+end
+
+remove_bridge_target = function(actor, reason)
+    actor = unwrap(actor)
+    local key = actor_key(actor)
+    local pending_cancelled = key ~= nil and state.event_queue_keys[key] == true
+    if pending_cancelled then
+        state.event_queue_keys[key] = nil
+        debug_event("EVENT_TARGET_RETRY_CANCELLED", string.format(
+            "reason=%s",
+            reason or "lifecycle"
+        ))
+    end
+    if not is_valid(actor) then
+        return pending_cancelled
+    end
+    if key == nil or not state.bridge_target_keys[key] then
+        return pending_cancelled
+    end
+    if not call_bridge(BRIDGE_METHOD_REMOVE_TARGET, actor, state.session_index) then
+        return false
+    end
+    forget_bridge_target(key)
+    state.bridge_target_count = math.max(0, state.bridge_target_count - 1)
+    log_event("EVENT_TARGET_REMOVED", string.format(
+        "session=%d active=%d reason=%s",
+        state.session_index,
+        state.bridge_target_count,
+        reason or "lifecycle"
+    ))
+    return true
 end
 
 local function emit_capture_mode_marker(reason)
@@ -2457,6 +2881,32 @@ local function read_panel_string(property_name)
         return nil
     end
     return result
+end
+
+local function drain_rich_text_audit()
+    if not is_valid(state.bridge_actor) then
+        return
+    end
+    local buffer = read_panel_string("ESP_RichTextAuditBuffer")
+    if buffer == nil then
+        return
+    end
+
+    local consumed = state.rich_text_audit_consumed_bytes or 0
+    if #buffer < consumed then
+        consumed = 0
+    end
+    if #buffer <= consumed then
+        return
+    end
+
+    local delta = buffer:sub(consumed + 1)
+    state.rich_text_audit_consumed_bytes = #buffer
+    for line in delta:gmatch("[^\r\n]+") do
+        if line ~= "" then
+            log_event("RICH_TEXT_AUDIT", line)
+        end
+    end
 end
 
 local function normalize_panel_filter_bound(value, minimum, maximum)
@@ -2607,18 +3057,24 @@ local function apply_display_styles(
     raw_lucky_filter_id,
     raw_boss_filter_id,
     raw_collection_filter_id,
-    raw_element_filter_mask
+    raw_species_filter_text,
+    raw_element_filter_mask,
+    raw_language_id
 )
     local gender_filter_id = normalize_gender_filter_id(raw_gender_filter_id)
     local lucky_filter_id = normalize_lucky_filter_id(raw_lucky_filter_id)
     local boss_filter_id = normalize_boss_filter_id(raw_boss_filter_id)
     local collection_filter_id = normalize_collection_filter_id(raw_collection_filter_id)
+    local species_filter_text = user_settings.normalize({
+        species_filters = raw_species_filter_text,
+    }).species_filters
     local iv_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_min) or 0)))
     local iv_hp_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_hp_min) or iv_min)))
     local iv_attack_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_attack_min) or iv_min)))
     local iv_defense_min = math.max(0, math.min(100, math.floor(tonumber(raw_iv_defense_min) or iv_min)))
     local passive_filter_revision = math.max(0, math.floor(tonumber(raw_passive_filter_revision) or 0))
     local element_filter_mask = math.max(0, math.min(511, math.floor(tonumber(raw_element_filter_mask) or 0)))
+    local language_id = math.max(0, math.min(1, math.floor(tonumber(raw_language_id) or 0)))
     if show_top_guide_line == state.show_top_guide_line
         and show_name == state.show_name
         and show_level == state.show_level
@@ -2634,7 +3090,9 @@ local function apply_display_styles(
         and lucky_filter_id == state.lucky_filter_id
         and boss_filter_id == state.boss_filter_id
         and collection_filter_id == state.collection_filter_id
-        and element_filter_mask == state.element_filter_mask then
+        and species_filter_text == state.species_filter_text
+        and element_filter_mask == state.element_filter_mask
+        and language_id == state.language_id then
         return false
     end
     state.show_top_guide_line = show_top_guide_line
@@ -2652,7 +3110,9 @@ local function apply_display_styles(
     state.lucky_filter_id = lucky_filter_id
     state.boss_filter_id = boss_filter_id
     state.collection_filter_id = collection_filter_id
+    state.species_filter_text = species_filter_text
     state.element_filter_mask = element_filter_mask
+    state.language_id = language_id
     if not safe_set_property(state.bridge_actor, "ESP_ElementFilterMask", element_filter_mask) then
         log_event("ELEMENT_FILTER_BRIDGE_FAILED", string.format("mask=%d", element_filter_mask))
     end
@@ -2673,14 +3133,16 @@ local function apply_display_styles(
         lucky_filter_id,
         boss_filter_id,
         collection_filter_id,
-        element_filter_mask
+        species_filter_text,
+        element_filter_mask,
+        language_id
     )
     local gender_filter_names = { [0] = "all", [1] = "male", [2] = "female" }
     local lucky_filter_names = { [0] = "all", [1] = "only_lucky", [2] = "exclude_lucky" }
     local boss_filter_names = { [0] = "all", [1] = "only_boss", [2] = "exclude_boss" }
     local collection_filter_names = { [0] = "all", [1] = "incomplete", [2] = "complete" }
     log_event("DISPLAY_STYLE", string.format(
-        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s show_iv=%s show_passives=%s iv_hp_min=%d iv_attack_min=%d iv_defense_min=%d passive_filter_revision=%d gender_filter=%s lucky_filter=%s boss_filter=%s collection_filter=%s element_filter_mask=%d",
+        "top_guide_line=%s show_name=%s show_level=%s show_distance=%s show_iv=%s show_passives=%s iv_hp_min=%d iv_attack_min=%d iv_defense_min=%d passive_filter_revision=%d gender_filter=%s lucky_filter=%s boss_filter=%s collection_filter=%s species_filter_count=%d element_filter_mask=%d",
         tostring(show_top_guide_line),
         tostring(show_name),
         tostring(show_level),
@@ -2695,6 +3157,9 @@ local function apply_display_styles(
         lucky_filter_names[lucky_filter_id],
         boss_filter_names[boss_filter_id],
         collection_filter_names[collection_filter_id],
+        select(2, species_filter_text:gsub("|", "")) > 0
+            and math.max(0, select(2, species_filter_text:gsub("|", "")) - 1)
+            or 0,
         element_filter_mask
     ))
     return true
@@ -2769,6 +3234,7 @@ local function poll_panel_controls()
     local lucky_filter_id = read_panel_number("ESP_LuckyFilterId")
     local boss_filter_id = read_panel_number("ESP_BossFilterId")
     local collection_filter_id = read_panel_number("ESP_CollectionFilterId")
+    local species_filter_text = read_panel_string("ESP_SpeciesFilterText")
     local element_normal = read_panel_boolean("ESP_ElementNormal")
     local element_fire = read_panel_boolean("ESP_ElementFire")
     local element_water = read_panel_boolean("ESP_ElementWater")
@@ -2780,6 +3246,8 @@ local function poll_panel_controls()
     local element_dragon = read_panel_boolean("ESP_ElementDragon")
     local language_id = read_panel_number("ESP_LanguageId")
     local display_target_limit = read_panel_number("ESP_DisplayTargetLimit")
+    local panel_main_page = read_panel_number("ESP_PanelMainPage")
+    local panel_filter_page = read_panel_number("ESP_PanelFilterPage")
     if master_enabled == nil or profile_id == nil or preset_id == nil or capture_requested == nil
         -- __DEPRECATED_20260717__ [reason: minimum distance is no longer required]
         -- or level_min == nil or level_max == nil or distance_min == nil or distance_max == nil
@@ -2792,11 +3260,12 @@ local function poll_panel_controls()
         or expand_normal == nil or expand_negative1 == nil or expand_negative2 == nil or expand_negative3 == nil
         or passive_filter_revision == nil
         or gender_filter_id == nil or lucky_filter_id == nil or boss_filter_id == nil
-        or collection_filter_id == nil
+        or collection_filter_id == nil or species_filter_text == nil
         or element_normal == nil or element_fire == nil or element_water == nil or element_leaf == nil
         or element_electricity == nil or element_ice == nil or element_earth == nil
         or element_dark == nil or element_dragon == nil
-        or language_id == nil or display_target_limit == nil then
+        or language_id == nil or display_target_limit == nil
+        or panel_main_page == nil or panel_filter_page == nil then
         if not state.control_pending_logged then
             state.control_pending_logged = true
             debug_event("PANEL_CONTROL_PENDING", "reason=property_unavailable")
@@ -2805,6 +3274,8 @@ local function poll_panel_controls()
     end
 
     state.control_pending_logged = false
+    panel_main_page = math.max(0, math.min(1, math.floor(panel_main_page)))
+    panel_filter_page = math.max(0, math.min(1, math.floor(panel_filter_page)))
     apply_runtime_profile(master_enabled, profile_id, preset_id, "panel_revision")
     -- __DEPRECATED_20260717__ [reason: minimum distance is no longer applied]
     -- local filters_changed = apply_panel_filters(level_min, level_max, distance_min, distance_max)
@@ -2829,7 +3300,9 @@ local function poll_panel_controls()
         lucky_filter_id,
         boss_filter_id,
         collection_filter_id,
-        element_filter_mask
+        species_filter_text,
+        element_filter_mask,
+        language_id
     )
     local limit_changed = apply_display_target_limit(display_target_limit)
     if runtime_enabled() and state.gameplay_active and (filters_changed or limit_changed) then
@@ -2837,7 +3310,6 @@ local function poll_panel_controls()
         start_safe_reconcile("panel_query_change")
     end
     set_capture_active(capture_requested, "panel_revision")
-    state.language_id = math.max(0, math.min(1, math.floor(language_id)))
     schedule_user_settings_save({
         runtime_enabled = master_enabled,
         profile_id = profile_id,
@@ -2871,6 +3343,9 @@ local function poll_panel_controls()
         lucky = lucky_filter_id,
         boss = boss_filter_id,
         collection = collection_filter_id,
+        species_filters = species_filter_text,
+        panel_main_page = panel_main_page,
+        panel_filter_page = panel_filter_page,
         element_normal = element_normal,
         element_fire = element_fire,
         element_water = element_water,
@@ -2931,13 +3406,17 @@ local function runtime_tick()
     end
 
     poll_panel_controls()
+    -- __DEPRECATED_20260719__ [reason: the complete 300-species audit established the finite runtime tag contract]
+    -- drain_rich_text_audit()
     flush_user_settings_if_due()
 
+    --[[ __DEPRECATED_20260720__ [reason: BeginPlay admission replaced notification-triggered full snapshots]
     if state.runtime_profile.event_admission and state.notification_dirty
         and state.gameplay_active and state.reconcile_job == nil then
         state.notification_dirty = false
         start_safe_reconcile("notify_integrity")
     end
+    ]]
     if not runtime_enabled() or state.world_transitioning then
         emit_metrics(false)
         return
@@ -3052,8 +3531,11 @@ local function register_blueprint_bridge()
                 state.bridge_target_actor = nil
                 state.bridge_target_session = nil
                 state.bridge_target_count = 0
+                state.bridge_target_keys = {}
+                state.bridge_target_order = {}
                 state.bridge_gender_logged = false
                 state.bridge_gender_pending_reason = nil
+                state.rich_text_audit_consumed_bytes = 0
                 state.settings_bridge_applied = false
                 state.control_revision = -1
                 state.control_pending_logged = false
@@ -3078,6 +3560,8 @@ local function reset_session(reason)
     state.bridge_target_actor = nil
     state.bridge_target_session = nil
     state.bridge_target_count = 0
+    state.bridge_target_keys = {}
+    state.bridge_target_order = {}
     state.bridge_gender_logged = false
     state.bridge_gender_pending_reason = nil
     state.draw_failure_logged = false
@@ -3205,6 +3689,15 @@ local function register_lifecycle_hooks()
     register_hook_safely("/Script/Engine.PlayerController:ClientRestart", function()
         schedule_bootstrap("client_restart")
     end)
+    register_hook_safely("/Script/Engine.Actor:ReceiveEndPlay", function(context_parameter)
+        remove_bridge_target(unwrap(context_parameter), "end_play")
+    end)
+    register_hook_safely("/Script/Pal.PalCharacter:OnDeadCharacter", function(context_parameter)
+        remove_bridge_target(unwrap(context_parameter), "dead")
+    end)
+    register_hook_safely("/Script/Pal.PalUtility:PalCaptureSuccess", function(_, _, monster_parameter)
+        remove_bridge_target(unwrap(monster_parameter), "captured")
+    end)
 end
 
 local function register_load_map_hooks()
@@ -3268,11 +3761,16 @@ local function register_monster_notification()
     end
 
     local ok, err = pcall(function()
-        NotifyOnNewObject("/Script/Pal.PalMonsterCharacter", function(constructed_object)
+        NotifyOnNewObject("/Script/Pal.PalMonsterCharacter", function(_constructed_object)
             state.metrics.notification_count = state.metrics.notification_count + 1
             if state.world_transitioning or not state.gameplay_active or not runtime_enabled() then
                 return
             end
+            if not state.notification_deferred_logged then
+                state.notification_deferred_logged = true
+                log_event("NOTIFY_OBSERVED", "mode=begin_play_post")
+            end
+            --[[ __DEPRECATED_20260720__ [reason: construction notifications no longer request a full snapshot]
             state.notification_dirty = true
             state.metrics.notifications_deferred = state.metrics.notifications_deferred + 1
             if state.runtime_profile.event_admission then
@@ -3289,6 +3787,7 @@ local function register_monster_notification()
                 state.notification_deferred_logged = true
                 log_event("NOTIFY_DEFERRED", "mode=next_reconcile")
             end
+            ]]
             --[[ __DEPRECATED_20260716__ [reason: construction-time classification caused load-time GameThread stalls]
             state.metrics.raw_monsters = state.metrics.raw_monsters + 1
             local actor = unwrap(constructed_object)
