@@ -15,6 +15,10 @@
 - 多人服务器：社区测试状态，不保证兼容性
 - 运行方式：纯客户端 UE4SS Lua + LogicMod Pak，不需要服务端组件
 
+## 下载
+
+普通玩家请从 [GitHub Releases](https://github.com/iiiiiie/esp/releases) 下载标有 Steam PC 的完整安装 ZIP。源码仓库按项目 ADR 只保存 Lua、项目自有 Blueprint 资产和构建工具，不提交 Cook 生成的 `.pak`；预编译 Pak 只通过 Release、Nexus Mods 或 Steam 创意工坊分发。
+
 ## 已实现功能
 
 ### 游戏内显示
@@ -62,22 +66,25 @@
 ## 安装
 
 1. 安装并配置 `UE4SS_v3.0.1-1009-gc2ac2464`。
-2. 将 `PalworldResourceESP` 文件夹放到：
+2. 关闭游戏，将 Release ZIP 解压到 `Palworld` 游戏根目录；压缩包内的 `Pal` 目录应与游戏现有的 `Pal` 目录合并。
+3. 确认以下文件存在：
 
    ```text
-   Palworld\Pal\Binaries\Win64\ue4ss\Mods\PalworldResourceESP
-   ```
-
-3. 确认目录内存在 `enabled.txt` 和 `Scripts\main.lua`。
-4. 将 `PalworldResourceESP.pak` 放到：
-
-   ```text
+   Palworld\Pal\Binaries\Win64\ue4ss\Mods\PalworldResourceESP\enabled.txt
+   Palworld\Pal\Binaries\Win64\ue4ss\Mods\PalworldResourceESP\Scripts\main.lua
    Palworld\Pal\Content\Paks\LogicMods\PalworldResourceESP.pak
    ```
 
-5. 完整重启游戏。进入存档后附近帕鲁会自动出现引导线，无需手动开关 Mod。
+4. 完整重启游戏。进入存档后附近帕鲁会自动出现引导线，无需手动开关 Mod。
 
-发布压缩包应保持上述相对目录结构。Steam 创意工坊若不能自动安装 UE4SS 依赖，仍需用户先手动安装 UE4SS。
+手动安装或从源码构建时，分别将 `PalworldResourceESP` Lua Mod 文件夹和 Cook 后的 Pak 放到：
+
+```text
+Palworld\Pal\Binaries\Win64\ue4ss\Mods\PalworldResourceESP
+Palworld\Pal\Content\Paks\LogicMods\PalworldResourceESP.pak
+```
+
+Steam 创意工坊若不能自动安装 UE4SS 依赖，仍需用户先手动安装 UE4SS。
 
 ## 卸载
 
@@ -134,5 +141,7 @@ npm test
 ## English Summary
 
 Palworld Resource ESP is a Steam PC client Mod for loaded wild Pals. It never scans or renders real human players. The tested dependency is `UE4SS_v3.0.1-1009-gc2ac2464`; other UE4SS versions, Game Pass PC, and multiplayer servers are not guaranteed.
+
+End users should download the complete Steam PC package from [GitHub Releases](https://github.com/iiiiiie/esp/releases). Cooked `.pak` files are distributed as release assets and are intentionally not committed to the source repository.
 
 This repository is source-available, not OSI open source. Free use, modification, and redistribution are available only under the custom [`LICENSE`](LICENSE), which also defines excluded parties and platform-hosting permissions. The Mod must not be sold or placed behind paid access.
