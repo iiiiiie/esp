@@ -53,6 +53,6 @@ The maintainer completed the required Steam single-player runs. Multiplayer rema
 
 1. `ModActor`, `BP_ESPBridge`, and `WBP_ESPOverlay` were generated through the accepted editor-only automation path.
 2. The project-owned assets were copied back to `LogicMod/Content/Mods/PalworldResourceESP` with dated rollback snapshots.
-3. Cooking completed `407/407` packages with zero errors; the deployed pak contains exactly eight correctly mounted files.
+3. The original Phase 2 package contained eight correctly mounted files. The 2026-07-17 panel checkpoint adds `WBP_ESPPanel`, cooks five source assets into exactly ten mounted files, and still contains no runtime DLL.
 4. The Phase 2 matrix passed, including multi-target guides, Blueprint-local gender normalization, capture/death cleanup, `candidate_player_count=0`, return to Title, and normal exit.
 5. The remaining toolchain caveat is that UE 5.1 UBT selected MSVC 14.39 even though the pinned 14.38 family is installed.

@@ -333,7 +333,7 @@ No production Widget asset, C++ module, package manifest, public README rewrite,
 
 - Player ESP, player diagnostics containing identity/location, or a setting that can enable either.
 - The production entity registry, filter engine, presets, or configuration persistence.
-- The final `Shift+E` panel, localization resources, or LogicMod Widget.
+- The final `Shift+Y` panel, localization resources, or LogicMod Widget.
 - More than one diagnostic target at a time.
 - Full boxes, outlines, health, skeletons, weak points, off-screen arrows, or map markers.
 - Resource adapters for chests, eggs, statues, ores, trees, or drops.
@@ -480,7 +480,7 @@ There is no current unit-test harness. Phase 1 uses deterministic log assertions
 
 ## Validation Commands
 
-Run commands from `E:/AAA_qian/ji_ji_tui_jin/palworld_mod/esp` unless noted.
+Run commands from `<repository-root>` unless noted.
 
 ### Repository Structure
 
