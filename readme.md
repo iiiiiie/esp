@@ -2,7 +2,7 @@
 
 《幻兽帕鲁》Steam PC 客户端 Mod，面向图鉴收集、帕鲁筛选和单机捕捉流程。项目始终排除真人玩家：不会扫描、筛选或绘制服务器中的真人玩家。
 
-当前版本定位为 `v0.1.0-beta.1` 发布候选，核心范围是帕鲁 ESP。宝箱、帕鲁蛋、翠叶鼠雕像、矿物等资源 ESP 尚未实现，不属于首个 Beta 的承诺范围。
+当前公开版本为 [`v0.1.0-beta.1`](https://github.com/iiiiiie/esp/releases/tag/v0.1.0-beta.1)，核心范围是帕鲁 ESP。宝箱、帕鲁蛋、翠叶鼠雕像、矿物等资源 ESP 尚未实现，不属于首个 Beta 的承诺范围。
 
 > 本项目免费提供并公开源码，但采用自定义 source-available 许可证，不是 OSI 定义下的开源软件。若你付费购买了本 Mod，请立即申请退款并向销售平台投诉。
 
@@ -116,7 +116,7 @@ npm test
 
 自动化测试覆盖玩家硬排除、筛选组合、配置迁移、事件接纳、有限就绪重试、死亡/捕捉/卸载清理、滚动目标窗口和性能标记解析。LogicMod 资产生成与 Cook 需要项目文档中记录的 Unreal Engine 5.1 与 Palworld Modding Kit 环境。
 
-架构决策见 [`docs/adr`](docs/adr)，运行验证矩阵见 [`docs/testing`](docs/testing)。
+代码地图见 [`docs/CODEMAPS`](docs/CODEMAPS)，架构决策见 [`docs/adr`](docs/adr)，运行验证矩阵见 [`docs/testing`](docs/testing)。开发与发布流程见 [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) 和 [`docs/RUNBOOK.md`](docs/RUNBOOK.md)。
 
 ## 反馈与贡献
 
