@@ -42,12 +42,40 @@ const generatorPath = path.join(
 );
 const generatorSource = fs.readFileSync(generatorPath, "utf8");
 const mainSource = fs.readFileSync(path.join(runtimeRoot, "main.lua"), "utf8");
-if (!generatorSource.includes('TEXT("PalworldResourceESP_WidgetRemoveTarget")')
-    || !generatorSource.includes('TEXT("PalworldResourceESP_RemoveTarget")')
-    || !generatorSource.includes('TEXT("Array_Find")')
-    || !generatorSource.includes('TEXT("Array_Remove")')
-    || !mainSource.includes('BRIDGE_METHOD_REMOVE_TARGET = "PalworldResourceESP_RemoveTarget"')) {
-  throw new Error("Event-driven single-target removal contract is incomplete");
+if (!generatorSource.includes('TEXT("ESP_TargetParameters")')
+    || !generatorSource.includes('TEXT("EqualEqual_ObjectObject")')
+    || !generatorSource.includes("IdentityMatchBranch")) {
+  throw new Error("Blueprint live parameter-identity validation contract is incomplete");
+}
+if (/^\s*\|\| !Link\(IdentityMatchBranch, UEdGraphSchema_K2::PN_Else, RebindRemoveTarget/m.test(generatorSource)) {
+  throw new Error("Overlay identity validation still mutates parallel target arrays during ForEachTarget");
+}
+const lifecycleHookStart = mainSource.indexOf("local function register_lifecycle_hooks()");
+const lifecycleHookEnd = mainSource.indexOf("local function register_load_map_hooks()", lifecycleHookStart);
+const lifecycleHookSource = mainSource.slice(lifecycleHookStart, lifecycleHookEnd);
+const bridgeDiscoveryStart = mainSource.indexOf("local function register_blueprint_bridge_discovery()");
+const bridgeDiscoveryEnd = mainSource.indexOf("local function call_bridge(", bridgeDiscoveryStart);
+const bridgeDiscoverySource = mainSource.slice(bridgeDiscoveryStart, bridgeDiscoveryEnd);
+if (lifecycleHookStart < 0 || lifecycleHookEnd < 0
+    || !lifecycleHookSource.includes("enqueue_event_retry(")
+    || !lifecycleHookSource.includes("remove_bridge_target(")
+    || !lifecycleHookSource.includes("actor_from_hook_arguments")) {
+  throw new Error("Lifecycle hooks do not use path-only admission and cached removal");
+}
+if (bridgeDiscoveryStart < 0 || bridgeDiscoveryEnd < 0
+    || bridgeDiscoverySource.includes("admit_begin_play_target(")
+    || !bridgeDiscoverySource.includes("enqueue_event_retry(")) {
+  throw new Error("BeginPlay does not defer per-Pal admission by scalar object path");
+}
+const cachedSyncStart = mainSource.indexOf("local function atomic_sync_cached_nearest_targets(");
+const cachedSyncEnd = mainSource.indexOf("local function process_cached_bridge_resync(", cachedSyncStart);
+const cachedSyncSource = mainSource.slice(cachedSyncStart, cachedSyncEnd);
+if (cachedSyncStart < 0 || cachedSyncEnd < 0
+    || cachedSyncSource.includes("FindAllOf(")
+    || cachedSyncSource.includes("BRIDGE_METHOD_REMOVE_TARGET")
+    || !cachedSyncSource.includes("BRIDGE_METHOD_CLEAR_TARGET")
+    || !cachedSyncSource.includes("BRIDGE_METHOD_SET_TARGET")) {
+  throw new Error("Cached nearest-N sync is not an atomic clear/set path independent of FindAllOf");
 }
 const numericStart = generatorSource.indexOf("bool BuildPanelNumericEventV2(");
 const numericEnd = generatorSource.indexOf("bool BuildPanelInitializeControlsV2(", numericStart);
@@ -269,16 +297,35 @@ if (panelV2Start < 0 || panelV2End < 0
     || !panelV2Source.includes('{TEXT("ESP_EnglishText"), TEXT("英文"), TEXT("English")}')) {
   throw new Error("Pal species filtering is not nested under Filters or default localization is mixed");
 }
+const panelKeyDownStart = generatorSource.indexOf("bool BuildPanelKeyDownOverride(");
+const panelKeyDownEnd = generatorSource.indexOf("bool BuildPanelKeyUpOverride(", panelKeyDownStart);
+const panelKeyDownSource = generatorSource.slice(panelKeyDownStart, panelKeyDownEnd);
+const panelKeyUpStart = panelKeyDownEnd;
+const panelKeyUpEnd = generatorSource.indexOf("bool PrepareModActorControls(", panelKeyUpStart);
+const panelKeyUpSource = generatorSource.slice(panelKeyUpStart, panelKeyUpEnd);
 if (!generatorSource.includes('TEXT("DisableInput")')
     || !generatorSource.includes('TEXT("EnableInput")')
     || !generatorSource.includes('TEXT("SetDisableInputFlag")')
     || !generatorSource.includes('TEXT("PalworldResourceESP_Panel")')
-    || !generatorSource.includes('BuildHandledKeyOverride(Blueprint, TEXT("OnKeyDown"))')
-    || !generatorSource.includes('BuildHandledKeyOverride(Blueprint, TEXT("OnKeyUp"))')
+    || !generatorSource.includes("BuildPanelKeyDownOverride(Blueprint)")
+    || !generatorSource.includes("BuildPanelKeyUpOverride(Blueprint, ModActorClass)")
     || !generatorSource.includes('UWidgetBlueprintLibrary::StaticClass(), TEXT("Handled")')
+    || panelKeyDownStart < 0
+    || panelKeyDownEnd < 0
+    || panelKeyUpStart < 0
+    || panelKeyUpEnd < 0
+    || !panelKeyDownSource.includes('UKismetInputLibrary::StaticClass(), TEXT("GetKey")')
+    || !panelKeyDownSource.includes('UKismetInputLibrary::StaticClass(), TEXT("EqualEqual_KeyKey")')
+    || !panelKeyDownSource.includes('SetPinDefault(IsEscape, TEXT("B"), TEXT("Escape"))')
+    || !panelKeyDownSource.includes("PanelEscapeClosePendingVariableName")
+    || panelKeyDownSource.includes("PanelToggleEventName")
+    || !panelKeyUpSource.includes("PanelEscapeClosePendingVariableName")
+    || !panelKeyUpSource.includes("PanelToggleEventName")
+    || !panelKeyUpSource.includes("Link(ClearPending, UEdGraphSchema_K2::PN_Then, TogglePanel")
+    || !generatorSource.includes("AddCustomEvent(ModActor, ModActorGraph, *PanelToggleEventName.ToString()")
     || !generatorSource.includes("bRefreshCatalogs")
     || !generatorSource.includes("RefreshPalCatalog")) {
-  throw new Error("Panel input isolation or language-triggered catalog refresh contract is incomplete");
+  throw new Error("Panel input isolation, Escape-close, or language-triggered catalog refresh contract is incomplete");
 }
 if (!generatorSource.includes('URichTextBlock')
     || !generatorSource.includes('DT_ESPRichTextStyle')
@@ -528,10 +575,15 @@ PalworldResourceESPSettingsIO = {
 local classes = {}
 local static_objects = {}
 local static_actor_find_count = 0
+local static_actor_find_counts = {}
 StaticFindObject = function(path)
     if static_objects[path] ~= nil then
         static_actor_find_count = static_actor_find_count + 1
+        static_actor_find_counts[path] = (static_actor_find_counts[path] or 0) + 1
         return static_objects[path]
+    end
+    if path:match("^/Game/Test%.PersistentLevel%.") then
+        return nil
     end
     classes[path] = classes[path] or { path = path }
     return classes[path]
@@ -547,8 +599,11 @@ NotifyOnNewObject = function(_, callback)
     monster_notification = callback
 end
 local registered_hooks = {}
-RegisterHook = function(path, callback)
-    registered_hooks[path] = callback
+RegisterHook = function(path, pre_callback, post_callback)
+    if type(pre_callback) ~= "function" then
+        error("RegisterHook requires a pre callback")
+    end
+    registered_hooks[path] = { pre = pre_callback, post = post_callback }
     return 1, 2
 end
 local panel_keybind = nil
@@ -582,9 +637,10 @@ function player:IsA(class_object)
     return class_object.path == "/Script/Pal.PalPlayerCharacter"
 end
 
+local camera_x = 0
 local camera_manager = {}
 function camera_manager:GetCameraLocation()
-    return { X = 0, Y = 0, Z = 0 }
+    return { X = camera_x, Y = 0, Z = 0 }
 end
 local controller = { PlayerCameraManager = camera_manager }
 FindFirstOf = function()
@@ -616,6 +672,9 @@ for index = 1, 4 do
     function actor:GetFullName()
         return "PalMonsterCharacter /Game/Test.PersistentLevel.Pal_" .. tostring(index)
     end
+    function actor:GetAddress()
+        return 0x1000 + index
+    end
     function actor:GetClass()
         return pal_runtime_class
     end
@@ -628,10 +687,14 @@ for index = 1, 4 do
     function actor:GetIndividualParameter()
         return parameter
     end
+    function actor:IsInitialized()
+        return true
+    end
     function actor:K2_GetActorLocation()
         return { X = index * 100, Y = 0, Z = 0 }
     end
     monsters[#monsters + 1] = actor
+    static_objects["/Game/Test.PersistentLevel.Pal_" .. tostring(index)] = actor
 end
 
 local event_component = { Trainer = nil, NPCSpawnedOtomoTrainer = nil }
@@ -644,12 +707,17 @@ local event_parameter = {
         OwnerPlayerUId = { A = 0, B = 0, C = 0, D = 0 },
     },
 }
+local event_level = 5
+local event_x = 500
 function event_parameter:GetLevel()
-    return 5
+    return event_level
 end
 local event_actor = {}
 function event_actor:GetFullName()
     return "PalMonsterCharacter /Game/Test.PersistentLevel.EventPal_1"
+end
+function event_actor:GetAddress()
+    return 0x2001
 end
 function event_actor:GetClass()
     return pal_runtime_class
@@ -663,14 +731,26 @@ end
 function event_actor:GetIndividualParameter()
     return event_parameter
 end
-function event_actor:K2_GetActorLocation()
-    return { X = 500, Y = 0, Z = 0 }
+function event_actor:IsInitialized()
+    return true
 end
+function event_actor:K2_GetActorLocation()
+    return { X = event_x, Y = 0, Z = 0 }
+end
+function event_component:GetOwner()
+    return event_actor
+end
+static_objects["/Game/Test.PersistentLevel.EventPal_1"] = event_actor
 
-local delayed_event_ready = false
+local delayed_event_parameter_ready = false
+local delayed_event_initialized = false
+local delayed_event_x = 600
 local delayed_event_actor = {}
 function delayed_event_actor:GetFullName()
     return "PalMonsterCharacter /Game/Test.PersistentLevel.DelayedEventPal_1"
+end
+function delayed_event_actor:GetAddress()
+    return 0x2002
 end
 function delayed_event_actor:GetClass()
     return pal_runtime_class
@@ -682,13 +762,16 @@ function delayed_event_actor:GetCharacterParameterComponent()
     return event_component
 end
 function delayed_event_actor:GetIndividualParameter()
-    if delayed_event_ready then
+    if delayed_event_parameter_ready then
         return event_parameter
     end
     return nil
 end
+function delayed_event_actor:IsInitialized()
+    return delayed_event_initialized
+end
 function delayed_event_actor:K2_GetActorLocation()
-    return { X = 600, Y = 0, Z = 0 }
+    return { X = delayed_event_x, Y = 0, Z = 0 }
 end
 static_objects["/Game/Test.PersistentLevel.DelayedEventPal_1"] = delayed_event_actor
 
@@ -696,6 +779,9 @@ local cancelled_event_ready = false
 local cancelled_event_actor = {}
 function cancelled_event_actor:GetFullName()
     return "PalMonsterCharacter /Game/Test.PersistentLevel.CancelledEventPal_1"
+end
+function cancelled_event_actor:GetAddress()
+    return 0x2003
 end
 function cancelled_event_actor:GetClass()
     return pal_runtime_class
@@ -712,10 +798,73 @@ function cancelled_event_actor:GetIndividualParameter()
     end
     return nil
 end
+function cancelled_event_actor:IsInitialized()
+    return true
+end
 function cancelled_event_actor:K2_GetActorLocation()
     return { X = 700, Y = 0, Z = 0 }
 end
 static_objects["/Game/Test.PersistentLevel.CancelledEventPal_1"] = cancelled_event_actor
+
+local function make_reused_path_actor(path_name, address, x, parameter_ready)
+    local component = { Trainer = nil, NPCSpawnedOtomoTrainer = nil }
+    function component:IsDead()
+        return false
+    end
+    local parameter = {
+        SaveParameter = {
+            IsPlayer = false,
+            OwnerPlayerUId = { A = 0, B = 0, C = 0, D = 0 },
+        },
+    }
+    function parameter:GetLevel()
+        return 6
+    end
+    local actor = {}
+    function actor:GetFullName()
+        return "PalMonsterCharacter /Game/Test.PersistentLevel." .. path_name
+    end
+    function actor:GetAddress()
+        return address
+    end
+    function actor:GetClass()
+        return pal_runtime_class
+    end
+    function actor:IsA(class_object)
+        return class_object.path == "/Script/Pal.PalMonsterCharacter"
+    end
+    function actor:GetCharacterParameterComponent()
+        return component
+    end
+    function actor:GetIndividualParameter()
+        return parameter_ready and parameter or nil
+    end
+    function actor:IsInitialized()
+        return true
+    end
+    function actor:K2_GetActorLocation()
+        return { X = x, Y = 0, Z = 0 }
+    end
+    function component:GetOwner()
+        return actor
+    end
+    return actor
+end
+
+local reused_path_actor_old = make_reused_path_actor("ReusedPathPal_1", 0x3001, 10, true)
+local reused_path_actor_new = make_reused_path_actor("ReusedPathPal_1", 0x3002, 20, true)
+static_objects["/Game/Test.PersistentLevel.ReusedPathPal_1"] = reused_path_actor_old
+local queued_path_actor_old = make_reused_path_actor("QueuedReusedPathPal_1", 0x3101, 30, false)
+local queued_path_actor_new = make_reused_path_actor("QueuedReusedPathPal_1", 0x3102, 40, true)
+static_objects["/Game/Test.PersistentLevel.QueuedReusedPathPal_1"] = queued_path_actor_old
+local reactivated_actor = make_reused_path_actor("ReactivatedPal_1", 0x3201, 50, true)
+local reactivated_active = true
+function reactivated_actor:GetActiveActorFlag()
+    return reactivated_active
+end
+static_objects["/Game/Test.PersistentLevel.ReactivatedPal_1"] = reactivated_actor
+local missed_stream_actor = make_reused_path_actor("MissedStreamPal_1", 0x3202, 120, true)
+static_objects["/Game/Test.PersistentLevel.MissedStreamPal_1"] = missed_stream_actor
 
 local bridge_class = {}
 function bridge_class:GetFullName()
@@ -776,6 +925,7 @@ local bridge_actor = {
 local bridge_target_payloads = {}
 local bridge_style_payloads = {}
 local bridge_removed_targets = {}
+local bridge_clear_target_count = 0
 function bridge_actor:GetClass()
     return bridge_class
 end
@@ -788,12 +938,23 @@ function bridge_actor:PalworldResourceESP_SetTarget(actor, session_index, level,
         distance_meters = distance_meters,
     }
 end
-function bridge_actor:PalworldResourceESP_ClearTarget() end
+function bridge_actor:PalworldResourceESP_ClearTarget()
+    bridge_clear_target_count = bridge_clear_target_count + 1
+end
 function bridge_actor:PalworldResourceESP_RemoveTarget(actor, session_index)
     bridge_removed_targets[#bridge_removed_targets + 1] = {
         actor = actor,
         session_index = session_index,
     }
+end
+local function bridge_removal_count(actor)
+    local count = 0
+    for _, removal in ipairs(bridge_removed_targets) do
+        if removal.actor == actor then
+            count = count + 1
+        end
+    end
+    return count
 end
 local persisted_panel_restore_count = 0
 function bridge_actor:PalworldResourceESP_ApplyPersistedPanelState()
@@ -849,6 +1010,13 @@ debug.getinfo = function()
 end
 dofile([[${runtimeEntrypoint}]])
 debug.getinfo = original_debug_getinfo
+require("config").NEAREST_TARGET_REFRESH_INTERVAL_MS = 0
+require("config").STREAM_INTEGRITY_SCAN_DISTANCE_METERS = 1
+require("config").STREAM_INTEGRITY_SCAN_MIN_INTERVAL_MS = 0
+require("config").ATOMIC_REBUILD_DEBOUNCE_MS = 0
+require("config").ATOMIC_REBUILD_MOVEMENT_DEBOUNCE_MS = 0
+require("config").ATOMIC_REBUILD_MAX_COALESCE_MS = 0
+require("config").ATOMIC_REBUILD_MIN_INTERVAL_MS = 0
 print("Runtime entrypoint load passed")
 
 assert(runtime_settings_open_path == [[${normalize(path.join(runtimeRoot, "user-settings.log"))}]],
@@ -944,38 +1112,159 @@ assert(#delayed_callbacks == 0, "event-first notification retained a UObject wra
 reconcile_loop()
 assert(monster_find_all_count == scans_before_notification,
     "construction notification requested a full snapshot")
+--[=[ __DEPRECATED_20260721__ [reason: lifecycle deltas now coalesce into one atomic full-target rebuild]
 local payload_count_before_begin_play = #bridge_target_payloads
+local static_finds_before_begin_play = static_actor_find_count
 bridge_begin_play_hook(event_actor)
 assert(#bridge_target_payloads == payload_count_before_begin_play + 1,
     "BeginPlay did not append exactly one event target")
+assert(static_actor_find_count == static_finds_before_begin_play,
+    "admission below the visible-target limit resolved existing candidate paths")
 
-local capture_hook = registered_hooks["/Script/Pal.PalUtility:PalCaptureSuccess"]
-local dead_hook = registered_hooks["/Script/Pal.PalCharacter:OnDeadCharacter"]
-local end_play_hook = registered_hooks["/Script/Engine.Actor:ReceiveEndPlay"]
+local capture_hook = registered_hooks["/Script/Pal.PalUtility:PalCaptureSuccess"].pre
+local dead_hook = registered_hooks["/Script/Pal.PalCharacter:OnDeadCharacter"].pre
+local end_play_hook = registered_hooks["/Script/Engine.Actor:ReceiveEndPlay"].pre
+local parameter_replication_hook = registered_hooks[
+    "/Script/Pal.PalCharacterParameterComponent:OnRep_IndividualParameter"
+].post
+local initialization_complete_hook = registered_hooks[
+    "/Script/Pal.PalCharacter:BroadcastOnCompleteInitializeParameter"
+].post
+local active_actor_hook = registered_hooks["/Script/Pal.PalCharacter:OnRep_IsPalActiveActor"].post
+local local_initialized_hook = registered_hooks["/Script/Pal.PalCharacter:LocalInitialized"].post
+local parameter_initialized_hook = registered_hooks[
+    "/Script/Pal.PalCharacterParameterComponent:OnInitialize_AfterSetIndividualParameter"
+].post
 assert(type(capture_hook) == "function" and type(dead_hook) == "function" and type(end_play_hook) == "function",
     "target lifecycle hooks were not registered")
+assert(type(parameter_replication_hook) == "function" and type(initialization_complete_hook) == "function",
+    "parameter lifecycle post-hooks were not registered")
+assert(type(active_actor_hook) == "function" and type(local_initialized_hook) == "function"
+        and type(parameter_initialized_hook) == "function",
+    "pooled-actor lifecycle post-hooks were not registered")
+
+local payload_count_before_path_reuse = #bridge_target_payloads
+bridge_begin_play_hook(reused_path_actor_old)
+static_objects["/Game/Test.PersistentLevel.ReusedPathPal_1"] = reused_path_actor_new
+bridge_begin_play_hook(reused_path_actor_new)
+assert(#bridge_target_payloads == payload_count_before_path_reuse + 2,
+    "same-path replacement actor was rejected as a duplicate instance")
+dead_hook(reused_path_actor_old)
+dead_hook(reused_path_actor_new)
+
+local payload_count_before_queued_path_reuse = #bridge_target_payloads
+bridge_begin_play_hook(queued_path_actor_old)
+assert(#delayed_callbacks == 1,
+    "not-ready reused-path actor did not schedule one readiness retry")
+static_objects["/Game/Test.PersistentLevel.QueuedReusedPathPal_1"] = queued_path_actor_new
+local queued_path_callbacks = delayed_callbacks
+delayed_callbacks = {}
+for _, callback in ipairs(queued_path_callbacks) do
+    callback()
+end
+assert(#bridge_target_payloads == payload_count_before_queued_path_reuse
+        and #delayed_callbacks == 0,
+    "stale queued path admitted a replacement actor instance")
+bridge_begin_play_hook(queued_path_actor_new)
+assert(#bridge_target_payloads == payload_count_before_queued_path_reuse + 1,
+    "replacement actor was not admitted through its own BeginPlay")
+dead_hook(queued_path_actor_new)
+
+local payload_count_before_refresh = #bridge_target_payloads
+local removal_count_before_refresh = #bridge_removed_targets
+parameter_replication_hook(event_component)
+assert(#bridge_target_payloads == payload_count_before_refresh
+        and #bridge_removed_targets == removal_count_before_refresh,
+    "parameter replication refreshed metadata before initialization completed")
+assert(#delayed_callbacks == 1,
+    "parameter replication did not schedule one path-based initialization refresh")
+event_level = 55
+initialization_complete_hook(event_actor)
+assert(#bridge_target_payloads == payload_count_before_refresh + 1,
+    "initialization completion did not rebuild the displayed target")
+assert(#bridge_removed_targets == removal_count_before_refresh + 1,
+    "initialization completion did not remove exactly one stale metadata entry")
+assert(bridge_target_payloads[#bridge_target_payloads].actor == event_actor
+        and bridge_target_payloads[#bridge_target_payloads].level == 55,
+    "initialization completion did not submit current metadata for the same actor")
+local stale_refresh_callbacks = delayed_callbacks
+delayed_callbacks = {}
+for _, callback in ipairs(stale_refresh_callbacks) do
+    callback()
+end
+assert(#bridge_target_payloads == payload_count_before_refresh + 1
+        and #bridge_removed_targets == removal_count_before_refresh + 1
+        and #delayed_callbacks == 0,
+    "successful initialization refresh did not cancel its pending path retry")
 
 local payload_count_before_delayed = #bridge_target_payloads
 local scans_before_delayed = monster_find_all_count
+local removals_before_delayed = #bridge_removed_targets
+local delayed_event_path = "/Game/Test.PersistentLevel.DelayedEventPal_1"
+local static_finds_before_delayed = static_actor_find_counts[delayed_event_path] or 0
 bridge_begin_play_hook(delayed_event_actor)
 assert(#bridge_target_payloads == payload_count_before_delayed,
     "not-ready BeginPlay target was admitted before its parameter existed")
 assert(#delayed_callbacks == 1,
     "not-ready BeginPlay target did not schedule one path-based retry")
-delayed_event_ready = true
+delayed_event_parameter_ready = true
 local readiness_callbacks = delayed_callbacks
 delayed_callbacks = {}
 for _, callback in ipairs(readiness_callbacks) do
     callback()
 end
-assert(#bridge_target_payloads == payload_count_before_delayed + 1,
-    "path-based readiness retry did not append the initialized target")
-assert(static_actor_find_count == 1,
-    "readiness retry did not resolve the target exactly once by object path")
+assert(#bridge_target_payloads == payload_count_before_delayed,
+    "parameter-ready target was admitted before character initialization completed")
+assert(#delayed_callbacks == 1,
+    "character initialization gate did not retain one bounded path retry")
+delayed_event_initialized = true
+readiness_callbacks = delayed_callbacks
+delayed_callbacks = {}
+for _, callback in ipairs(readiness_callbacks) do
+    callback()
+end
+assert(#bridge_target_payloads == payload_count_before_delayed,
+    "farther initialized target incorrectly replaced a nearer displayed target")
+assert(static_actor_find_counts[delayed_event_path] >= static_finds_before_delayed + 2,
+    "readiness retries did not resolve the target by object path")
 assert(monster_find_all_count == scans_before_delayed,
     "readiness retry performed a global FindAllOf scan")
-assert(#bridge_removed_targets == 1,
-    "full event window did not evict exactly one older target")
+assert(#bridge_removed_targets == removals_before_delayed,
+    "farther initialized target evicted a nearer target by recency")
+
+delayed_event_x = 50
+for _ = 1, 8 do
+    local static_finds_before_tick = static_actor_find_count
+    reconcile_loop()
+    assert(static_actor_find_count - static_finds_before_tick <= 2,
+        "one nearest-N runtime tick exceeded the fixed path-resolution budget")
+    if #bridge_target_payloads == payload_count_before_delayed + 1 then
+        break
+    end
+end
+assert(#bridge_target_payloads == payload_count_before_delayed + 1,
+    "new nearest target did not enter the display set within the bounded convergence window")
+assert(#bridge_removed_targets == removals_before_delayed + 1
+        and bridge_removed_targets[#bridge_removed_targets].actor == event_actor,
+    "nearest-N update did not remove the current farthest target")
+
+event_x = 25
+for _ = 1, 8 do
+    local static_finds_before_tick = static_actor_find_count
+    reconcile_loop()
+    assert(static_actor_find_count - static_finds_before_tick <= 2,
+        "distance reversal exceeded the fixed per-tick path-resolution budget")
+    if #bridge_target_payloads == payload_count_before_delayed + 2 then
+        break
+    end
+end
+assert(#bridge_target_payloads == payload_count_before_delayed + 2,
+    "distance order reversal did not converge on the now-nearest target")
+assert(#bridge_removed_targets == removals_before_delayed + 2
+        and bridge_removed_targets[#bridge_removed_targets].actor == monsters[4],
+    "distance order reversal did not remove the new farthest boundary target")
+assert(monster_find_all_count == scans_before_delayed,
+    "nearest-N runtime updates performed a global FindAllOf scan")
 
 local payload_count_before_cancel = #bridge_target_payloads
 bridge_begin_play_hook(cancelled_event_actor)
@@ -991,31 +1280,359 @@ end
 assert(#bridge_target_payloads == payload_count_before_cancel,
     "death did not cancel a pending readiness retry")
 
-local lifecycle_removals_before = #bridge_removed_targets
+local event_lifecycle_removals_before = bridge_removal_count(event_actor)
 capture_hook(nil, nil, event_actor)
-assert(#bridge_removed_targets == lifecycle_removals_before + 1, "capture did not remove the event target")
+assert(bridge_removal_count(event_actor) == event_lifecycle_removals_before + 1,
+    "capture did not remove the event target")
 bridge_begin_play_hook(event_actor)
 dead_hook(event_actor)
-assert(#bridge_removed_targets == lifecycle_removals_before + 2, "death did not remove the event target")
+assert(bridge_removal_count(event_actor) == event_lifecycle_removals_before + 2,
+    "death did not remove the event target")
 bridge_begin_play_hook(event_actor)
 end_play_hook(event_actor)
-assert(#bridge_removed_targets == lifecycle_removals_before + 3, "EndPlay did not remove the event target")
+assert(bridge_removal_count(event_actor) == event_lifecycle_removals_before + 3,
+    "EndPlay did not remove the event target")
 bridge_begin_play_hook(event_actor)
 monsters[#monsters + 1] = event_actor
+
+local clear_count_before_repair = bridge_clear_target_count
+local payload_count_before_repair = #bridge_target_payloads
+local removal_count_before_repair = #bridge_removed_targets
+local scans_before_repair = monster_find_all_count
+static_objects["/Game/Test.PersistentLevel.Pal_2"] = nil
+bridge_begin_play_hook(cancelled_event_actor)
+for _ = 1, 40 do
+    local static_finds_before_tick = static_actor_find_count
+    reconcile_loop()
+    assert(static_actor_find_count - static_finds_before_tick <= 2,
+        "nearest repair exceeded the fixed per-tick path-resolution budget")
+    if bridge_clear_target_count == clear_count_before_repair + 1
+        and #bridge_target_payloads == payload_count_before_repair + 5 then
+        break
+    end
+end
+assert(bridge_clear_target_count == clear_count_before_repair + 1,
+    "persistently unresolved nearest target did not clear the Blueprint target set")
+assert(#bridge_removed_targets == removal_count_before_repair,
+    "unresolved nearest target attempted removal with a guessed actor")
+assert(#bridge_target_payloads == payload_count_before_repair + 5,
+    "fail-closed nearest repair did not rebuild the five resolvable closest targets")
+assert(monster_find_all_count == scans_before_repair,
+    "fail-closed nearest repair performed a global FindAllOf scan")
+assert(#delayed_callbacks == 0,
+    "nearest repair scheduled an unnecessary delayed full snapshot")
 
 local capture_start_found = false
 local capture_mode_found = false
 local capture_stop_found = false
 local event_admission_found = false
+local nearest_repair_found = false
 for _, message in ipairs(runtime_logs) do
     capture_start_found = capture_start_found or message:match("PERF_SESSION_START") ~= nil
     capture_mode_found = capture_mode_found or message:match("PERF_MODE_CHANGED.*profile=off") ~= nil
     capture_stop_found = capture_stop_found or message:match("PERF_SESSION_STOP") ~= nil
     event_admission_found = event_admission_found or message:match("EVENT_TARGET_ADDED.*source=begin_play") ~= nil
+    nearest_repair_found = nearest_repair_found or message:match("NEAREST_TARGETS_FAIL_CLOSED.*display_path_unresolved") ~= nil
 end
 assert(capture_start_found and capture_mode_found and capture_stop_found, "capture markers were incomplete")
 assert(event_admission_found, "event-driven BeginPlay did not admit the new actor")
+assert(nearest_repair_found, "fail-closed nearest repair diagnostic was not logged")
 print("Panel controls and event-driven lifecycle passed")
+]=]
+
+local capture_hook = registered_hooks["/Script/Pal.PalUtility:PalCaptureSuccess"].pre
+local dead_hook = registered_hooks["/Script/Pal.PalCharacter:OnDeadCharacter"].pre
+local end_play_hook = registered_hooks["/Script/Engine.Actor:ReceiveEndPlay"].pre
+local parameter_replication_hook = registered_hooks[
+    "/Script/Pal.PalCharacterParameterComponent:OnRep_IndividualParameter"
+].post
+local initialization_complete_hook = registered_hooks[
+    "/Script/Pal.PalCharacter:BroadcastOnCompleteInitializeParameter"
+].post
+local active_actor_hook = registered_hooks["/Script/Pal.PalCharacter:OnRep_IsPalActiveActor"].post
+local local_initialized_hook = registered_hooks["/Script/Pal.PalCharacter:LocalInitialized"].post
+local parameter_initialized_hook = registered_hooks[
+    "/Script/Pal.PalCharacterParameterComponent:OnInitialize_AfterSetIndividualParameter"
+].post
+local component_initialized_hook = registered_hooks[
+    "/Script/Pal.PalCharacterParameterComponent:OnInitializedCharacter"
+].post
+assert(type(capture_hook) == "function" and type(dead_hook) == "function" and type(end_play_hook) == "function",
+    "target lifecycle hooks were not registered")
+assert(type(parameter_replication_hook) == "function" and type(initialization_complete_hook) == "function"
+        and type(active_actor_hook) == "function" and type(local_initialized_hook) == "function"
+        and type(parameter_initialized_hook) == "function" and type(component_initialized_hook) == "function",
+    "Pal lifecycle post-hooks were not registered")
+
+local function remove_monster(target)
+    for index, actor in ipairs(monsters) do
+        if actor == target then
+            table.remove(monsters, index)
+            return true
+        end
+    end
+    return false
+end
+
+--[==[ __DEPRECATED_20260721__ [reason: lifecycle events no longer coalesce into a full FindAllOf snapshot]
+monsters[#monsters + 1] = event_actor
+local scans_before_lifecycle_burst = monster_find_all_count
+local clears_before_lifecycle_burst = bridge_clear_target_count
+local payloads_before_lifecycle_burst = #bridge_target_payloads
+local removals_before_lifecycle_burst = #bridge_removed_targets
+bridge_begin_play_hook(event_actor)
+parameter_replication_hook(event_component)
+parameter_initialized_hook(event_component, event_actor)
+component_initialized_hook(event_component, event_actor)
+initialization_complete_hook(event_actor)
+assert(monster_find_all_count == scans_before_lifecycle_burst
+        and bridge_clear_target_count == clears_before_lifecycle_burst
+        and #bridge_target_payloads == payloads_before_lifecycle_burst
+        and #bridge_removed_targets == removals_before_lifecycle_burst
+        and #delayed_callbacks == 0,
+    "lifecycle hook performed synchronous bridge or discovery work")
+reconcile_loop()
+assert(monster_find_all_count == scans_before_lifecycle_burst + 1,
+    "lifecycle burst did not coalesce into exactly one discovery pass")
+assert(bridge_clear_target_count == clears_before_lifecycle_burst + 1
+        and #bridge_target_payloads == payloads_before_lifecycle_burst + 5,
+    "lifecycle burst did not atomically clear and rebuild all five targets")
+assert(#bridge_removed_targets == removals_before_lifecycle_burst,
+    "atomic lifecycle rebuild called single-target RemoveTarget")
+
+local scans_before_parameter_burst = monster_find_all_count
+local clears_before_parameter_burst = bridge_clear_target_count
+local payloads_before_parameter_burst = #bridge_target_payloads
+parameter_replication_hook(event_component)
+parameter_initialized_hook(event_component, event_actor)
+component_initialized_hook(event_component, event_actor)
+local_initialized_hook(event_actor)
+initialization_complete_hook(event_actor)
+assert(monster_find_all_count == scans_before_parameter_burst
+        and bridge_clear_target_count == clears_before_parameter_burst,
+    "parameter hook burst rebuilt before the runtime queue drained")
+reconcile_loop()
+assert(monster_find_all_count == scans_before_parameter_burst + 1
+        and bridge_clear_target_count == clears_before_parameter_burst + 1
+        and #bridge_target_payloads == payloads_before_parameter_burst + 5,
+    "duplicate parameter hooks were not coalesced into one atomic rebuild")
+
+assert(remove_monster(event_actor), "event actor was missing before death simulation")
+local scans_before_death = monster_find_all_count
+local clears_before_death = bridge_clear_target_count
+local payloads_before_death = #bridge_target_payloads
+local removals_before_death = #bridge_removed_targets
+dead_hook(event_actor)
+assert(bridge_clear_target_count == clears_before_death
+        and #bridge_target_payloads == payloads_before_death
+        and #bridge_removed_targets == removals_before_death,
+    "death hook mutated Blueprint targets before the atomic rebuild")
+reconcile_loop()
+assert(monster_find_all_count == scans_before_death + 1
+        and bridge_clear_target_count == clears_before_death + 1
+        and #bridge_target_payloads == payloads_before_death + 4,
+    "death did not atomically rebuild the four surviving targets")
+assert(#bridge_removed_targets == removals_before_death,
+    "death called the unsafe single-target RemoveTarget path")
+
+monsters[#monsters + 1] = event_actor
+bridge_begin_play_hook(event_actor)
+reconcile_loop()
+local payloads_before_nearest = #bridge_target_payloads
+local clears_before_nearest = bridge_clear_target_count
+local scans_before_nearest = monster_find_all_count
+delayed_event_parameter_ready = true
+delayed_event_initialized = true
+delayed_event_x = 50
+monsters[#monsters + 1] = delayed_event_actor
+bridge_begin_play_hook(delayed_event_actor)
+reconcile_loop()
+assert(monster_find_all_count == scans_before_nearest + 1
+        and bridge_clear_target_count == clears_before_nearest + 1
+        and #bridge_target_payloads == payloads_before_nearest + 5,
+    "nearest-N change did not use one atomic five-target rebuild")
+local delayed_is_in_latest_batch = false
+for index = #bridge_target_payloads - 4, #bridge_target_payloads do
+    delayed_is_in_latest_batch = delayed_is_in_latest_batch
+        or bridge_target_payloads[index].actor == delayed_event_actor
+end
+assert(delayed_is_in_latest_batch, "atomic rebuild did not select the current nearest target")
+assert(#bridge_removed_targets == removals_before_death,
+    "nearest-N rebuild called single-target RemoveTarget")
+assert(remove_monster(delayed_event_actor), "delayed event actor cleanup failed")
+
+local capture_start_found = false
+local capture_mode_found = false
+local capture_stop_found = false
+local atomic_rebuild_found = false
+for _, message in ipairs(runtime_logs) do
+    capture_start_found = capture_start_found or message:match("PERF_SESSION_START") ~= nil
+    capture_mode_found = capture_mode_found or message:match("PERF_MODE_CHANGED.*profile=off") ~= nil
+    capture_stop_found = capture_stop_found or message:match("PERF_SESSION_STOP") ~= nil
+    atomic_rebuild_found = atomic_rebuild_found or message:match("ATOMIC_REBUILD_COMPLETED") ~= nil
+end
+assert(capture_start_found and capture_mode_found and capture_stop_found, "capture markers were incomplete")
+assert(atomic_rebuild_found, "atomic lifecycle rebuild diagnostic was not logged")
+print("Panel controls and atomic lifecycle rebuild passed")
+
+require("config").ATOMIC_REBUILD_DEBOUNCE_MS = 500
+require("config").ATOMIC_REBUILD_MAX_COALESCE_MS = 1500
+require("config").ATOMIC_REBUILD_MIN_INTERVAL_MS = 2500
+local scans_before_coalesce_deadline = monster_find_all_count
+initialization_complete_hook(event_actor)
+reconcile_loop()
+assert(monster_find_all_count == scans_before_coalesce_deadline,
+    "atomic rebuild ignored its initial debounce")
+fake_time = fake_time + 0.6
+initialization_complete_hook(event_actor)
+reconcile_loop()
+assert(monster_find_all_count == scans_before_coalesce_deadline,
+    "atomic rebuild ran before the renewed quiet window")
+fake_time = fake_time + 0.6
+initialization_complete_hook(event_actor)
+reconcile_loop()
+assert(monster_find_all_count == scans_before_coalesce_deadline,
+    "atomic rebuild ran before the maximum coalescing deadline")
+fake_time = fake_time + 0.4
+reconcile_loop()
+assert(monster_find_all_count == scans_before_coalesce_deadline + 1,
+    "continuous lifecycle signals starved the atomic rebuild past its hard deadline")
+require("config").ATOMIC_REBUILD_DEBOUNCE_MS = 0
+require("config").ATOMIC_REBUILD_MAX_COALESCE_MS = 0
+require("config").ATOMIC_REBUILD_MIN_INTERVAL_MS = 0
+fake_time = fake_time + 3
+runtime_settings_writes = {}
+print("Atomic rebuild hard coalescing deadline passed")
+]==]
+
+local function drain_delayed_callbacks(max_batches)
+    local batches = 0
+    while #delayed_callbacks > 0 do
+        batches = batches + 1
+        assert(batches <= (max_batches or 64), "delayed callback queue did not converge")
+        local callbacks = delayed_callbacks
+        delayed_callbacks = {}
+        for _, callback in ipairs(callbacks) do
+            callback()
+        end
+    end
+end
+
+monsters[#monsters + 1] = event_actor
+local scans_before_lifecycle_delta = monster_find_all_count
+local clears_before_lifecycle_delta = bridge_clear_target_count
+local payloads_before_lifecycle_delta = #bridge_target_payloads
+local removals_before_lifecycle_delta = #bridge_removed_targets
+bridge_begin_play_hook(event_actor)
+parameter_replication_hook(event_component)
+parameter_initialized_hook(event_component, event_actor)
+component_initialized_hook(event_component, event_actor)
+initialization_complete_hook(event_actor)
+assert(monster_find_all_count == scans_before_lifecycle_delta
+        and bridge_clear_target_count == clears_before_lifecycle_delta
+        and #bridge_target_payloads == payloads_before_lifecycle_delta
+        and #bridge_removed_targets == removals_before_lifecycle_delta
+        and #delayed_callbacks == 1,
+    "lifecycle burst did not coalesce into one path-only queue")
+drain_delayed_callbacks()
+reconcile_loop()
+assert(monster_find_all_count == scans_before_lifecycle_delta,
+    "lifecycle delta performed a global FindAllOf scan")
+assert(bridge_clear_target_count == clears_before_lifecycle_delta + 1
+        and #bridge_target_payloads == payloads_before_lifecycle_delta + 5,
+    "lifecycle delta did not atomically submit the five cached targets")
+assert(#bridge_removed_targets == removals_before_lifecycle_delta,
+    "lifecycle delta called single-target RemoveTarget")
+
+local scans_before_parameter_delta = monster_find_all_count
+local clears_before_parameter_delta = bridge_clear_target_count
+local payloads_before_parameter_delta = #bridge_target_payloads
+parameter_replication_hook(event_component)
+parameter_initialized_hook(event_component, event_actor)
+component_initialized_hook(event_component, event_actor)
+local_initialized_hook(event_actor)
+initialization_complete_hook(event_actor)
+assert(#delayed_callbacks == 1,
+    "duplicate parameter hooks were not coalesced by composite instance key")
+drain_delayed_callbacks()
+reconcile_loop()
+assert(monster_find_all_count == scans_before_parameter_delta
+        and bridge_clear_target_count == clears_before_parameter_delta + 1
+        and #bridge_target_payloads == payloads_before_parameter_delta + 5,
+    "parameter refresh did not use one cached atomic metadata resubmit")
+
+assert(remove_monster(event_actor), "event actor was missing before cached death simulation")
+local scans_before_cached_death = monster_find_all_count
+local clears_before_cached_death = bridge_clear_target_count
+local payloads_before_cached_death = #bridge_target_payloads
+local removals_before_cached_death = #bridge_removed_targets
+dead_hook(event_actor)
+assert(bridge_clear_target_count == clears_before_cached_death,
+    "death hook synchronously mutated Blueprint arrays")
+reconcile_loop()
+assert(monster_find_all_count == scans_before_cached_death
+        and bridge_clear_target_count == clears_before_cached_death + 1
+        and #bridge_target_payloads == payloads_before_cached_death + 4,
+    "death did not atomically resubmit the four cached survivors")
+assert(#bridge_removed_targets == removals_before_cached_death,
+    "death called the unsafe single-target RemoveTarget path")
+
+monsters[#monsters + 1] = event_actor
+bridge_begin_play_hook(event_actor)
+drain_delayed_callbacks()
+reconcile_loop()
+
+bridge_actor.ESP_DisplayTargetLimit = 3
+bridge_actor.ESP_ControlRevision = 6
+reconcile_loop()
+local nearest_scans_before = monster_find_all_count
+local nearest_clears_before = bridge_clear_target_count
+local nearest_payloads_before = #bridge_target_payloads
+local nearest_removals_before = #bridge_removed_targets
+local nearest_static_finds_before = static_actor_find_count
+require("config").STREAM_INTEGRITY_SCAN_DISTANCE_METERS = 10000
+camera_x = 400
+reconcile_loop()
+assert(monster_find_all_count == nearest_scans_before,
+    "camera-distance reordering performed a global FindAllOf scan")
+assert(bridge_clear_target_count == nearest_clears_before + 1
+        and #bridge_target_payloads == nearest_payloads_before + 3,
+    "camera-distance reordering did not atomically submit nearest three")
+assert(static_actor_find_count - nearest_static_finds_before <= 5,
+    "nearest-three update resolved more than refresh-budget plus N paths")
+assert(#bridge_removed_targets == nearest_removals_before,
+    "nearest-three update called single-target RemoveTarget")
+camera_x = 0
+reconcile_loop()
+require("config").STREAM_INTEGRITY_SCAN_DISTANCE_METERS = 1
+reconcile_loop()
+
+local stale_path_payloads_before = #bridge_target_payloads
+local stale_path_scans_before = monster_find_all_count
+bridge_begin_play_hook(queued_path_actor_old)
+assert(#delayed_callbacks == 1, "not-ready actor did not enqueue one scalar path retry")
+static_objects["/Game/Test.PersistentLevel.QueuedReusedPathPal_1"] = queued_path_actor_new
+drain_delayed_callbacks()
+reconcile_loop()
+assert(#bridge_target_payloads == stale_path_payloads_before
+        and monster_find_all_count == stale_path_scans_before,
+    "queued path admitted a replacement instance under the stale composite key")
+bridge_begin_play_hook(queued_path_actor_new)
+drain_delayed_callbacks()
+reconcile_loop()
+assert(monster_find_all_count == stale_path_scans_before,
+    "replacement instance admission performed a global FindAllOf scan")
+-- __DEPRECATED_20260721__ [reason: no direct test-only lifecycle mutation is required]
+-- remove_bridge_target = remove_bridge_target
+
+local cached_atomic_found = false
+for _, message in ipairs(runtime_logs) do
+    cached_atomic_found = cached_atomic_found
+        or message:match("CACHED_TARGETS_ATOMIC_SYNCED") ~= nil
+end
+assert(cached_atomic_found, "cached atomic target-sync diagnostic was not logged")
+runtime_settings_writes = {}
+print("Cached lifecycle and nearest-N atomic presentation passed")
 
 bridge_actor.ESP_RuntimeEnabled = true
 bridge_actor.ESP_ProfileId = 3
@@ -1273,6 +1890,127 @@ bridge_actor.ESP_ControlRevision = 68
 reconcile_loop()
 assert(bridge_style_payloads[#bridge_style_payloads].language_id == 0, "Chinese language id was not restored through the bridge")
 print("Panel display styles passed")
+
+bridge_actor.ESP_DisplayTargetLimit = 60
+bridge_actor.ESP_ControlRevision = 69
+reconcile_loop()
+local budget_payloads_before = #bridge_target_payloads
+local budget_clears_before = bridge_clear_target_count
+local budget_scans_before = monster_find_all_count
+local budget_removals_before = #bridge_removed_targets
+for index = 1, 22 do
+    local budget_actor = {}
+    local object_path = "/Game/Test.PersistentLevel.BudgetPal_" .. tostring(index)
+    function budget_actor:GetFullName()
+        return "PalMonsterCharacter " .. object_path
+    end
+    function budget_actor:GetAddress()
+        return 0x4000 + index
+    end
+    function budget_actor:GetClass()
+        return pal_runtime_class
+    end
+    function budget_actor:IsA(class_object)
+        return class_object.path == "/Script/Pal.PalMonsterCharacter"
+    end
+    function budget_actor:GetCharacterParameterComponent()
+        return event_component
+    end
+    function budget_actor:GetIndividualParameter()
+        return event_parameter
+    end
+    function budget_actor:IsInitialized()
+        return true
+    end
+    function budget_actor:K2_GetActorLocation()
+        return { X = 800 + index * 100, Y = 0, Z = 0 }
+    end
+    static_objects[object_path] = budget_actor
+    monsters[#monsters + 1] = budget_actor
+    bridge_begin_play_hook(budget_actor)
+end
+assert(#bridge_target_payloads == budget_payloads_before
+        and bridge_clear_target_count == budget_clears_before
+        and monster_find_all_count == budget_scans_before
+        and #delayed_callbacks == 1,
+    "22-actor BeginPlay burst performed synchronous work")
+drain_delayed_callbacks()
+reconcile_loop()
+assert(monster_find_all_count == budget_scans_before
+        and bridge_clear_target_count == budget_clears_before + 1
+        and #bridge_target_payloads == budget_payloads_before + 27,
+    "22-actor path queue did not coalesce into one cached atomic 27-target submit")
+assert(#bridge_removed_targets == budget_removals_before,
+    "below-limit cached submit called single-target RemoveTarget")
+print("Below-limit 27-of-60 cached atomic submit passed")
+
+local reactivated_payloads_before = #bridge_target_payloads
+local reactivated_clears_before = bridge_clear_target_count
+local scans_before_reactivation = monster_find_all_count
+monsters[#monsters + 1] = reactivated_actor
+active_actor_hook(reactivated_actor)
+assert(#bridge_target_payloads == reactivated_payloads_before
+        and monster_find_all_count == scans_before_reactivation
+        and #delayed_callbacks == 1,
+    "active pooled actor hook performed synchronous work")
+drain_delayed_callbacks()
+reconcile_loop()
+assert(#bridge_target_payloads == reactivated_payloads_before + 28
+        and bridge_clear_target_count == reactivated_clears_before + 1
+        and monster_find_all_count == scans_before_reactivation,
+    "active pooled actor did not trigger one cached atomic submit")
+reactivated_active = false
+local reactivated_removals_before = #bridge_removed_targets
+local reactivated_inactive_payloads_before = #bridge_target_payloads
+local reactivated_inactive_clears_before = bridge_clear_target_count
+assert(remove_monster(reactivated_actor), "reactivated actor cleanup failed")
+active_actor_hook(reactivated_actor)
+reconcile_loop()
+assert(#bridge_target_payloads == reactivated_inactive_payloads_before + 27
+        and bridge_clear_target_count == reactivated_inactive_clears_before + 1
+        and #bridge_removed_targets == reactivated_removals_before,
+    "inactive pooled actor did not use an atomic survivor rebuild")
+
+local integrity_payloads_before = #bridge_target_payloads
+local integrity_clears_before = bridge_clear_target_count
+local integrity_scans_before = monster_find_all_count
+local integrity_static_finds_before = static_actor_find_count
+local integrity_removals_before = #bridge_removed_targets
+monsters[#monsters + 1] = missed_stream_actor
+camera_x = 50
+reconcile_loop()
+assert(monster_find_all_count == integrity_scans_before,
+    "sub-threshold movement triggered a stream-integrity scan")
+camera_x = 120
+reconcile_loop()
+assert(monster_find_all_count == integrity_scans_before + 1,
+    "cumulative movement did not trigger exactly one identity census")
+assert(bridge_clear_target_count == integrity_clears_before
+        and #delayed_callbacks == 1,
+    "movement census synchronously admitted or presented an unknown actor")
+drain_delayed_callbacks()
+reconcile_loop()
+assert(bridge_clear_target_count == integrity_clears_before + 1
+        and #bridge_target_payloads == integrity_payloads_before + 28,
+    "movement census did not atomically submit the admitted cached targets")
+assert(#delayed_callbacks == 0
+        and static_actor_find_count - integrity_static_finds_before <= 33,
+    "movement census exceeded one admission plus refresh-budget plus N path resolves")
+assert(#bridge_removed_targets == integrity_removals_before,
+    "movement discovery called single-target RemoveTarget")
+local integrity_scans_after = monster_find_all_count
+for _ = 1, 3 do
+    reconcile_loop()
+end
+assert(monster_find_all_count == integrity_scans_after,
+    "stationary runtime repeated the stream-integrity scan")
+local integrity_scan_logged = false
+for _, message in ipairs(runtime_logs) do
+    integrity_scan_logged = integrity_scan_logged
+        or message:match("STREAM_INTEGRITY_CENSUS_COMPLETED") ~= nil
+end
+assert(integrity_scan_logged, "movement-integrity census diagnostics were missing")
+print("Pooled lifecycle and movement identity census passed")
 
 assert(type(load_map_pre_hook) == "function", "load-map pre-hook was not captured")
 bridge_actor.ESP_ProfileId = 2

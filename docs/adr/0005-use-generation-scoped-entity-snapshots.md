@@ -14,6 +14,7 @@ The runtime and Blueprint bridge spikes proved that UE4SS Lua can discover loade
 
 - UE4SS may return different Lua wrapper identities for the same UObject across later `FindAllOf` calls.
 - Retained wrappers must not be dereferenced during map teardown.
+- `BeginPlay` can run before `IndividualParameter` replication and character initialization complete. A later streamed Actor can therefore expose a live transform while Blueprint still holds metadata cached from an earlier parameter binding.
 - Some values are safe Lua scalars, some are available only through typed Blueprint nodes, and some have no proven accessor.
 - Guessing enum, array, struct, or userdata conversions can crash the GameThread rather than raise a catchable Lua error.
 - Rich filters and future resource adapters need one contract for unknown values, admission, ordering, and display budgets.
@@ -28,6 +29,9 @@ Use a Lua-owned, generation-scoped entity snapshot pipeline.
 - Lua remains the only discovery and admission layer.
 - The hard player-representation gate runs before every category adapter and cannot be disabled by configuration.
 - Each reconciliation creates a new snapshot generation. Actor wrapper references are valid only inside the current generation and current world session.
+- Event admission may retain a session-local full-name key, object path, and Lua-safe scalar metadata for every eligible loaded candidate, but never an Actor wrapper. This index is bridge bookkeeping, not canonical Pal identity, and it is cleared at every world/session boundary.
+- A Pal is not admissible until `APalCharacter::IsInitialized()` returns true and its current individual/save parameters pass the existing wild-Pal boundary. `OnRep_IndividualParameter` schedules a path-only readiness check; the post-hook for `BroadcastOnCompleteInitializeParameter` rebuilds an already displayed target with one Blueprint remove/set pair so all typed metadata arrays come from the current binding.
+- The 250-millisecond runtime tick resolves candidate paths only for the duration of that tick, applies the current distance filter, and selects the nearest display-budgeted `N`. If a displayed path remains unresolved for four ticks, Lua clears the bridge and rebuilds from the remaining resolvable path pool rather than decrementing only its count or invoking `FindAllOf`.
 - Map pre-load clears the snapshot and bridge references without dereferencing retained actors.
 - Category-specific classification and normalization live behind registered adapters. Adding an adapter may add one registration entry, but must not alter the player gate, filter engine, or renderer core.
 - A normalized record has an entity kind, current actor reference, session/generation/ordinal metadata, source, and named field cells.
@@ -71,12 +75,14 @@ Advantages:
 - Keeps the player boundary before all adapters and rendering.
 - Gives filters explicit unknown-value semantics.
 - Supports synthetic unit tests without loading Unreal.
+- Keeps streamed-Actor readiness and metadata rebinding explicit without treating a path or generation ordinal as persistent Pal identity.
 
 Disadvantages:
 
 - Rebuilds normalized records every reconciliation.
 - Requires deliberate Blueprint adapters for fields unsafe in Lua.
 - Notification updates must be reconciled with generation replacement.
+- Event-mode metadata refresh depends on Pal initialization lifecycle hooks; missing completion signals fall back to bounded path retries and an unresolved path temporarily clears all guides before repair.
 
 ### Option 3: Blueprint-Owned Registry
 
@@ -108,6 +114,8 @@ Disadvantages:
 
 Option 2 is the smallest design consistent with the evidence. It formalizes the already stable rebuild-before-render behavior, prevents unsafe values from becoming accidental filter matches, and makes future category work additive without moving the player boundary. It accepts periodic record rebuilding because the current five-second scan interval and observed actor counts are modest, while preserving a later C++ escalation path if profiling justifies it.
 
+The event-first extension preserves that decision: snapshots remain generation-scoped, while only scalar path bookkeeping survives between events in one world session. Initialization completion refreshes cached Blueprint metadata in place; an unresolvable bookkeeping entry triggers a complete bridge rebuild instead of attempting to guess which Pal an Actor now represents.
+
 ## Consequences
 
 Positive effects:
@@ -117,12 +125,14 @@ Positive effects:
 - Snapshot, filter, ordering, and budget logic can be unit tested outside Unreal.
 - Future resource adapters do not need to change renderer ownership.
 - Map teardown does not walk stale actor references.
+- Streamed parameter rebinding cannot leave a live guide paired with known-stale Blueprint metadata after the completion hook or fail-closed repair runs.
 
 Negative effects:
 
 - Rich Pal filters cannot be declared supported until their field providers pass runtime tests.
 - Snapshot generations allocate new Lua tables on reconciliation.
 - Lua and Blueprint may each own part of field normalization for types that cannot cross the bridge safely.
+- A fail-closed repair can briefly remove all guides and perform one exceptional full scan.
 
 Follow-up concerns:
 
@@ -150,6 +160,7 @@ Follow-up concerns:
 - [x] Implement Blueprint-owned right-click passive exclusion with include/exclude mutuality and pre-projection rejection.
 - [ ] Validate passive-skill names, visibility toggle, panel restoration, and lifecycle cleanup in Steam single-player.
 - [ ] Validate snapshot replacement, capture/death cleanup, map teardown, and normal exit in Steam single-player.
+- [ ] Validate initialization refresh, nearest-N boundary updates, distant unload/return, and species-filter identity in Steam single-player.
 - [ ] Measure reconciliation, filtering, ordering, and bridge synchronization separately.
 - [ ] Accept this ADR only after the Entity Core smoke matrix passes.
 - [ ] Add explicit Blueprint field-provider contracts for the remaining Pal Filter MVP fields.

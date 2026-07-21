@@ -27,7 +27,10 @@ WBP_ESPPanel
     Pal species -> search, element/work queries, sort, selected summary
 
 WBP_ESPOverlay
-  aligned target + metadata arrays -> pre-draw filters -> projection -> guides/labels
+  aligned target + parameter + metadata arrays
+  -> live parameter/CharacterID identity gate
+  -> mismatch: fail closed for this frame; never mutate during iteration
+  -> pre-draw filters -> projection -> guides/labels
 ```
 
 ## State Flow
@@ -40,7 +43,7 @@ WBP_ESPOverlay
 
 ## Input Boundary
 
-Opening uses `UIOnlyEx`, focuses the panel, shows the cursor, flushes input and sets the Mod-owned Pal controller disable flag. Key events return `Handled` after focused children. Closing clears only that flag and restores `GameOnly`.
+Opening uses `UIOnlyEx`, focuses the panel, shows the cursor, flushes input and sets the Mod-owned Pal controller disable flag. Key events return `Handled` after focused children. An unconsumed Escape key-down records a widget-local pending flag; the matching key-up clears it and invokes the canonical panel toggle, so game input is not restored during the original key-down. Closing clears only the Mod-owned controller flag and restores `GameOnly`, while Escape remains native game input when the panel is closed.
 
 ## Generation
 
