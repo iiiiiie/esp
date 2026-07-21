@@ -81,6 +81,7 @@ const FName BridgeGenderDiagnosticCodeVariableName(TEXT("ESP_BridgeGenderDiagnos
 // const FName OverlayTargetVariableName(TEXT("ESP_Target"));
 // const FName OverlaySetTargetEventName(TEXT("PalworldResourceESP_WidgetSetTarget"));
 const FName OverlayTargetsVariableName(TEXT("ESP_Targets"));
+const FName OverlayTargetParametersVariableName(TEXT("ESP_TargetParameters"));
 const FName OverlayTargetLevelsVariableName(TEXT("ESP_TargetLevels"));
 const FName OverlayTargetDistancesVariableName(TEXT("ESP_TargetDistances"));
 const FName OverlayTargetGendersVariableName(TEXT("ESP_TargetGenders"));
@@ -179,6 +180,7 @@ const FName ElementEarthVariableName(TEXT("ESP_ElementEarth"));
 const FName ElementDarkVariableName(TEXT("ESP_ElementDark"));
 const FName ElementDragonVariableName(TEXT("ESP_ElementDragon"));
 const FName DisplayTargetLimitVariableName(TEXT("ESP_DisplayTargetLimit"));
+const FName PanelEscapeClosePendingVariableName(TEXT("ESP_EscapeClosePending"));
 const FName PanelInitializeControlsEventName(TEXT("PalworldResourceESP_InitializeControls"));
 const FName PanelInitializeControlsV2EventName(TEXT("PalworldResourceESP_InitializeControlsV2"));
 const FName PanelSetPageStateEventName(TEXT("PalworldResourceESP_SetPageState"));
@@ -187,6 +189,7 @@ const FName PanelPopulatePassiveCatalogEventName(TEXT("PalworldResourceESP_Popul
 const FName PanelPopulatePalCatalogEventName(TEXT("PalworldResourceESP_PopulatePalCatalog"));
 const FName PanelRenderPalCatalogEventName(TEXT("PalworldResourceESP_RenderPalCatalog"));
 const FName ApplyPersistedPanelStateEventName(TEXT("PalworldResourceESP_ApplyPersistedPanelState"));
+const FName PanelToggleEventName(TEXT("PalworldResourceESP_TogglePanel"));
 const FName PassiveTooltipInitializeEventName(TEXT("PalworldResourceESP_InitializePassiveTooltip"));
 const FName PassiveEntryInitializeEventName(TEXT("PalworldResourceESP_InitializePassiveEntry"));
 const FName PassiveEntryBridgeVariableName(TEXT("ESP_Bridge"));
@@ -1410,6 +1413,17 @@ bool BuildOverlay(
         Blueprint->NewVariables[ExistingTargetsIndex].VarType = ObjectArrayPin(PalMonsterClass);
     }
 
+    const int32 ExistingTargetParametersIndex = FBlueprintEditorUtils::FindNewVariableIndex(
+        Blueprint, OverlayTargetParametersVariableName);
+    if (ExistingTargetParametersIndex == INDEX_NONE) {
+        if (!FBlueprintEditorUtils::AddMemberVariable(
+                Blueprint, OverlayTargetParametersVariableName, ObjectArrayPin(IndividualParameterClass))) {
+            return false;
+        }
+    } else {
+        Blueprint->NewVariables[ExistingTargetParametersIndex].VarType = ObjectArrayPin(IndividualParameterClass);
+    }
+
     const int32 ExistingTargetCharacterIdsIndex = FBlueprintEditorUtils::FindNewVariableIndex(
         Blueprint, OverlayTargetCharacterIdsVariableName);
     if (ExistingTargetCharacterIdsIndex == INDEX_NONE) {
@@ -1874,6 +1888,9 @@ bool BuildOverlay(
     UK2Node_VariableGet* ClearCharacterIdsGet = AddVariableGet(
         Graph, OverlayTargetCharacterIdsVariableName, 5780, -140);
     UK2Node_CallArrayFunction* ClearCharacterIdArray = AddArrayCall(Graph, TEXT("Array_Clear"), 6060, -300);
+    UK2Node_VariableGet* ClearParametersGet = AddVariableGet(
+        Graph, OverlayTargetParametersVariableName, 6320, -140);
+    UK2Node_CallArrayFunction* ClearParameterArray = AddArrayCall(Graph, TEXT("Array_Clear"), 6600, -300);
     if (!AddTarget || !AddTargetsGet || !AddTargetItem || !AddLevelsGet || !AddLevelItem
         || !AddDistancesGet || !AddDistanceItem || !ClearTargets || !ClearTargetsGet || !ClearTargetArray
         || !ClearLevelsGet || !ClearLevelArray || !ClearDistancesGet || !ClearDistanceArray
@@ -1886,6 +1903,7 @@ bool BuildOverlay(
         || !ClearPassiveTextsGet || !ClearPassiveTextArray
         || !ClearPassiveIdTextsGet || !ClearPassiveIdTextArray
         || !ClearNamesGet || !ClearNameArray || !ClearCharacterIdsGet || !ClearCharacterIdArray
+        || !ClearParametersGet || !ClearParameterArray
         || !Link(AddTarget, UEdGraphSchema_K2::PN_Then, AddTargetItem, UEdGraphSchema_K2::PN_Execute)
         || !Link(AddTargetsGet, OverlayTargetsVariableName, AddTargetItem, TEXT("TargetArray"))
         || !Link(AddTarget, TEXT("Target"), AddTargetItem, TEXT("NewItem"))
@@ -1924,7 +1942,9 @@ bool BuildOverlay(
         || !Link(ClearPassiveIdTextArray, UEdGraphSchema_K2::PN_Then, ClearNameArray, UEdGraphSchema_K2::PN_Execute)
         || !Link(ClearNamesGet, OverlayTargetNamesVariableName, ClearNameArray, TEXT("TargetArray"))
         || !Link(ClearNameArray, UEdGraphSchema_K2::PN_Then, ClearCharacterIdArray, UEdGraphSchema_K2::PN_Execute)
-        || !Link(ClearCharacterIdsGet, OverlayTargetCharacterIdsVariableName, ClearCharacterIdArray, TEXT("TargetArray"))) {
+        || !Link(ClearCharacterIdsGet, OverlayTargetCharacterIdsVariableName, ClearCharacterIdArray, TEXT("TargetArray"))
+        || !Link(ClearCharacterIdArray, UEdGraphSchema_K2::PN_Then, ClearParameterArray, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ClearParametersGet, OverlayTargetParametersVariableName, ClearParameterArray, TEXT("TargetArray"))) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay target array graph failed"));
         return false;
     }
@@ -1966,6 +1986,7 @@ bool BuildOverlay(
         OverlayTargetPassiveIdTextsVariableName,
         OverlayTargetNamesVariableName,
         OverlayTargetCharacterIdsVariableName,
+        OverlayTargetParametersVariableName,
     };
     UEdGraphNode* RemoveExecTail = RemoveIndexBranch;
     int32 RemoveNodeX = -120;
@@ -2252,13 +2273,16 @@ bool BuildOverlay(
         UK2Node_VariableGet* CharacterIdsGet = AddVariableGet(
             Graph, OverlayTargetCharacterIdsVariableName, X + 5200, Y + 120);
         UK2Node_CallArrayFunction* AddCharacterIdItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 5460, Y);
-        UK2Node_VariableGet* LoggedGet = AddVariableGet(Graph, OverlayGenderLoggedVariableName, X + 5720, Y + 160);
-        UK2Node_CallFunction* NotLogged = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 5980, Y + 160);
-        UK2Node_IfThenElse* LogBranch = AddBranch(Graph, X + 6240, Y);
-        UK2Node_VariableSet* StoreDiagnostic = AddVariableSet(Graph, OverlayGenderDiagnosticVariableName, X + 6500, Y);
-        UK2Node_VariableSet* StoreDiagnosticCode = AddVariableSet(Graph, OverlayGenderDiagnosticCodeVariableName, X + 6760, Y);
-        UK2Node_CallFunction* Print = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), X + 7020, Y);
-        UK2Node_VariableSet* MarkLogged = AddVariableSet(Graph, OverlayGenderLoggedVariableName, X + 7280, Y);
+        UK2Node_VariableGet* ParametersGet = AddVariableGet(
+            Graph, OverlayTargetParametersVariableName, X + 5720, Y + 120);
+        UK2Node_CallArrayFunction* AddParameterItem = AddArrayCall(Graph, TEXT("Array_Add"), X + 5980, Y);
+        UK2Node_VariableGet* LoggedGet = AddVariableGet(Graph, OverlayGenderLoggedVariableName, X + 6240, Y + 160);
+        UK2Node_CallFunction* NotLogged = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), X + 6500, Y + 160);
+        UK2Node_IfThenElse* LogBranch = AddBranch(Graph, X + 6760, Y);
+        UK2Node_VariableSet* StoreDiagnostic = AddVariableSet(Graph, OverlayGenderDiagnosticVariableName, X + 7020, Y);
+        UK2Node_VariableSet* StoreDiagnosticCode = AddVariableSet(Graph, OverlayGenderDiagnosticCodeVariableName, X + 7280, Y);
+        UK2Node_CallFunction* Print = AddStaticCall(Graph, UKismetSystemLibrary::StaticClass(), TEXT("PrintString"), X + 7540, Y);
+        UK2Node_VariableSet* MarkLogged = AddVariableSet(Graph, OverlayGenderLoggedVariableName, X + 7800, Y);
         const FString Message = FString::Printf(TEXT("[PalworldResourceESP] BLUEPRINT_GENDER value=%s"), Value);
         const bool bLuckySourceReady = bLuckyKnown
             ? SelectLuckyState
@@ -2301,6 +2325,9 @@ bool BuildOverlay(
         const bool bCharacterIdSourceReady = bLuckyKnown
             ? Link(CharacterId, UEdGraphSchema_K2::PN_ReturnValue, AddCharacterIdItem, TEXT("NewItem"))
             : SetPinDefault(AddCharacterIdItem, TEXT("NewItem"), TEXT("None"));
+        const bool bParameterSourceReady = bLuckyKnown
+            ? Link(IndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, AddParameterItem, TEXT("NewItem"))
+            : SetPinDefault(AddParameterItem, TEXT("NewItem"), TEXT("None"));
         return GendersGet && AddGenderItem && LuckyStatesGet && AddLuckyStateItem && bLuckySourceReady
             && BossStatesGet && AddBossStateItem && bBossSourceReady
             && CaptureCountsGet && AddCaptureCountItem && CaptureCountBuildSource && bCaptureSourceReady
@@ -2311,6 +2338,7 @@ bool BuildOverlay(
             && PassiveIdTextsGet && AddPassiveIdTextItem && PassiveIdBuildTextSource && bPassiveIdSourceReady
             && NamesGet && AddNameItem && bNameSourceReady
             && CharacterIdsGet && AddCharacterIdItem && bCharacterIdSourceReady
+            && ParametersGet && AddParameterItem && bParameterSourceReady
             && LoggedGet && NotLogged && LogBranch
             && StoreDiagnostic && StoreDiagnosticCode && Print && MarkLogged
             && Link(ExecNode, ExecPin, AddGenderItem, UEdGraphSchema_K2::PN_Execute)
@@ -2338,7 +2366,9 @@ bool BuildOverlay(
             && Link(NamesGet, OverlayTargetNamesVariableName, AddNameItem, TEXT("TargetArray"))
             && Link(AddNameItem, UEdGraphSchema_K2::PN_Then, AddCharacterIdItem, UEdGraphSchema_K2::PN_Execute)
             && Link(CharacterIdsGet, OverlayTargetCharacterIdsVariableName, AddCharacterIdItem, TEXT("TargetArray"))
-            && Link(AddCharacterIdItem, UEdGraphSchema_K2::PN_Then, LogBranch, UEdGraphSchema_K2::PN_Execute)
+            && Link(AddCharacterIdItem, UEdGraphSchema_K2::PN_Then, AddParameterItem, UEdGraphSchema_K2::PN_Execute)
+            && Link(ParametersGet, OverlayTargetParametersVariableName, AddParameterItem, TEXT("TargetArray"))
+            && Link(AddParameterItem, UEdGraphSchema_K2::PN_Then, LogBranch, UEdGraphSchema_K2::PN_Execute)
             && Link(LoggedGet, OverlayGenderLoggedVariableName, NotLogged, TEXT("A"))
             && Link(NotLogged, UEdGraphSchema_K2::PN_ReturnValue, LogBranch, UEdGraphSchema_K2::PN_Condition)
             && Link(LogBranch, UEdGraphSchema_K2::PN_Then, StoreDiagnostic, UEdGraphSchema_K2::PN_Execute)
@@ -2362,6 +2392,15 @@ bool BuildOverlay(
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay gender/Lucky/Boss/element/IV result graph failed"));
         return false;
     }
+
+    // Materialize the custom-event signatures before wiring the OnPaint self-repair calls.
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+    if (Blueprint->Status == BS_Error || !Blueprint->GeneratedClass) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] BuildOverlay pre-paint compile failed status=%d"), static_cast<int32>(Blueprint->Status));
+        return false;
+    }
+    UClass* OverlayRuntimeClass = Blueprint->GeneratedClass;
 
     UK2Node_Event* OnPaint = AddOverrideEvent(Blueprint, Graph, UUserWidget::StaticClass(), TEXT("OnPaint"), -1500, 80);
     UK2Node_VariableGet* TopGuideEnabledGet = AddVariableGet(Graph, OverlayTopGuideEnabledVariableName, -1500, 200);
@@ -2401,6 +2440,9 @@ bool BuildOverlay(
     UK2Node_VariableGet* TargetCharacterIdsGet = AddVariableGet(
         Graph, OverlayTargetCharacterIdsVariableName, -1000, 1280);
     UK2Node_CallArrayFunction* TargetCharacterIdGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1280);
+    UK2Node_VariableGet* TargetParametersGet = AddVariableGet(
+        Graph, OverlayTargetParametersVariableName, -1000, 1360);
+    UK2Node_CallArrayFunction* TargetParameterGet = AddArrayCall(Graph, TEXT("Array_Get"), -720, 1360);
     UK2Node_VariableGet* SpeciesFilterIdsGet = AddVariableGet(
         Graph, OverlaySpeciesFilterIdsVariableName, -440, 1120);
     UK2Node_CallArrayFunction* SpeciesFilterCount = AddArrayCall(Graph, TEXT("Array_Length"), -160, 1120);
@@ -2548,6 +2590,30 @@ bool BuildOverlay(
     UK2Node_CallFunction* TargetDead = AddStaticCall(Graph, PalUtilityClass, TEXT("IsDead"), -700, 440);
     UK2Node_CallFunction* TargetNotDead = AddStaticCall(Graph, UKismetMathLibrary::StaticClass(), TEXT("Not_PreBool"), -440, 440);
     UK2Node_IfThenElse* TargetAliveBranch = AddBranch(Graph, -420, 80);
+    UK2Node_CallFunction* LiveCharacterParameter = AddStaticCall(
+        Graph, PalMonsterClass, TEXT("GetCharacterParameterComponent"), -940, 520);
+    UK2Node_CallFunction* LiveIndividualParameter = AddStaticCall(
+        Graph, CharacterParameterComponentClass, TEXT("GetIndividualParameter"), -680, 520);
+    UK2Node_CallFunction* LiveParameterValid = AddStaticCall(
+        Graph, UKismetSystemLibrary::StaticClass(), TEXT("IsValid"), -420, 600);
+    UK2Node_IfThenElse* LiveParameterValidBranch = AddBranch(Graph, -160, -80);
+    UK2Node_CallFunction* ParameterIdentityMatch = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_ObjectObject"), -160, 600);
+    UK2Node_CallFunction* LiveCharacterId = AddStaticCall(
+        Graph, IndividualParameterClass, TEXT("GetCharacterID"), 100, 600);
+    UK2Node_CallFunction* CharacterIdIdentityMatch = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("EqualEqual_NameName"), 360, 600);
+    UK2Node_CallFunction* IdentityMatch = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), 620, 600);
+    UK2Node_IfThenElse* IdentityMatchBranch = AddBranch(Graph, 880, -80);
+    // __DEPRECATED_20260721__ [reason: mutating parallel target arrays during ForEachTarget corrupts iteration]
+    // UK2Node_Self* RebindSelf = AddSelfNode(Graph, 880, 760);
+    // UK2Node_CallFunction* RebindRemoveTarget = AddStaticCall(
+    //     Graph, OverlayRuntimeClass, *OverlayRemoveTargetEventName.ToString(), 1140, 680);
+    // UK2Node_CallFunction* RebindAddTarget = AddStaticCall(
+    //     Graph, OverlayRuntimeClass, *OverlayAddTargetEventName.ToString(), 1400, 680);
+    // UK2Node_CallFunction* LiveLevel = AddStaticCall(
+    //     Graph, IndividualParameterClass, TEXT("GetLevel"), 1140, 840);
     UK2Node_IfThenElse* SpeciesFilterBranch = AddBranch(Graph, -300, 80);
     UK2Node_IfThenElse* GenderFilterBranch = AddBranch(Graph, -160, 80);
     UK2Node_IfThenElse* LuckyFilterBranch = AddBranch(Graph, 120, 80);
@@ -2608,7 +2674,8 @@ bool BuildOverlay(
         || !BasicMetadataEnabled || !MetadataEnabled || !AllMetadataEnabled || !VisibleNameEnabled || !LabelsEnabled
         || !PaintSequence || !LabelEnabledBranch || !TopGuideEnabledBranch || !TargetsGet || !ForEachTarget
         || !TargetLevelsGet || !TargetLevelGet || !TargetNamesGet || !TargetNameGet || !NameNotEmpty
-        || !TargetCharacterIdsGet || !TargetCharacterIdGet || !SpeciesFilterIdsGet
+        || !TargetCharacterIdsGet || !TargetCharacterIdGet || !TargetParametersGet || !TargetParameterGet
+        || !SpeciesFilterIdsGet
         || !SpeciesFilterCount || !SpeciesFilterAll || !SpeciesFilterContains || !SpeciesFilterAccepted
         || !TargetGendersGet || !TargetGenderGet
         || !GenderFilterAll || !GenderFilterMatch || !GenderFilterAccepted
@@ -2650,7 +2717,12 @@ bool BuildOverlay(
         || !PassiveLineSeparator || !MetadataWithPassiveSeparator || !MetadataWithPassive || !SelectMetadataWithPassive
         || !NameWithNewline || !NameAndMetadata || !SelectNameLabel || !SelectFinalLabel
         || !TargetValid || !TargetBranch || !TargetDead || !TargetNotDead
-        || !TargetAliveBranch || !SpeciesFilterBranch || !GenderFilterBranch || !LuckyFilterBranch || !BossFilterBranch
+        || !TargetAliveBranch || !LiveCharacterParameter || !LiveIndividualParameter || !LiveParameterValid
+        || !LiveParameterValidBranch || !ParameterIdentityMatch || !LiveCharacterId
+        || !CharacterIdIdentityMatch || !IdentityMatch || !IdentityMatchBranch
+        // __DEPRECATED_20260721__ [reason: identity mismatch now fails closed until Lua atomically rebuilds]
+        // || !RebindSelf || !RebindRemoveTarget || !RebindAddTarget || !LiveLevel
+        || !SpeciesFilterBranch || !GenderFilterBranch || !LuckyFilterBranch || !BossFilterBranch
         || !CollectionFilterBranch || !ElementFilterBranch
         || !IvMinimumBranch || !PassiveFilterBranch
         || !ActorLocation || !Self || !PlayerController
@@ -2685,6 +2757,8 @@ bool BuildOverlay(
         || !Link(LevelPrefix, UEdGraphSchema_K2::PN_ReturnValue, BuildLevelText, TEXT("Prefix"))
         || !Link(TargetCharacterIdsGet, OverlayTargetCharacterIdsVariableName, TargetCharacterIdGet, TEXT("TargetArray"))
         || !Link(ForEachTarget, TEXT("Array Index"), TargetCharacterIdGet, TEXT("Index"))
+        || !Link(TargetParametersGet, OverlayTargetParametersVariableName, TargetParameterGet, TEXT("TargetArray"))
+        || !Link(ForEachTarget, TEXT("Array Index"), TargetParameterGet, TEXT("Index"))
         || !Link(SpeciesFilterIdsGet, OverlaySpeciesFilterIdsVariableName, SpeciesFilterCount, TEXT("TargetArray"))
         || !Link(SpeciesFilterCount, UEdGraphSchema_K2::PN_ReturnValue, SpeciesFilterAll, TEXT("A"))
         || !SetPinDefault(SpeciesFilterAll, TEXT("B"), TEXT("0"))
@@ -2939,9 +3013,31 @@ bool BuildOverlay(
         || !Link(ForEachTarget, TEXT("Array Element"), TargetDead, TEXT("Actor"))
         || !Link(TargetDead, UEdGraphSchema_K2::PN_ReturnValue, TargetNotDead, TEXT("A"))
         || !Link(TargetNotDead, UEdGraphSchema_K2::PN_ReturnValue, TargetAliveBranch, UEdGraphSchema_K2::PN_Condition)
-        // __DEPRECATED_20260717__ [reason: gender rejection must happen before projection and drawing]
-        // || !Link(TargetAliveBranch, UEdGraphSchema_K2::PN_Then, ProjectBranch, UEdGraphSchema_K2::PN_Execute)
-        || !Link(TargetAliveBranch, UEdGraphSchema_K2::PN_Then, SpeciesFilterBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(ForEachTarget, TEXT("Array Element"), LiveCharacterParameter, UEdGraphSchema_K2::PN_Self)
+        || !Link(LiveCharacterParameter, UEdGraphSchema_K2::PN_ReturnValue, LiveIndividualParameter, UEdGraphSchema_K2::PN_Self)
+        || !Link(LiveIndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, LiveParameterValid, TEXT("Object"))
+        || !Link(LiveParameterValid, UEdGraphSchema_K2::PN_ReturnValue, LiveParameterValidBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(LiveIndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, ParameterIdentityMatch, TEXT("A"))
+        || !Link(TargetParameterGet, TEXT("Item"), ParameterIdentityMatch, TEXT("B"))
+        || !Link(LiveIndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, LiveCharacterId, UEdGraphSchema_K2::PN_Self)
+        || !Link(LiveCharacterId, UEdGraphSchema_K2::PN_ReturnValue, CharacterIdIdentityMatch, TEXT("A"))
+        || !Link(TargetCharacterIdGet, TEXT("Item"), CharacterIdIdentityMatch, TEXT("B"))
+        || !Link(ParameterIdentityMatch, UEdGraphSchema_K2::PN_ReturnValue, IdentityMatch, TEXT("A"))
+        || !Link(CharacterIdIdentityMatch, UEdGraphSchema_K2::PN_ReturnValue, IdentityMatch, TEXT("B"))
+        || !Link(TargetAliveBranch, UEdGraphSchema_K2::PN_Then, LiveParameterValidBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(LiveParameterValidBranch, UEdGraphSchema_K2::PN_Then, IdentityMatchBranch, UEdGraphSchema_K2::PN_Execute)
+        || !Link(IdentityMatch, UEdGraphSchema_K2::PN_ReturnValue, IdentityMatchBranch, UEdGraphSchema_K2::PN_Condition)
+        || !Link(IdentityMatchBranch, UEdGraphSchema_K2::PN_Then, SpeciesFilterBranch, UEdGraphSchema_K2::PN_Execute)
+        // __DEPRECATED_20260721__ [reason: never mutate ESP_Targets while ForEachTarget is executing]
+        // || !Link(IdentityMatchBranch, UEdGraphSchema_K2::PN_Else, RebindRemoveTarget, UEdGraphSchema_K2::PN_Execute)
+        // || !Link(RebindSelf, UEdGraphSchema_K2::PN_Self, RebindRemoveTarget, UEdGraphSchema_K2::PN_Self)
+        // || !Link(ForEachTarget, TEXT("Array Element"), RebindRemoveTarget, TEXT("Target"))
+        // || !Link(RebindRemoveTarget, UEdGraphSchema_K2::PN_Then, RebindAddTarget, UEdGraphSchema_K2::PN_Execute)
+        // || !Link(RebindSelf, UEdGraphSchema_K2::PN_Self, RebindAddTarget, UEdGraphSchema_K2::PN_Self)
+        // || !Link(ForEachTarget, TEXT("Array Element"), RebindAddTarget, TEXT("Target"))
+        // || !Link(LiveIndividualParameter, UEdGraphSchema_K2::PN_ReturnValue, LiveLevel, UEdGraphSchema_K2::PN_Self)
+        // || !Link(LiveLevel, UEdGraphSchema_K2::PN_ReturnValue, RebindAddTarget, TEXT("Level"))
+        // || !Link(RoundDistance, UEdGraphSchema_K2::PN_ReturnValue, RebindAddTarget, TEXT("DistanceMeters"))
         || !Link(SpeciesFilterBranch, UEdGraphSchema_K2::PN_Then, GenderFilterBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(GenderFilterBranch, UEdGraphSchema_K2::PN_Then, LuckyFilterBranch, UEdGraphSchema_K2::PN_Execute)
         || !Link(LuckyFilterBranch, UEdGraphSchema_K2::PN_Then, BossFilterBranch, UEdGraphSchema_K2::PN_Execute)
@@ -3049,6 +3145,87 @@ bool BuildHandledKeyOverride(UWidgetBlueprint* Blueprint, const FName& FunctionN
     return HandledReply
         && Link(Entry, UEdGraphSchema_K2::PN_Then, Result, UEdGraphSchema_K2::PN_Execute)
         && Link(HandledReply, UEdGraphSchema_K2::PN_ReturnValue, Result, UEdGraphSchema_K2::PN_ReturnValue);
+}
+
+bool BuildPanelKeyDownOverride(UWidgetBlueprint* Blueprint) {
+    UEdGraph* Graph = nullptr;
+    UK2Node_FunctionEntry* Entry = nullptr;
+    UK2Node_FunctionResult* GenericHandledResult = nullptr;
+    if (!EnsureMemberVariable(Blueprint, PanelEscapeClosePendingVariableName, BoolPin(), TEXT("false"))
+        || !PrepareOverrideFunctionGraph(
+            Blueprint, UUserWidget::StaticClass(), TEXT("OnKeyDown"), Graph, Entry, GenericHandledResult)) {
+        return false;
+    }
+
+    UK2Node_FunctionResult* EscapeHandledResult = AddFunctionResultNode(Graph, Entry, 520, 880);
+    UK2Node_CallFunction* GetKey = AddStaticCall(
+        Graph, UKismetInputLibrary::StaticClass(), TEXT("GetKey"), -1320, 1280);
+    UK2Node_CallFunction* IsEscape = AddStaticCall(
+        Graph, UKismetInputLibrary::StaticClass(), TEXT("EqualEqual_KeyKey"), -1040, 1280);
+    UK2Node_IfThenElse* EscapeBranch = AddBranch(Graph, -760, 1120);
+    UK2Node_VariableSet* SetPending = AddVariableSet(
+        Graph, PanelEscapeClosePendingVariableName, -480, 880);
+    UK2Node_CallFunction* HandledReply = AddStaticCall(
+        Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("Handled"), 0, 1280);
+    return EscapeHandledResult && GetKey && IsEscape && EscapeBranch && SetPending && HandledReply
+        && Link(Entry, TEXT("InKeyEvent"), GetKey, TEXT("Input"))
+        && Link(GetKey, UEdGraphSchema_K2::PN_ReturnValue, IsEscape, TEXT("A"))
+        && SetPinDefault(IsEscape, TEXT("B"), TEXT("Escape"))
+        && Link(Entry, UEdGraphSchema_K2::PN_Then, EscapeBranch, UEdGraphSchema_K2::PN_Execute)
+        && Link(IsEscape, UEdGraphSchema_K2::PN_ReturnValue, EscapeBranch, UEdGraphSchema_K2::PN_Condition)
+        && Link(EscapeBranch, UEdGraphSchema_K2::PN_Then, SetPending, UEdGraphSchema_K2::PN_Execute)
+        && SetPinDefault(SetPending, PanelEscapeClosePendingVariableName, TEXT("true"))
+        && Link(SetPending, UEdGraphSchema_K2::PN_Then, EscapeHandledResult, UEdGraphSchema_K2::PN_Execute)
+        && Link(EscapeBranch, UEdGraphSchema_K2::PN_Else, GenericHandledResult, UEdGraphSchema_K2::PN_Execute)
+        && Link(HandledReply, UEdGraphSchema_K2::PN_ReturnValue, EscapeHandledResult, UEdGraphSchema_K2::PN_ReturnValue)
+        && Link(HandledReply, UEdGraphSchema_K2::PN_ReturnValue, GenericHandledResult, UEdGraphSchema_K2::PN_ReturnValue);
+}
+
+bool BuildPanelKeyUpOverride(UWidgetBlueprint* Blueprint, UClass* ModActorClass) {
+    UEdGraph* Graph = nullptr;
+    UK2Node_FunctionEntry* Entry = nullptr;
+    UK2Node_FunctionResult* GenericHandledResult = nullptr;
+    if (!ModActorClass || !ModActorClass->FindFunctionByName(PanelToggleEventName)
+        || !EnsureMemberVariable(Blueprint, PanelEscapeClosePendingVariableName, BoolPin(), TEXT("false"))
+        || !PrepareOverrideFunctionGraph(
+            Blueprint, UUserWidget::StaticClass(), TEXT("OnKeyUp"), Graph, Entry, GenericHandledResult)) {
+        return false;
+    }
+
+    UK2Node_FunctionResult* EscapeHandledResult = AddFunctionResultNode(Graph, Entry, 1080, 880);
+    UK2Node_CallFunction* GetKey = AddStaticCall(
+        Graph, UKismetInputLibrary::StaticClass(), TEXT("GetKey"), -1320, 1280);
+    UK2Node_CallFunction* IsEscape = AddStaticCall(
+        Graph, UKismetInputLibrary::StaticClass(), TEXT("EqualEqual_KeyKey"), -1040, 1280);
+    UK2Node_VariableGet* PendingGet = AddVariableGet(
+        Graph, PanelEscapeClosePendingVariableName, -1040, 1440);
+    UK2Node_CallFunction* ShouldClose = AddStaticCall(
+        Graph, UKismetMathLibrary::StaticClass(), TEXT("BooleanAND"), -760, 1280);
+    UK2Node_IfThenElse* EscapeBranch = AddBranch(Graph, -480, 1120);
+    UK2Node_VariableSet* ClearPending = AddVariableSet(
+        Graph, PanelEscapeClosePendingVariableName, -200, 880);
+    UK2Node_VariableGet* BridgeGet = AddVariableGet(Graph, PanelBridgeVariableName, 80, 1280);
+    UK2Node_CallFunction* TogglePanel = AddStaticCall(
+        Graph, ModActorClass, *PanelToggleEventName.ToString(), 360, 880);
+    UK2Node_CallFunction* HandledReply = AddStaticCall(
+        Graph, UWidgetBlueprintLibrary::StaticClass(), TEXT("Handled"), 800, 1280);
+    return EscapeHandledResult && GetKey && IsEscape && PendingGet && ShouldClose && EscapeBranch
+        && ClearPending && BridgeGet && TogglePanel && HandledReply
+        && Link(Entry, TEXT("InKeyEvent"), GetKey, TEXT("Input"))
+        && Link(GetKey, UEdGraphSchema_K2::PN_ReturnValue, IsEscape, TEXT("A"))
+        && SetPinDefault(IsEscape, TEXT("B"), TEXT("Escape"))
+        && Link(IsEscape, UEdGraphSchema_K2::PN_ReturnValue, ShouldClose, TEXT("A"))
+        && Link(PendingGet, PanelEscapeClosePendingVariableName, ShouldClose, TEXT("B"))
+        && Link(Entry, UEdGraphSchema_K2::PN_Then, EscapeBranch, UEdGraphSchema_K2::PN_Execute)
+        && Link(ShouldClose, UEdGraphSchema_K2::PN_ReturnValue, EscapeBranch, UEdGraphSchema_K2::PN_Condition)
+        && Link(EscapeBranch, UEdGraphSchema_K2::PN_Then, ClearPending, UEdGraphSchema_K2::PN_Execute)
+        && SetPinDefault(ClearPending, PanelEscapeClosePendingVariableName, TEXT("false"))
+        && Link(ClearPending, UEdGraphSchema_K2::PN_Then, TogglePanel, UEdGraphSchema_K2::PN_Execute)
+        && Link(BridgeGet, PanelBridgeVariableName, TogglePanel, UEdGraphSchema_K2::PN_Self)
+        && Link(TogglePanel, UEdGraphSchema_K2::PN_Then, EscapeHandledResult, UEdGraphSchema_K2::PN_Execute)
+        && Link(EscapeBranch, UEdGraphSchema_K2::PN_Else, GenericHandledResult, UEdGraphSchema_K2::PN_Execute)
+        && Link(HandledReply, UEdGraphSchema_K2::PN_ReturnValue, EscapeHandledResult, UEdGraphSchema_K2::PN_ReturnValue)
+        && Link(HandledReply, UEdGraphSchema_K2::PN_ReturnValue, GenericHandledResult, UEdGraphSchema_K2::PN_ReturnValue);
 }
 
 bool PrepareModActorControls(UBlueprint* Blueprint) {
@@ -7553,7 +7730,8 @@ bool BuildPanel(
     UEnum* WorkSuitabilityEnum,
     UClass* MasterDataTablesUtilityClass) {
     UE_LOG(LogTemp, Display, TEXT("[ESP_AUTOMATION] BuildPanelV2 begin blueprint=%s"), *GetNameSafe(Blueprint));
-    if (!Blueprint || !Blueprint->WidgetTree || !ModActorClass || !PassiveEntryClass || !PalEntryClass
+    if (!Blueprint || !Blueprint->WidgetTree || !ModActorClass || !ModActorClass->FindFunctionByName(PanelToggleEventName)
+        || !PassiveEntryClass || !PalEntryClass
         || !PalUtilityClass || !PalUIUtilityClass || !DatabaseCharacterParameterClass || !PassiveSkillManagerClass
         || !PassiveSkillDatabaseRowStruct || !CharacterParameterDatabaseRowStruct || !DropItemDatabaseRowStruct
         || !ElementEnum || !WorkSuitabilityEnum || !MasterDataTablesUtilityClass) {
@@ -8589,8 +8767,8 @@ bool BuildPanel(
     if (!BuildPanelInitializeLanguage(Blueprint, Translations, LanguageButtons, Y)
         || !BuildPanelLanguageEvent(Blueprint, Chinese, ModActorClass, 0, Translations, Y + 720, &LanguageButtons, true)
         || !BuildPanelLanguageEvent(Blueprint, English, ModActorClass, 1, Translations, Y + 1440, &LanguageButtons, true)
-        || !BuildHandledKeyOverride(Blueprint, TEXT("OnKeyDown"))
-        || !BuildHandledKeyOverride(Blueprint, TEXT("OnKeyUp"))) {
+        || !BuildPanelKeyDownOverride(Blueprint)
+        || !BuildPanelKeyUpOverride(Blueprint, ModActorClass)) {
         return false;
     }
 
@@ -8698,7 +8876,8 @@ bool BuildModActor(
         TPair<FName, FEdGraphPinType>(FName("ElementFilterMask"), IntPin()),
         TPair<FName, FEdGraphPinType>(FName("LanguageId"), IntPin())
     });
-    UK2Node_CustomEvent* TogglePanel = AddCustomEvent(Blueprint, Graph, TEXT("PalworldResourceESP_TogglePanel"), -900, 1520, {});
+    UK2Node_CustomEvent* TogglePanel = AddCustomEvent(
+        Blueprint, Graph, *PanelToggleEventName.ToString(), -900, 1520, {});
     UK2Node_CustomEvent* ApplyPersistedPanelState = AddCustomEvent(
         Blueprint, Graph, *ApplyPersistedPanelStateEventName.ToString(), -900, 3200, {});
     if (!PostBeginPlay || !BridgeReady || !Reset || !SetTarget || !ClearTarget || !RemoveTarget || !SetDisplayStyle
@@ -9581,6 +9760,17 @@ bool UESPBlueprintAutomationLibrary::BuildPalworldResourceESPAssets() {
 
     if (!PrepareModActorControls(ModActor)) {
         UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] ModActor control preparation failed"));
+        return false;
+    }
+    // WBP_ESPPanel calls this event, while the final implementation depends on the generated panel class.
+    if (!AddCustomEvent(ModActor, ModActorGraph, *PanelToggleEventName.ToString(), -900, 1520, {})) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] ModActor panel-toggle signature preparation failed"));
+        return false;
+    }
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(ModActor);
+    FKismetEditorUtilities::CompileBlueprint(ModActor);
+    if (ModActor->Status == BS_Error) {
+        UE_LOG(LogTemp, Error, TEXT("[ESP_AUTOMATION] ModActor panel-toggle signature compile failed"));
         return false;
     }
     if (!BuildOverlay(Overlay, PalMonsterClass, CharacterParameterComponentClass, IndividualParameterClass,

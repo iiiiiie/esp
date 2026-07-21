@@ -139,6 +139,26 @@ local state = {
     bridge_target_count = 0,
     bridge_target_keys = {},
     bridge_target_order = {},
+    nearest_candidates = {},
+    nearest_candidate_count = 0,
+    nearest_candidate_order = {},
+    nearest_refresh_cursor = 1,
+    nearest_index_dirty = true,
+    next_nearest_refresh_at = 0.0,
+    atomic_rebuild_dirty = false,
+    atomic_rebuild_reason = nil,
+    atomic_rebuild_due_at = 0.0,
+    atomic_rebuild_deadline_at = 0.0,
+    atomic_rebuild_revision = 0,
+    next_atomic_rebuild_at = 0.0,
+    cached_bridge_resync_dirty = false,
+    cached_bridge_resync_force = false,
+    cached_bridge_resync_reason = nil,
+    cached_bridge_resync_revision = 0,
+    stream_integrity_last_location = nil,
+    stream_integrity_distance_cm = 0.0,
+    next_stream_integrity_scan_at = 0.0,
+    bridge_repair_scheduled = false,
     bridge_gender_logged = false,
     bridge_gender_pending_reason = nil,
     rich_text_audit_consumed_bytes = 0,
@@ -900,6 +920,14 @@ local function classify_actor(actor, player_gate_already_passed)
         return "dead", component, nil
     end
 
+    local ok_initialized, initialized = safe_call_no_args(actor, "IsInitialized")
+    if not ok_initialized then
+        return "character_initialization_unavailable", component, nil
+    end
+    if initialized ~= true then
+        return "character_not_initialized", component, nil
+    end
+
     local parameter = try_get_individual_parameter(actor)
     if not is_valid(parameter) then
         return "individual_parameter_unavailable", component, nil
@@ -941,12 +969,24 @@ local function classify_actor(actor, player_gate_already_passed)
     return "wild", component, parameter, save_parameter
 end
 
-local function actor_key(actor)
+local function actor_full_name(actor)
     local ok, full_name = safe_call_no_args(actor, "GetFullName")
     if ok and type(full_name) == "string" and full_name ~= "" then
         return full_name
     end
     return nil
+end
+
+local function actor_key(actor)
+    local full_name = actor_full_name(actor)
+    if full_name == nil then
+        return nil
+    end
+    local ok, address = safe_call_no_args(actor, "GetAddress")
+    if not ok or type(address) ~= "number" or address == 0 then
+        return nil
+    end
+    return string.format("%s @0x%X", full_name, address)
 end
 
 local function runtime_enabled()
@@ -1209,6 +1249,25 @@ local function clear_candidate_cache(reason)
     state.candidate_count = 0
     state.matched_records = {}
     state.display_records = {}
+    state.nearest_candidates = {}
+    state.nearest_candidate_count = 0
+    state.nearest_candidate_order = {}
+    state.nearest_refresh_cursor = 1
+    state.nearest_index_dirty = true
+    state.next_nearest_refresh_at = 0.0
+    state.atomic_rebuild_dirty = false
+    state.atomic_rebuild_reason = nil
+    state.atomic_rebuild_due_at = 0.0
+    state.atomic_rebuild_deadline_at = 0.0
+    state.atomic_rebuild_revision = state.atomic_rebuild_revision + 1
+    state.next_atomic_rebuild_at = 0.0
+    state.cached_bridge_resync_dirty = false
+    state.cached_bridge_resync_force = false
+    state.cached_bridge_resync_reason = nil
+    state.cached_bridge_resync_revision = state.cached_bridge_resync_revision + 1
+    state.stream_integrity_last_location = nil
+    state.stream_integrity_distance_cm = 0.0
+    state.next_stream_integrity_scan_at = 0.0
     state.metrics.admitted = 0
     state.metrics.matched = 0
     state.metrics.displayed = 0
@@ -1288,6 +1347,81 @@ local function distance_squared(first, second)
     local dy = y1 - y2
     local dz = z1 - z2
     return dx * dx + dy * dy + dz * dz
+end
+
+local function copy_location_scalars(location)
+    local x, y, z = read_xyz(location)
+    if x == nil then
+        return nil
+    end
+    return { X = x, Y = y, Z = z }
+end
+
+local function reset_stream_integrity_tracking(camera_location)
+    state.stream_integrity_last_location = copy_location_scalars(camera_location)
+    state.stream_integrity_distance_cm = 0.0
+    state.next_stream_integrity_scan_at = now()
+        + (math.max(0, tonumber(config.STREAM_INTEGRITY_SCAN_MIN_INTERVAL_MS) or 0) / 1000.0)
+end
+
+local function track_stream_integrity_movement(camera_location)
+    local current_location = copy_location_scalars(camera_location)
+    if current_location == nil then
+        return false
+    end
+    if state.stream_integrity_last_location == nil then
+        reset_stream_integrity_tracking(current_location)
+        return false
+    end
+
+    local segment_squared = distance_squared(state.stream_integrity_last_location, current_location)
+    state.stream_integrity_last_location = current_location
+    if segment_squared ~= nil and segment_squared > 0 then
+        state.stream_integrity_distance_cm = state.stream_integrity_distance_cm
+            + math.sqrt(segment_squared)
+    end
+    local threshold_cm = math.max(
+        0,
+        tonumber(config.STREAM_INTEGRITY_SCAN_DISTANCE_METERS) or 0
+    ) * 100.0
+    return threshold_cm > 0 and state.stream_integrity_distance_cm >= threshold_cm
+end
+
+local function request_atomic_bridge_rebuild(reason, debounce_ms)
+    if not runtime_enabled() or state.world_transitioning or not state.gameplay_active then
+        return false
+    end
+
+    local was_dirty = state.atomic_rebuild_dirty
+    local delay = math.max(
+        0,
+        tonumber(debounce_ms) or tonumber(config.ATOMIC_REBUILD_DEBOUNCE_MS) or 0
+    ) / 1000.0
+    local due_at = now() + delay
+    state.atomic_rebuild_dirty = true
+    state.atomic_rebuild_reason = reason or state.atomic_rebuild_reason or "lifecycle"
+    if was_dirty then
+        state.atomic_rebuild_due_at = math.min(
+            state.atomic_rebuild_deadline_at,
+            math.max(state.atomic_rebuild_due_at, due_at)
+        )
+    else
+        local max_coalesce = math.max(
+            delay * 1000.0,
+            tonumber(config.ATOMIC_REBUILD_MAX_COALESCE_MS) or 0
+        ) / 1000.0
+        state.atomic_rebuild_due_at = due_at
+        state.atomic_rebuild_deadline_at = now() + max_coalesce
+    end
+    state.atomic_rebuild_revision = state.atomic_rebuild_revision + 1
+    if not was_dirty then
+        debug_event("ATOMIC_REBUILD_REQUESTED", string.format(
+            "reason=%s debounce_ms=%d",
+            state.atomic_rebuild_reason,
+            math.floor(delay * 1000.0 + 0.5)
+        ))
+    end
+    return true
 end
 
 local function distance_m(actor, context)
@@ -1582,6 +1716,7 @@ local function scan_monsters(source)
     local elapsed = os.clock() - started_at
     state.metrics.raw_monsters = raw_count
     state.metrics.scan_seconds = state.metrics.scan_seconds + elapsed
+    reset_stream_integrity_tracking(context.camera_location)
     log_event("SCAN_DONE", string.format(
         "source=%s raw=%d admitted=%d matched=%d displayed=%d elapsed_ms=%.3f",
         source,
@@ -1729,7 +1864,11 @@ local sync_bridge_target
 
 local admit_begin_play_target
 
+local refresh_bridge_target
+
 local remove_bridge_target
+
+local refresh_nearest_bridge_targets
 
 local process_reconcile_batch
 
@@ -1824,9 +1963,13 @@ local RETRYABLE_EVENT_REJECTIONS = {
     gameplay_inactive = true,
     world_transitioning = true,
     parameter_component_unavailable = true,
+    character_initialization_pending = true,
+    character_initialization_unavailable = true,
+    character_not_initialized = true,
     individual_parameter_unavailable = true,
     save_parameter_unavailable = true,
     owner_uid_unavailable = true,
+    stream_integrity_discovered = true,
     trainer_unavailable = true,
 }
 
@@ -1843,11 +1986,12 @@ local function event_queue_pending_count()
 end
 
 local function actor_lookup_identity(actor)
+    local full_name = actor_full_name(actor)
     local key = actor_key(actor)
-    if key == nil then
+    if key == nil or full_name == nil then
         return nil, nil
     end
-    local object_path = key:match("^%S+%s+(.+)$")
+    local object_path = full_name:match("^%S+%s+(.+)$")
     if object_path == nil or object_path == "" then
         return nil, nil
     end
@@ -1908,14 +2052,18 @@ local function schedule_event_queue_process(delay_ms)
     end
 end
 
-local function enqueue_event_retry(actor, rejection_reason)
+local function enqueue_event_retry(actor, rejection_reason, mode)
     actor = unwrap(actor)
     if not is_valid(actor) or not event_rejection_is_retryable(rejection_reason) then
         return false
     end
 
+    mode = mode == "refresh" and "refresh" or "admit"
     local key, object_path = actor_lookup_identity(actor)
-    if key == nil or state.bridge_target_keys[key] or state.event_queue_keys[key] then
+    local already_eligible = key ~= nil and state.nearest_candidates[key] ~= nil
+    if key == nil or state.event_queue_keys[key]
+        or (mode == "admit" and already_eligible)
+        or (mode == "refresh" and not already_eligible) then
         return false
     end
     if event_queue_pending_count() >= config.MAX_EVENT_QUEUE then
@@ -1932,14 +2080,16 @@ local function enqueue_event_retry(actor, rejection_reason)
         key = key,
         object_path = object_path,
         attempts = 0,
+        mode = mode,
         lifecycle_generation = state.lifecycle_generation,
     }
     state.event_queue_keys[key] = true
     state.metrics.notifications_deferred = state.metrics.notifications_deferred + 1
     if queue_was_empty then
         log_event("EVENT_READINESS_QUEUE_STARTED", string.format(
-            "reason=%s retry_delay_ms=%d max_attempts=%d",
+            "reason=%s mode=%s retry_delay_ms=%d max_attempts=%d",
             rejection_reason,
+            mode,
             config.EVENT_READINESS_RETRY_DELAY_MS,
             config.MAX_EVENT_READINESS_ATTEMPTS
         ))
@@ -1986,10 +2136,15 @@ process_event_queue = function(profile_generation)
         local added = false
         local rejection_reason = "actor_not_resolved"
         local ok, err = true, nil
-        if actor ~= nil then
+        if actor ~= nil and actor_key(actor) == entry.key then
             ok, added, rejection_reason = pcall(function()
+                if entry.mode == "refresh" then
+                    return refresh_bridge_target(actor, "initialization_retry")
+                end
                 return admit_begin_play_target(actor, "begin_play_retry")
             end)
+        elseif actor ~= nil then
+            rejection_reason = "actor_instance_replaced"
         end
         local elapsed = os.clock() - started_at
         state.metrics.event_callback_max_seconds = math.max(
@@ -2010,8 +2165,9 @@ process_event_queue = function(profile_generation)
                 log_event("ERROR_EVENT_CANDIDATE", tostring(err))
             else
                 debug_event("EVENT_TARGET_DROPPED", string.format(
-                    "reason=%s attempts=%d",
+                    "reason=%s mode=%s attempts=%d",
                     rejection_reason or "rejected",
+                    entry.mode or "admit",
                     entry.attempts + 1
                 ))
             end
@@ -2064,6 +2220,7 @@ local function finish_reconcile_job(job)
 
     local pipeline_started_at = os.clock()
     refresh_pipeline_output(job.source)
+    state.nearest_index_dirty = true
     local pipeline_seconds = os.clock() - pipeline_started_at
     local scan_seconds = job.discovery_seconds + job.admission_seconds + pipeline_seconds
     state.metrics.scan_seconds = state.metrics.scan_seconds + scan_seconds
@@ -2074,6 +2231,7 @@ local function finish_reconcile_job(job)
     job.objects = {}
     job.generation = nil
     state.reconcile_job = nil
+    reset_stream_integrity_tracking(get_camera_location(find_player_controller()))
 
     log_event("SCAN_DONE", string.format(
         "source=%s raw=%d admitted=%d matched=%d displayed=%d elapsed_ms=%.3f batches=%d max_batch_ms=%.3f",
@@ -2252,6 +2410,42 @@ local function start_safe_reconcile(source)
     return process_reconcile_immediately(job)
 end
 
+local function process_atomic_bridge_rebuild(current_time)
+    if not state.atomic_rebuild_dirty
+        or state.reconcile_job ~= nil
+        or current_time < state.atomic_rebuild_due_at
+        or current_time < state.next_atomic_rebuild_at then
+        return false
+    end
+
+    local reason = state.atomic_rebuild_reason or "lifecycle"
+    local revision = state.atomic_rebuild_revision
+    state.atomic_rebuild_dirty = false
+    state.atomic_rebuild_reason = nil
+    state.atomic_rebuild_due_at = 0.0
+    state.atomic_rebuild_deadline_at = 0.0
+
+    local started_at = os.clock()
+    local rebuilt = start_safe_reconcile("atomic_" .. reason)
+    if not rebuilt then
+        state.atomic_rebuild_dirty = true
+        state.atomic_rebuild_reason = reason
+        state.atomic_rebuild_due_at = current_time
+        return false
+    end
+
+    state.next_atomic_rebuild_at = now()
+        + (math.max(0, tonumber(config.ATOMIC_REBUILD_MIN_INTERVAL_MS) or 0) / 1000.0)
+    log_event("ATOMIC_REBUILD_COMPLETED", string.format(
+        "reason=%s revision=%d active=%d elapsed_ms=%.3f",
+        reason,
+        revision,
+        state.bridge_target_count,
+        (os.clock() - started_at) * 1000.0
+    ))
+    return true
+end
+
 -- __DEPRECATED_20260717__ [reason: delayed chunking was replaced by same-callback wrapper-safe admission]
 local start_chunked_reconcile = start_safe_reconcile
 
@@ -2338,6 +2532,44 @@ local function clear_bridge_cache(reason)
     end
 end
 
+-- __DEPRECATED_20260721__ [reason: nearest-candidate repair rebuilds from resolvable paths without FindAllOf]
+local function schedule_bridge_repair(reason)
+    if state.bridge_repair_scheduled then
+        return
+    end
+
+    state.bridge_repair_scheduled = true
+    local lifecycle_generation = state.lifecycle_generation
+    local profile_generation = state.profile_generation
+    local callback = function()
+        state.bridge_repair_scheduled = false
+        if lifecycle_generation ~= state.lifecycle_generation
+            or profile_generation ~= state.profile_generation
+            or not runtime_enabled()
+            or state.world_transitioning
+            or not state.gameplay_active then
+            debug_event("BRIDGE_REPAIR_SKIPPED", string.format("reason=%s", reason))
+            return
+        end
+        if not start_safe_reconcile("bridge_identity_repair") then
+            debug_event("BRIDGE_REPAIR_DEFERRED", string.format("reason=%s", reason))
+        end
+    end
+
+    if type(ExecuteInGameThreadWithDelay) == "function" then
+        local ok, err = pcall(function()
+            ExecuteInGameThreadWithDelay(config.EVENT_READINESS_RETRY_DELAY_MS, callback)
+        end)
+        if ok then
+            debug_event("BRIDGE_REPAIR_SCHEDULED", string.format("reason=%s", reason))
+            return
+        end
+        state.bridge_repair_scheduled = false
+        log_event("BRIDGE_REPAIR_SCHEDULE_FAILED", tostring(err))
+    end
+    callback()
+end
+
 local function register_blueprint_bridge_discovery()
     if not config.BLUEPRINT_BRIDGE_ENABLED or state.bridge_discovery_registered then
         return
@@ -2355,21 +2587,13 @@ local function register_blueprint_bridge_discovery()
             end
 
             if is_a(actor, resolve_class("monster")) then
-                local event_ok, added, rejection_reason = pcall(function()
-                    return admit_begin_play_target(actor, "begin_play")
-                end)
-                if not event_ok then
-                    state.metrics.event_queue_rejected = state.metrics.event_queue_rejected + 1
-                    log_event("ERROR_BEGIN_PLAY_ADMISSION", tostring(added))
-                elseif not added then
-                    local deferred = enqueue_event_retry(actor, rejection_reason)
-                    local key = actor_key(actor)
-                    local already_pending = key ~= nil and state.event_queue_keys[key] == true
-                    local already_displayed = key ~= nil and state.bridge_target_keys[key] ~= nil
-                    if not deferred and not already_pending and not already_displayed then
-                        state.metrics.event_queue_rejected = state.metrics.event_queue_rejected + 1
-                    end
-                end
+                -- __DEPRECATED_20260721__ [reason: BeginPlay no longer promotes one Pal to a full world snapshot]
+                -- request_atomic_bridge_rebuild("begin_play")
+                local key = actor_key(actor)
+                local mode = key ~= nil and state.nearest_candidates[key] ~= nil
+                    and "refresh"
+                    or "admit"
+                enqueue_event_retry(actor, "character_initialization_pending", mode)
             end
 
             local class_ok, class_full_name = pcall(function()
@@ -2427,32 +2651,48 @@ local function call_bridge(method_name, ...)
     return true
 end
 
+-- __DEPRECATED_20260721__ [reason: recency-based rolling eviction was replaced by nearest-N membership]
+local function fail_closed_bridge_targets(reason)
+    local cleared = call_bridge(BRIDGE_METHOD_CLEAR_TARGET, state.session_index)
+    state.bridge_target_count = 0
+    state.bridge_target_keys = {}
+    state.bridge_target_order = {}
+    log_event("BRIDGE_TARGET_REPAIR", string.format(
+        "session=%d reason=%s bridge_cleared=%s",
+        state.session_index,
+        reason,
+        tostring(cleared)
+    ))
+    schedule_bridge_repair(reason)
+end
+
+-- __DEPRECATED_20260721__ [reason: display membership is now ordered by current distance]
 local function evict_oldest_bridge_target()
     while #state.bridge_target_order > 0 do
         local key = table.remove(state.bridge_target_order, 1)
         local object_path = state.bridge_target_keys[key]
         if object_path ~= nil then
             local actor = type(object_path) == "string" and resolve_event_actor(object_path) or nil
-            if actor ~= nil
-                and not call_bridge(BRIDGE_METHOD_REMOVE_TARGET, actor, state.session_index) then
+            if actor == nil then
+                fail_closed_bridge_targets("unresolved_display_window_target")
+                return false
+            end
+            if not call_bridge(BRIDGE_METHOD_REMOVE_TARGET, actor, state.session_index) then
                 table.insert(state.bridge_target_order, 1, key)
                 return false
             end
             state.bridge_target_keys[key] = nil
             state.bridge_target_count = math.max(0, state.bridge_target_count - 1)
             log_event("EVENT_TARGET_EVICTED", string.format(
-                "session=%d active=%d reason=display_window_rollover resolved=%s",
+                "session=%d active=%d reason=display_window_rollover",
                 state.session_index,
-                state.bridge_target_count,
-                tostring(actor ~= nil)
+                state.bridge_target_count
             ))
             return true
         end
     end
-    state.bridge_target_count = 0
-    state.bridge_target_keys = {}
-    state.bridge_target_order = {}
-    return true
+    fail_closed_bridge_targets("inconsistent_display_window_state")
+    return false
 end
 
 local function log_bridge_gender_diagnostic()
@@ -2504,6 +2744,82 @@ local function display_snapshot_integer(record, field_name)
     return math.floor(value + 0.5)
 end
 
+local function filters_without_current_distance()
+    local filters = { fields = {} }
+    if type(config.ACTIVE_FILTERS.kinds) == "table" then
+        filters.kinds = config.ACTIVE_FILTERS.kinds
+    end
+    for field_name, condition in pairs(config.ACTIVE_FILTERS.fields or {}) do
+        if field_name ~= "distance_m" then
+            filters.fields[field_name] = condition
+        end
+    end
+    return filters
+end
+
+local function remember_nearest_candidate(actor, record)
+    local key, object_path = actor_lookup_identity(actor)
+    if key == nil or object_path == nil then
+        return nil, "actor_identity_unavailable"
+    end
+
+    local candidate = state.nearest_candidates[key]
+    if candidate == nil then
+        if state.nearest_candidate_count >= config.MAX_ADMITTED_ENTITIES then
+            return nil, "admission_budget"
+        end
+        candidate = {}
+        state.nearest_candidates[key] = candidate
+        state.nearest_candidate_count = state.nearest_candidate_count + 1
+        state.nearest_candidate_order[#state.nearest_candidate_order + 1] = key
+    end
+    candidate.object_path = object_path
+    candidate.level = display_snapshot_integer(record, "level")
+    local location = get_actor_location(actor)
+    local x, y, z = read_xyz(location)
+    if x ~= nil then
+        candidate.location_x = x
+        candidate.location_y = y
+        candidate.location_z = z
+    end
+    candidate.resolve_misses = 0
+    return key, nil
+end
+
+local function forget_nearest_candidate(key)
+    if key == nil or state.nearest_candidates[key] == nil then
+        return false
+    end
+    state.nearest_candidates[key] = nil
+    state.nearest_candidate_count = math.max(0, state.nearest_candidate_count - 1)
+    for index, ordered_key in ipairs(state.nearest_candidate_order) do
+        if ordered_key == key then
+            table.remove(state.nearest_candidate_order, index)
+            if index < state.nearest_refresh_cursor then
+                state.nearest_refresh_cursor = state.nearest_refresh_cursor - 1
+            end
+            break
+        end
+    end
+    if state.nearest_refresh_cursor > #state.nearest_candidate_order then
+        state.nearest_refresh_cursor = 1
+    end
+    return true
+end
+
+local function rebuild_nearest_candidate_index(records)
+    state.nearest_candidates = {}
+    state.nearest_candidate_count = 0
+    state.nearest_candidate_order = {}
+    state.nearest_refresh_cursor = 1
+    local eligible = filter_engine.filter(records or {}, filters_without_current_distance())
+    for _, record in ipairs(eligible) do
+        if record ~= nil and is_valid(record.actor) then
+            remember_nearest_candidate(record.actor, record)
+        end
+    end
+end
+
 --[[ __DEPRECATED_20260716__ [reason: replaced by the all-candidate batch sync below]
 sync_bridge_target = function()
     if not config.BLUEPRINT_BRIDGE_ENABLED or not is_valid(state.bridge_actor) then
@@ -2519,6 +2835,12 @@ sync_bridge_target = function()
         state.bridge_target_actor = nil
         state.bridge_target_session = nil
         debug_event("BRIDGE_SESSION", string.format("session=%d", session_index))
+    end
+
+    if state.nearest_index_dirty then
+        local current = entity_snapshot.current(state.entity_store)
+        rebuild_nearest_candidate_index(current.records)
+        state.nearest_index_dirty = false
     end
 
     local selected = state.selected
@@ -2560,6 +2882,12 @@ sync_bridge_target = function()
         state.bridge_target_keys = {}
         state.bridge_target_order = {}
         debug_event("BRIDGE_SESSION", string.format("session=%d", session_index))
+    end
+
+    if state.nearest_index_dirty then
+        local current = entity_snapshot.current(state.entity_store)
+        rebuild_nearest_candidate_index(current.records)
+        state.nearest_index_dirty = false
     end
 
     -- __DEPRECATED_20260716__ [reason: admitted records may be removed by filters or display budget]
@@ -2617,6 +2945,7 @@ sync_bridge_target = function()
     end
 
     state.bridge_target_count = submitted
+    state.next_nearest_refresh_at = now() + (config.NEAREST_TARGET_REFRESH_INTERVAL_MS / 1000.0)
     if submitted > 0 then
         log_bridge_gender_diagnostic()
     end
@@ -2648,6 +2977,613 @@ local function ensure_bridge_session()
     return true
 end
 
+local function current_distance_matches(distance)
+    local condition = config.ACTIVE_FILTERS.fields
+        and config.ACTIVE_FILTERS.fields.distance_m
+        or nil
+    if condition == nil or condition.active == false then
+        return true
+    end
+    return filter_engine.match({
+        kind = "pal",
+        fields = {
+            distance_m = { state = "known", value = distance },
+        },
+    }, {
+        fields = { distance_m = condition },
+    })
+end
+
+local function configured_display_limit()
+    local configured_limit = math.max(0, math.floor(tonumber(config.MAX_DISPLAY_TARGETS) or 0))
+    local maximum_limit = math.max(0, math.floor(
+        tonumber(config.MAX_CONFIGURABLE_DISPLAY_TARGETS) or 0
+    ))
+    return math.min(configured_limit, maximum_limit)
+end
+
+local function rank_cached_nearest_candidates(camera_location)
+    local camera_x, camera_y, camera_z = read_xyz(camera_location)
+    if camera_x == nil then
+        return nil
+    end
+
+    local ranked = {}
+    for key, candidate in pairs(state.nearest_candidates) do
+        if candidate.location_x ~= nil then
+            local dx = candidate.location_x - camera_x
+            local dy = candidate.location_y - camera_y
+            local dz = candidate.location_z - camera_z
+            local distance = math.sqrt(dx * dx + dy * dy + dz * dz) / 100.0
+            candidate.cached_distance = distance
+            if current_distance_matches(distance) then
+                ranked[#ranked + 1] = {
+                    key = key,
+                    candidate = candidate,
+                    distance = distance,
+                }
+            end
+        end
+    end
+    table.sort(ranked, function(first, second)
+        if first.distance ~= second.distance then
+            return first.distance < second.distance
+        end
+        return first.key < second.key
+    end)
+    return ranked
+end
+
+local function desired_nearest_targets(camera_location)
+    local ranked = rank_cached_nearest_candidates(camera_location)
+    if ranked == nil then
+        return nil, nil
+    end
+    local desired = {}
+    local desired_order = {}
+    for index = 1, math.min(#ranked, configured_display_limit()) do
+        local entry = ranked[index]
+        desired[entry.key] = entry
+        desired_order[#desired_order + 1] = entry.key
+    end
+    return desired, desired_order
+end
+
+local function cached_nearest_membership_changed(camera_location)
+    local desired, desired_order = desired_nearest_targets(camera_location)
+    if desired == nil then
+        return false
+    end
+    if #desired_order ~= state.bridge_target_count then
+        return true
+    end
+    for _, key in ipairs(desired_order) do
+        if state.bridge_target_keys[key] == nil then
+            return true
+        end
+    end
+    return false
+end
+
+local function cached_bridge_membership_matches(desired_order)
+    if #desired_order ~= state.bridge_target_count then
+        return false
+    end
+    for _, key in ipairs(desired_order) do
+        if state.bridge_target_keys[key] == nil then
+            return false
+        end
+    end
+    return true
+end
+
+local function request_cached_bridge_resync(reason, force)
+    if not runtime_enabled() or state.world_transitioning or not state.gameplay_active then
+        return false
+    end
+    local was_dirty = state.cached_bridge_resync_dirty
+    state.cached_bridge_resync_dirty = true
+    state.cached_bridge_resync_force = state.cached_bridge_resync_force or force == true
+    state.cached_bridge_resync_reason = reason
+        or state.cached_bridge_resync_reason
+        or "cached_membership"
+    state.cached_bridge_resync_revision = state.cached_bridge_resync_revision + 1
+    if not was_dirty then
+        debug_event("CACHED_BRIDGE_RESYNC_REQUESTED", string.format(
+            "reason=%s force=%s",
+            state.cached_bridge_resync_reason,
+            tostring(state.cached_bridge_resync_force)
+        ))
+    end
+    return true
+end
+
+local function resolve_cached_candidate_actor(key, candidate)
+    local actor = resolve_event_actor(candidate and candidate.object_path or nil)
+    if actor ~= nil and actor_key(actor) == key then
+        candidate.resolve_misses = 0
+        local x, y, z = read_xyz(get_actor_location(actor))
+        if x ~= nil then
+            candidate.location_x = x
+            candidate.location_y = y
+            candidate.location_z = z
+        end
+        return actor
+    end
+
+    if candidate ~= nil then
+        candidate.resolve_misses = (candidate.resolve_misses or 0) + 1
+    end
+    return nil
+end
+
+local function atomic_sync_cached_nearest_targets(camera_location, reason, force)
+    if not ensure_bridge_session() then
+        return false
+    end
+    camera_location = camera_location or get_camera_location(find_player_controller())
+    if camera_location == nil then
+        return false
+    end
+
+    local max_misses = math.max(1, math.floor(
+        tonumber(config.MAX_NEAREST_TARGET_RESOLVE_MISSES) or 1
+    ))
+    local started_at = os.clock()
+    for _ = 1, 2 do
+        local desired, desired_order = desired_nearest_targets(camera_location)
+        if desired == nil then
+            return false
+        end
+        if not force and cached_bridge_membership_matches(desired_order) then
+            return true
+        end
+
+        local submissions = {}
+        local removed_stale_candidate = false
+        local transient_unresolved = false
+        for _, key in ipairs(desired_order) do
+            local entry = desired[key]
+            local candidate = entry and entry.candidate or nil
+            local actor = resolve_cached_candidate_actor(key, candidate)
+            if actor ~= nil then
+                submissions[#submissions + 1] = {
+                    key = key,
+                    actor = actor,
+                    candidate = candidate,
+                    distance = entry.distance,
+                }
+            elseif candidate ~= nil and candidate.resolve_misses >= max_misses then
+                forget_nearest_candidate(key)
+                removed_stale_candidate = true
+            else
+                transient_unresolved = true
+            end
+        end
+
+        if removed_stale_candidate then
+            force = true
+        elseif transient_unresolved then
+            debug_event("CACHED_BRIDGE_RESYNC_DEFERRED", string.format(
+                "reason=%s unresolved=transient",
+                reason or "cached_membership"
+            ))
+            return false
+        else
+            state.metrics.bridge_syncs = state.metrics.bridge_syncs + 1
+            if not call_bridge(BRIDGE_METHOD_CLEAR_TARGET, state.session_index) then
+                state.metrics.bridge_sync_seconds = state.metrics.bridge_sync_seconds
+                    + (os.clock() - started_at)
+                return false
+            end
+            state.bridge_target_count = 0
+            state.bridge_target_keys = {}
+            state.bridge_target_order = {}
+
+            for _, submission in ipairs(submissions) do
+                if not call_bridge(
+                    BRIDGE_METHOD_SET_TARGET,
+                    submission.actor,
+                    state.session_index,
+                    submission.candidate.level,
+                    math.floor(submission.distance + 0.5)
+                ) then
+                    state.metrics.bridge_sync_seconds = state.metrics.bridge_sync_seconds
+                        + (os.clock() - started_at)
+                    return false
+                end
+                state.bridge_target_keys[submission.key] = submission.candidate.object_path
+                state.bridge_target_order[#state.bridge_target_order + 1] = submission.key
+                state.bridge_target_count = state.bridge_target_count + 1
+                state.metrics.bridge_set_calls = state.metrics.bridge_set_calls + 1
+            end
+
+            state.metrics.displayed = state.bridge_target_count
+            state.next_nearest_refresh_at = now()
+                + (config.NEAREST_TARGET_REFRESH_INTERVAL_MS / 1000.0)
+            local elapsed = os.clock() - started_at
+            state.metrics.bridge_sync_seconds = state.metrics.bridge_sync_seconds + elapsed
+            log_event("CACHED_TARGETS_ATOMIC_SYNCED", string.format(
+                "session=%d active=%d eligible=%d reason=%s resolved=%d elapsed_ms=%.3f",
+                state.session_index,
+                state.bridge_target_count,
+                state.nearest_candidate_count,
+                reason or "cached_membership",
+                #submissions,
+                elapsed * 1000.0
+            ))
+            return true
+        end
+    end
+    return false
+end
+
+local function process_cached_bridge_resync(camera_location)
+    if not state.cached_bridge_resync_dirty then
+        return false
+    end
+    local reason = state.cached_bridge_resync_reason or "cached_membership"
+    local force = state.cached_bridge_resync_force
+    if not atomic_sync_cached_nearest_targets(camera_location, reason, force) then
+        return false
+    end
+    state.cached_bridge_resync_dirty = false
+    state.cached_bridge_resync_force = false
+    state.cached_bridge_resync_reason = nil
+    return true
+end
+
+local function next_nearest_refresh_key()
+    local count = #state.nearest_candidate_order
+    if count == 0 then
+        state.nearest_refresh_cursor = 1
+        return nil
+    end
+    if state.nearest_refresh_cursor < 1 or state.nearest_refresh_cursor > count then
+        state.nearest_refresh_cursor = 1
+    end
+    local key = state.nearest_candidate_order[state.nearest_refresh_cursor]
+    state.nearest_refresh_cursor = state.nearest_refresh_cursor + 1
+    if state.nearest_refresh_cursor > count then
+        state.nearest_refresh_cursor = 1
+    end
+    return key
+end
+
+local function clear_unresolved_display_target(key)
+    if state.bridge_target_keys[key] == nil then
+        return
+    end
+    if call_bridge(BRIDGE_METHOD_CLEAR_TARGET, state.session_index) then
+        state.bridge_target_count = 0
+        state.bridge_target_keys = {}
+        state.bridge_target_order = {}
+        log_event("NEAREST_TARGETS_FAIL_CLOSED", string.format(
+            "session=%d reason=display_path_unresolved",
+            state.session_index
+        ))
+    end
+end
+
+local function resolve_nearest_candidate(key, direct_key, direct_actor, budget)
+    local candidate = state.nearest_candidates[key]
+    if candidate == nil then
+        return nil
+    end
+    if key == direct_key and is_valid(direct_actor) then
+        return direct_actor
+    end
+    if budget.remaining <= 0 then
+        return nil
+    end
+
+    budget.remaining = budget.remaining - 1
+    budget.used = budget.used + 1
+    local actor = resolve_event_actor(candidate.object_path)
+    if actor ~= nil and actor_key(actor) == key then
+        candidate.resolve_misses = 0
+        local location = get_actor_location(actor)
+        local x, y, z = read_xyz(location)
+        if x ~= nil then
+            candidate.location_x = x
+            candidate.location_y = y
+            candidate.location_z = z
+        end
+        return actor
+    end
+
+    candidate.resolve_misses = (candidate.resolve_misses or 0) + 1
+    local max_misses = math.max(1, math.floor(
+        tonumber(config.MAX_NEAREST_TARGET_RESOLVE_MISSES) or 1
+    ))
+    if candidate.resolve_misses >= max_misses then
+        local was_displayed = state.bridge_target_keys[key] ~= nil
+        forget_nearest_candidate(key)
+        if was_displayed then
+            clear_unresolved_display_target(key)
+        end
+    end
+    return nil
+end
+
+local function apply_nearest_membership(camera_location, direct_key, direct_actor, budget, reason)
+    local desired, desired_order = desired_nearest_targets(camera_location)
+    if desired == nil then
+        return false
+    end
+
+    local leaving_key = nil
+    for _, key in ipairs(state.bridge_target_order) do
+        if state.bridge_target_keys[key] ~= nil and desired[key] == nil then
+            leaving_key = key
+            break
+        end
+    end
+    if leaving_key == nil then
+        for key in pairs(state.bridge_target_keys) do
+            if desired[key] == nil then
+                leaving_key = key
+                break
+            end
+        end
+    end
+
+    local entering_key = nil
+    for _, key in ipairs(desired_order) do
+        if state.bridge_target_keys[key] == nil then
+            entering_key = key
+            break
+        end
+    end
+    if leaving_key == nil and entering_key == nil then
+        return false
+    end
+
+    local leaving_actor = nil
+    if leaving_key ~= nil then
+        leaving_actor = resolve_nearest_candidate(
+            leaving_key, direct_key, direct_actor, budget
+        )
+        if leaving_actor == nil then
+            return false
+        end
+    end
+    local entering_actor = nil
+    if entering_key ~= nil then
+        entering_actor = resolve_nearest_candidate(
+            entering_key, direct_key, direct_actor, budget
+        )
+        if entering_actor == nil then
+            return false
+        end
+    end
+
+    if leaving_key ~= nil then
+        if not call_bridge(BRIDGE_METHOD_REMOVE_TARGET, leaving_actor, state.session_index) then
+            return false
+        end
+        forget_bridge_target(leaving_key)
+        state.bridge_target_count = math.max(0, state.bridge_target_count - 1)
+    end
+    if entering_key ~= nil then
+        local entry = desired[entering_key]
+        if not call_bridge(
+            BRIDGE_METHOD_SET_TARGET,
+            entering_actor,
+            state.session_index,
+            entry.candidate.level,
+            math.floor(entry.distance + 0.5)
+        ) then
+            return false
+        end
+        remember_bridge_target(entering_actor, entering_key)
+        state.bridge_target_count = state.bridge_target_count + 1
+        state.metrics.bridge_set_calls = state.metrics.bridge_set_calls + 1
+    end
+
+    log_event("NEAREST_TARGETS_UPDATED", string.format(
+        "session=%d active=%d eligible=%d reason=%s path_resolves=%d",
+        state.session_index,
+        state.bridge_target_count,
+        state.nearest_candidate_count,
+        reason or "runtime_tick",
+        budget.used
+    ))
+    return true
+end
+
+-- __DEPRECATED_20260721__ [reason: single-target remove/set could desynchronize Blueprint parallel arrays]
+local function deprecated_refresh_nearest_bridge_targets_incrementally(reason, direct_actor, camera_location)
+    if not runtime_enabled() or not state.runtime_profile.event_admission
+        or state.world_transitioning or not state.gameplay_active then
+        return false
+    end
+    if not ensure_bridge_session() then
+        return false
+    end
+
+    camera_location = camera_location or get_camera_location(find_player_controller())
+    if camera_location == nil then
+        return false
+    end
+
+    local path_budget = math.max(0, math.floor(
+        tonumber(config.MAX_NEAREST_TARGET_PATH_RESOLVES_PER_TICK) or 0
+    ))
+    local budget = { remaining = path_budget, used = 0 }
+    direct_actor = unwrap(direct_actor)
+    local direct_key = is_valid(direct_actor) and actor_key(direct_actor) or nil
+    if direct_key ~= nil and state.nearest_candidates[direct_key] ~= nil then
+        local candidate = state.nearest_candidates[direct_key]
+        local location = get_actor_location(direct_actor)
+        local x, y, z = read_xyz(location)
+        if x ~= nil then
+            candidate.location_x = x
+            candidate.location_y = y
+            candidate.location_z = z
+            candidate.resolve_misses = 0
+        end
+    end
+
+    local changed = apply_nearest_membership(
+        camera_location, direct_key, direct_actor, budget, reason
+    )
+    if reason == "runtime_tick" and budget.remaining > 0
+        and state.nearest_candidate_count > configured_display_limit() then
+        local refresh_key = next_nearest_refresh_key()
+        if refresh_key ~= nil then
+            local refresh_actor = resolve_nearest_candidate(
+                refresh_key, nil, nil, budget
+            )
+            changed = apply_nearest_membership(
+                camera_location,
+                refresh_key,
+                refresh_actor,
+                budget,
+                reason
+            ) or changed
+        end
+    end
+    return true
+end
+
+local function refresh_cached_candidate_positions()
+    local distance_condition = config.ACTIVE_FILTERS.fields
+        and config.ACTIVE_FILTERS.fields.distance_m
+        or nil
+    local needs_position_refresh = state.nearest_candidate_count > configured_display_limit()
+        or (distance_condition ~= nil and distance_condition.active ~= false)
+    if not needs_position_refresh then
+        return 0
+    end
+
+    local budget = math.max(0, math.floor(
+        tonumber(config.MAX_NEAREST_TARGET_PATH_RESOLVES_PER_TICK) or 0
+    ))
+    local used = 0
+    local removed_stale_candidate = false
+    local max_misses = math.max(1, math.floor(
+        tonumber(config.MAX_NEAREST_TARGET_RESOLVE_MISSES) or 1
+    ))
+    for _ = 1, budget do
+        local key = next_nearest_refresh_key()
+        if key == nil then
+            break
+        end
+        local candidate = state.nearest_candidates[key]
+        if candidate ~= nil then
+            used = used + 1
+            local actor = resolve_cached_candidate_actor(key, candidate)
+            if actor == nil and candidate.resolve_misses >= max_misses then
+                forget_nearest_candidate(key)
+                removed_stale_candidate = true
+            end
+        end
+    end
+    if removed_stale_candidate then
+        request_cached_bridge_resync("stale_candidate", true)
+    end
+    return used
+end
+
+refresh_nearest_bridge_targets = function(reason, direct_actor, camera_location)
+    if not runtime_enabled() or not state.runtime_profile.event_admission
+        or state.world_transitioning or not state.gameplay_active then
+        return false
+    end
+    if not ensure_bridge_session() then
+        return false
+    end
+
+    camera_location = camera_location or get_camera_location(find_player_controller())
+    if camera_location == nil then
+        return false
+    end
+
+    direct_actor = unwrap(direct_actor)
+    local direct_key = is_valid(direct_actor) and actor_key(direct_actor) or nil
+    local direct_candidate = direct_key ~= nil and state.nearest_candidates[direct_key] or nil
+    if direct_candidate ~= nil then
+        local x, y, z = read_xyz(get_actor_location(direct_actor))
+        if x ~= nil then
+            direct_candidate.location_x = x
+            direct_candidate.location_y = y
+            direct_candidate.location_z = z
+            direct_candidate.resolve_misses = 0
+        end
+    end
+
+    local path_resolves = 0
+    if reason == "runtime_tick" then
+        path_resolves = refresh_cached_candidate_positions()
+    end
+    if cached_nearest_membership_changed(camera_location) then
+        request_cached_bridge_resync(reason or "cached_membership", false)
+    end
+    debug_event("CACHED_NEAREST_REFRESHED", string.format(
+        "reason=%s eligible=%d path_resolves=%d",
+        reason or "cached_membership",
+        state.nearest_candidate_count,
+        path_resolves
+    ))
+    return true
+end
+
+local function run_stream_integrity_scan(camera_location)
+    local started_at = os.clock()
+    local descriptor = state.entity_registry:get("pal")
+    local ok, objects = pcall(function()
+        return descriptor and descriptor.find_all(entity_runtime) or nil
+    end)
+    if not ok or type(objects) ~= "table" then
+        state.next_stream_integrity_scan_at = now()
+            + (math.max(0, tonumber(config.STREAM_INTEGRITY_SCAN_MIN_INTERVAL_MS) or 0) / 1000.0)
+        log_event("STREAM_INTEGRITY_SCAN_FAILED", "reason=discovery_unavailable")
+        return false
+    end
+
+    local raw_count = 0
+    local existing_count = 0
+    local discovered_count = 0
+    local queued_count = 0
+    for _, wrapped_actor in ipairs(objects) do
+        raw_count = raw_count + 1
+        local actor = unwrap(wrapped_actor)
+        if is_valid(actor) and is_a(actor, resolve_class("monster")) then
+            local key, object_path = actor_lookup_identity(actor)
+            local candidate = key ~= nil and state.nearest_candidates[key] or nil
+            if candidate ~= nil then
+                existing_count = existing_count + 1
+                candidate.object_path = object_path or candidate.object_path
+                local x, y, z = read_xyz(get_actor_location(actor))
+                if x ~= nil then
+                    candidate.location_x = x
+                    candidate.location_y = y
+                    candidate.location_z = z
+                    candidate.resolve_misses = 0
+                end
+            elseif key ~= nil and not state.event_queue_keys[key] then
+                discovered_count = discovered_count + 1
+                if enqueue_event_retry(actor, "stream_integrity_discovered", "admit") then
+                    queued_count = queued_count + 1
+                end
+            end
+        end
+    end
+
+    reset_stream_integrity_tracking(camera_location)
+    refresh_nearest_bridge_targets("stream_integrity_scan", nil, camera_location)
+    log_event("STREAM_INTEGRITY_SCAN", string.format(
+        "raw=%d existing=%d discovered=%d queued=%d elapsed_ms=%.3f",
+        raw_count,
+        existing_count,
+        discovered_count,
+        queued_count,
+        (os.clock() - started_at) * 1000.0
+    ))
+    return true
+end
+
 admit_begin_play_target = function(actor, source)
     actor = unwrap(actor)
     if not is_valid(actor) then
@@ -2667,10 +3603,9 @@ admit_begin_play_target = function(actor, source)
     end
 
     local key = actor_key(actor)
-    if key == nil or state.bridge_target_keys[key] then
+    if key == nil or state.nearest_candidates[key] then
         return false, "duplicate"
     end
-    local display_limit = math.max(0, tonumber(config.MAX_DISPLAY_TARGETS) or 0)
     if not ensure_bridge_session() then
         return false, "bridge_unavailable"
     end
@@ -2685,41 +3620,198 @@ admit_begin_play_target = function(actor, source)
     if not added then
         return false, rejection_reason
     end
-    local matched = added and filter_engine.filter(generation.records, config.ACTIVE_FILTERS) or {}
+    local matched = added and filter_engine.filter(
+        generation.records,
+        filters_without_current_distance()
+    ) or {}
     local record = matched[1]
     if record == nil then
         return false, "filter_rejected"
     end
-    if display_limit < 1 then
-        return false, "display_budget_full"
+    local remembered_key, remember_error = remember_nearest_candidate(actor, record)
+    if remembered_key == nil then
+        return false, remember_error
     end
-    if state.bridge_target_count >= display_limit and not evict_oldest_bridge_target() then
-        return false, "display_budget_full"
+    refresh_nearest_bridge_targets(source, actor)
+    state.metrics.event_queue_admitted = state.metrics.event_queue_admitted + 1
+    local elapsed = os.clock() - started_at
+    state.metrics.event_callback_max_seconds = math.max(state.metrics.event_callback_max_seconds, elapsed)
+    log_event("EVENT_CANDIDATE_REGISTERED", string.format(
+        "session=%d active=%d eligible=%d displayed=%s elapsed_ms=%.3f source=%s",
+        state.session_index,
+        state.bridge_target_count,
+        state.nearest_candidate_count,
+        tostring(state.bridge_target_keys[key] ~= nil),
+        elapsed * 1000.0,
+        source
+    ))
+    if state.bridge_target_keys[key] ~= nil then
+        log_event("EVENT_TARGET_ADDED", string.format(
+            "session=%d active=%d elapsed_ms=%.3f source=%s",
+            state.session_index,
+            state.bridge_target_count,
+            elapsed * 1000.0,
+            source
+        ))
     end
+    return true, nil
+end
 
-    local level = display_snapshot_integer(record, "level")
-    local distance = display_snapshot_integer(record, "distance_m")
-    if not call_bridge(BRIDGE_METHOD_SET_TARGET, actor, state.session_index, level, distance) then
+-- __DEPRECATED_20260721__ [reason: displayed metadata refresh used RemoveTarget followed by SetTarget]
+local function deprecated_refresh_bridge_target_incrementally(actor, source)
+    actor = unwrap(actor)
+    if not is_valid(actor) then
+        return false, "actor_invalid"
+    end
+    if not runtime_enabled() or not state.runtime_profile.event_admission then
+        return false, "runtime_inactive"
+    end
+    if not ensure_bridge_session() then
         return false, "bridge_unavailable"
     end
 
-    remember_bridge_target(actor, key)
-    state.bridge_target_count = state.bridge_target_count + 1
-    state.metrics.event_queue_admitted = state.metrics.event_queue_admitted + 1
-    state.metrics.bridge_set_calls = state.metrics.bridge_set_calls + 1
+    local key = actor_key(actor)
+    if key == nil or not state.nearest_candidates[key] then
+        return false, "target_not_eligible"
+    end
+    local was_displayed = state.bridge_target_keys[key] ~= nil
+
+    source = source or "initialization_complete"
+    local started_at = os.clock()
+    local generation = entity_snapshot.begin_generation(state.entity_store, source, now())
+    local added, rejection_reason = add_entity_candidate(actor, source, generation, {
+        source = source,
+        camera_location = get_camera_location(find_player_controller()),
+    })
+    if not added then
+        if event_rejection_is_retryable(rejection_reason) then
+            return false, rejection_reason
+        end
+        if not remove_bridge_target(actor, "initialization_reclassified:" .. tostring(rejection_reason)) then
+            return false, "bridge_unavailable"
+        end
+        log_event("EVENT_TARGET_REFRESH_DROPPED", string.format(
+            "session=%d reason=%s",
+            state.session_index,
+            rejection_reason or "rejected"
+        ))
+        return true, nil
+    end
+
+    local matched = filter_engine.filter(generation.records, filters_without_current_distance())
+    local record = matched[1]
+    if record == nil then
+        if not remove_bridge_target(actor, "initialization_filter_rejected") then
+            return false, "bridge_unavailable"
+        end
+        log_event("EVENT_TARGET_REFRESH_DROPPED", string.format(
+            "session=%d reason=filter_rejected",
+            state.session_index
+        ))
+        return true, nil
+    end
+
+    local remembered_key, remember_error = remember_nearest_candidate(actor, record)
+    if remembered_key == nil then
+        return false, remember_error
+    end
+    refresh_nearest_bridge_targets(source, actor)
+
+    if was_displayed and state.bridge_target_keys[key] ~= nil then
+        local level = display_snapshot_integer(record, "level")
+        local current_distance = distance_m(actor, {
+            camera_location = get_camera_location(find_player_controller()),
+        })
+        if not call_bridge(BRIDGE_METHOD_REMOVE_TARGET, actor, state.session_index) then
+            return false, "bridge_unavailable"
+        end
+        if not call_bridge(
+            BRIDGE_METHOD_SET_TARGET,
+            actor,
+            state.session_index,
+            level,
+            current_distance and math.floor(current_distance + 0.5) or -1
+        ) then
+            return false, "bridge_unavailable"
+        end
+        state.metrics.bridge_set_calls = state.metrics.bridge_set_calls + 1
+    end
+
     local elapsed = os.clock() - started_at
     state.metrics.event_callback_max_seconds = math.max(state.metrics.event_callback_max_seconds, elapsed)
-    log_event("EVENT_TARGET_ADDED", string.format(
-        "session=%d active=%d elapsed_ms=%.3f source=%s",
+    log_event("EVENT_TARGET_REFRESHED", string.format(
+        "session=%d active=%d displayed=%s elapsed_ms=%.3f source=%s",
         state.session_index,
         state.bridge_target_count,
+        tostring(state.bridge_target_keys[key] ~= nil),
         elapsed * 1000.0,
         source
     ))
     return true, nil
 end
 
-remove_bridge_target = function(actor, reason)
+refresh_bridge_target = function(actor, source)
+    actor = unwrap(actor)
+    if not is_valid(actor) then
+        return false, "actor_invalid"
+    end
+    if not runtime_enabled() or not state.runtime_profile.event_admission then
+        return false, "runtime_inactive"
+    end
+    if not ensure_bridge_session() then
+        return false, "bridge_unavailable"
+    end
+
+    local key = actor_key(actor)
+    if key == nil or not state.nearest_candidates[key] then
+        return false, "target_not_eligible"
+    end
+    local was_displayed = state.bridge_target_keys[key] ~= nil
+    source = source or "initialization_complete"
+    local started_at = os.clock()
+    local generation = entity_snapshot.begin_generation(state.entity_store, source, now())
+    local added, rejection_reason = add_entity_candidate(actor, source, generation, {
+        source = source,
+        camera_location = get_camera_location(find_player_controller()),
+    })
+    if not added then
+        if event_rejection_is_retryable(rejection_reason) then
+            return false, rejection_reason
+        end
+        remove_bridge_target(actor, "initialization_reclassified:" .. tostring(rejection_reason))
+        return true, nil
+    end
+
+    local matched = filter_engine.filter(generation.records, filters_without_current_distance())
+    local record = matched[1]
+    if record == nil then
+        remove_bridge_target(actor, "initialization_filter_rejected")
+        return true, nil
+    end
+    local remembered_key, remember_error = remember_nearest_candidate(actor, record)
+    if remembered_key == nil then
+        return false, remember_error
+    end
+
+    refresh_nearest_bridge_targets(source, actor)
+    request_cached_bridge_resync(source, was_displayed)
+    local elapsed = os.clock() - started_at
+    state.metrics.event_callback_max_seconds = math.max(
+        state.metrics.event_callback_max_seconds,
+        elapsed
+    )
+    log_event("EVENT_TARGET_REFRESH_QUEUED", string.format(
+        "session=%d displayed=%s elapsed_ms=%.3f source=%s",
+        state.session_index,
+        tostring(was_displayed),
+        elapsed * 1000.0,
+        source
+    ))
+    return true, nil
+end
+
+-- __DEPRECATED_20260721__ [reason: single-target removal could shift Blueprint parallel arrays]
+local function deprecated_remove_bridge_target_incrementally(actor, reason)
     actor = unwrap(actor)
     local key = actor_key(actor)
     local pending_cancelled = key ~= nil and state.event_queue_keys[key] == true
@@ -2733,21 +3825,107 @@ remove_bridge_target = function(actor, reason)
     if not is_valid(actor) then
         return pending_cancelled
     end
-    if key == nil or not state.bridge_target_keys[key] then
+    if key == nil then
         return pending_cancelled
     end
-    if not call_bridge(BRIDGE_METHOD_REMOVE_TARGET, actor, state.session_index) then
-        return false
+    local was_displayed = state.bridge_target_keys[key] ~= nil
+    if was_displayed then
+        if not call_bridge(BRIDGE_METHOD_REMOVE_TARGET, actor, state.session_index) then
+            return false
+        end
+        forget_bridge_target(key)
+        state.bridge_target_count = math.max(0, state.bridge_target_count - 1)
     end
-    forget_bridge_target(key)
-    state.bridge_target_count = math.max(0, state.bridge_target_count - 1)
-    log_event("EVENT_TARGET_REMOVED", string.format(
-        "session=%d active=%d reason=%s",
+    local candidate_removed = forget_nearest_candidate(key)
+    if candidate_removed then
+        refresh_nearest_bridge_targets(reason or "lifecycle")
+    end
+    log_event("EVENT_CANDIDATE_REMOVED", string.format(
+        "session=%d active=%d eligible=%d displayed=%s reason=%s",
         state.session_index,
         state.bridge_target_count,
+        state.nearest_candidate_count,
+        tostring(was_displayed),
         reason or "lifecycle"
     ))
-    return true
+    if was_displayed then
+        log_event("EVENT_TARGET_REMOVED", string.format(
+            "session=%d active=%d reason=%s",
+            state.session_index,
+            state.bridge_target_count,
+            reason or "lifecycle"
+        ))
+    end
+    return pending_cancelled or candidate_removed or was_displayed
+end
+
+remove_bridge_target = function(actor, reason)
+    actor = unwrap(actor)
+    local key = is_valid(actor) and actor_key(actor) or nil
+    local pending_cancelled = key ~= nil and state.event_queue_keys[key] == true
+    if pending_cancelled then
+        state.event_queue_keys[key] = nil
+        debug_event("EVENT_TARGET_RETRY_CANCELLED", string.format(
+            "reason=%s",
+            reason or "lifecycle"
+        ))
+    end
+    if key == nil then
+        return pending_cancelled
+    end
+
+    local was_displayed = state.bridge_target_keys[key] ~= nil
+    local candidate_removed = forget_nearest_candidate(key)
+    if candidate_removed or was_displayed then
+        request_cached_bridge_resync(reason or "lifecycle", true)
+    end
+    log_event("EVENT_CANDIDATE_REMOVED", string.format(
+        "session=%d active=%d eligible=%d displayed=%s reason=%s mode=atomic_cached",
+        state.session_index,
+        state.bridge_target_count,
+        state.nearest_candidate_count,
+        tostring(was_displayed),
+        reason or "lifecycle"
+    ))
+    return pending_cancelled or candidate_removed or was_displayed
+end
+
+local function handle_character_initialization_complete(actor, source)
+    actor = unwrap(actor)
+    if not is_valid(actor) or not is_a(actor, resolve_class("monster")) then
+        return
+    end
+
+    local key = actor_key(actor)
+    local mode = key ~= nil and state.nearest_candidates[key] ~= nil and "refresh" or "admit"
+    local ok, handled, rejection_reason = pcall(function()
+        if mode == "refresh" then
+            return refresh_bridge_target(actor, source)
+        end
+        return admit_begin_play_target(actor, source)
+    end)
+    if not ok then
+        state.metrics.event_queue_rejected = state.metrics.event_queue_rejected + 1
+        log_event("ERROR_INITIALIZATION_ADMISSION", tostring(handled))
+        return
+    end
+    if handled then
+        if key ~= nil and state.event_queue_keys[key] then
+            state.event_queue_keys[key] = nil
+            debug_event("EVENT_TARGET_RETRY_CANCELLED", "reason=initialization_complete")
+        end
+        return
+    end
+
+    local deferred = enqueue_event_retry(actor, rejection_reason, mode)
+    local already_pending = key ~= nil and state.event_queue_keys[key] ~= nil
+    if not deferred and not already_pending then
+        debug_event("EVENT_TARGET_INITIALIZATION_DROPPED", string.format(
+            "reason=%s mode=%s",
+            rejection_reason or "rejected",
+            mode
+        ))
+    end
 end
 
 local function emit_capture_mode_marker(reason)
@@ -3422,8 +4600,49 @@ local function runtime_tick()
         return
     end
 
-    local interval_ms = state.runtime_profile.reconcile_interval_ms
     local current = now()
+    local camera_location = nil
+    local integrity_due = false
+    if state.runtime_profile.event_admission and state.gameplay_active
+        and state.reconcile_job == nil then
+        camera_location = get_camera_location(find_player_controller())
+        integrity_due = track_stream_integrity_movement(camera_location)
+        local integrity_min_interval_ms = math.max(
+            0,
+            tonumber(config.STREAM_INTEGRITY_SCAN_MIN_INTERVAL_MS) or 0
+        )
+        local integrity_interval_elapsed = integrity_min_interval_ms <= 0
+            or current >= state.next_stream_integrity_scan_at
+        if integrity_due and integrity_interval_elapsed then
+            reset_stream_integrity_tracking(camera_location)
+            --[[ __DEPRECATED_20260721__ [reason: traversal now performs identity/coordinate census only]
+            request_atomic_bridge_rebuild("movement_integrity", config.ATOMIC_REBUILD_MOVEMENT_DEBOUNCE_MS)
+            ]]
+            run_stream_integrity_scan(camera_location)
+            debug_event("STREAM_INTEGRITY_CENSUS_COMPLETED", string.format(
+                "distance_m=%d",
+                math.floor(tonumber(config.STREAM_INTEGRITY_SCAN_DISTANCE_METERS) or 0)
+            ))
+        elseif current >= state.next_nearest_refresh_at then
+            state.next_nearest_refresh_at = current
+                + (config.NEAREST_TARGET_REFRESH_INTERVAL_MS / 1000.0)
+            -- __DEPRECATED_20260721__ [reason: scalar membership changes no longer trigger FindAllOf/admission]
+            -- request_atomic_bridge_rebuild("nearest_membership")
+            refresh_nearest_bridge_targets("runtime_tick", nil, camera_location)
+        end
+    end
+
+    if process_cached_bridge_resync(camera_location) then
+        emit_metrics(false)
+        return
+    end
+
+    if process_atomic_bridge_rebuild(now()) then
+        emit_metrics(false)
+        return
+    end
+
+    local interval_ms = state.runtime_profile.reconcile_interval_ms
     if interval_ms > 0 and current >= state.next_reconcile_at then
         state.next_reconcile_at = current + (interval_ms / 1000.0)
         reconcile_safely()
@@ -3652,7 +4871,7 @@ local function schedule_bootstrap(reason)
     callback()
 end
 
-local function register_hook_safely(path, callback)
+local function register_hook_safely(path, callback, phase)
     if type(RegisterHook) ~= "function" then
         log_event("HOOK_UNAVAILABLE", string.format("path=%s", path))
         return nil, nil
@@ -3666,6 +4885,9 @@ local function register_hook_safely(path, callback)
     end
 
     local ok, pre_id, post_id = pcall(function()
+        if phase == "post" then
+            return RegisterHook(path, function() end, guarded_callback)
+        end
         return RegisterHook(path, guarded_callback)
     end)
     if not ok then
@@ -3673,7 +4895,7 @@ local function register_hook_safely(path, callback)
         return nil, nil
     end
 
-    debug_event("HOOK_REGISTERED", string.format("path=%s", path))
+    debug_event("HOOK_REGISTERED", string.format("path=%s phase=%s", path, phase or "pre"))
     return pre_id, post_id
 end
 
@@ -3683,6 +4905,26 @@ local function register_lifecycle_hooks()
     end
     state.lifecycle_hooks_registered = true
 
+    --[[ __DEPRECATED_20260721__ [reason: lifecycle invalidation promoted every event burst to a full world snapshot]
+    local function request_parameter_rebuild(_, _, source)
+        request_atomic_bridge_rebuild(source or "parameter_initialized")
+    end
+
+    local function request_tracked_lifecycle_rebuild(context_parameter, reason)
+        local actor = unwrap(context_parameter)
+        if not is_valid(actor) then
+            return
+        end
+        local key = actor_key(actor)
+        if key ~= nil and (state.nearest_candidates[key] ~= nil or state.bridge_target_keys[key] ~= nil) then
+            request_atomic_bridge_rebuild(reason or "lifecycle")
+        end
+    end
+
+    local function handle_active_actor_changed()
+        request_atomic_bridge_rebuild("active_actor")
+    end
+
     register_hook_safely("/Script/Engine.PlayerController:ServerAcknowledgePossession", function()
         schedule_bootstrap("server_acknowledge_possession")
     end)
@@ -3690,14 +4932,170 @@ local function register_lifecycle_hooks()
         schedule_bootstrap("client_restart")
     end)
     register_hook_safely("/Script/Engine.Actor:ReceiveEndPlay", function(context_parameter)
-        remove_bridge_target(unwrap(context_parameter), "end_play")
+        request_tracked_lifecycle_rebuild(context_parameter, "end_play")
     end)
-    register_hook_safely("/Script/Pal.PalCharacter:OnDeadCharacter", function(context_parameter)
-        remove_bridge_target(unwrap(context_parameter), "dead")
+    register_hook_safely("/Script/Pal.PalCharacter:OnDeadCharacter", function()
+        request_atomic_bridge_rebuild("dead")
     end)
-    register_hook_safely("/Script/Pal.PalUtility:PalCaptureSuccess", function(_, _, monster_parameter)
-        remove_bridge_target(unwrap(monster_parameter), "captured")
+    register_hook_safely("/Script/Pal.PalUtility:PalCaptureSuccess", function()
+        request_atomic_bridge_rebuild("captured")
     end)
+    register_hook_safely(
+        "/Script/Pal.PalCharacter:OnRep_IsPalActiveActor",
+        handle_active_actor_changed,
+        "post"
+    )
+    register_hook_safely(
+        "/Script/Pal.PalCharacter:LocalInitialized",
+        function()
+            request_atomic_bridge_rebuild("local_initialized")
+        end,
+        "post"
+    )
+    register_hook_safely(
+        "/Script/Pal.PalCharacterParameterComponent:OnRep_IndividualParameter",
+        function()
+            request_atomic_bridge_rebuild("parameter_replicated")
+        end,
+        "post"
+    )
+    register_hook_safely(
+        "/Script/Pal.PalCharacterParameterComponent:OnInitialize_AfterSetIndividualParameter",
+        function(context_parameter, character_parameter)
+            request_parameter_rebuild(
+                context_parameter,
+                character_parameter,
+                "parameter_initialized"
+            )
+        end,
+        "post"
+    )
+    register_hook_safely(
+        "/Script/Pal.PalCharacterParameterComponent:OnInitializedCharacter",
+        function(context_parameter, character_parameter)
+            request_parameter_rebuild(
+                context_parameter,
+                character_parameter,
+                "component_initialized"
+            )
+        end,
+        "post"
+    )
+    register_hook_safely(
+        "/Script/Pal.PalCharacter:BroadcastOnCompleteInitializeParameter",
+        function()
+            request_atomic_bridge_rebuild("initialization_complete")
+        end,
+        "post"
+    )
+    ]]
+
+    local function actor_from_hook_arguments(...)
+        for index = 1, select("#", ...) do
+            local value = select(index, ...)
+            local actor = unwrap(value)
+            if is_valid(actor) and is_a(actor, resolve_class("monster")) then
+                return actor
+            end
+        end
+        for index = 1, select("#", ...) do
+            local value = select(index, ...)
+            local owner_source = unwrap(value)
+            if is_valid(owner_source) then
+                local ok, owner = safe_call_no_args(owner_source, "GetOwner")
+                owner = ok and unwrap(owner) or nil
+                if is_valid(owner) and is_a(owner, resolve_class("monster")) then
+                    return owner
+                end
+            end
+        end
+        return nil
+    end
+
+    local function queue_lifecycle_actor(source, ...)
+        local actor = actor_from_hook_arguments(...)
+        if actor == nil then
+            return false
+        end
+        local key = actor_key(actor)
+        local mode = key ~= nil and state.nearest_candidates[key] ~= nil and "refresh" or "admit"
+        return enqueue_event_retry(actor, "character_initialization_pending", mode)
+    end
+
+    local function remove_lifecycle_actor(reason, ...)
+        local actor = actor_from_hook_arguments(...)
+        if actor == nil then
+            return false
+        end
+        return remove_bridge_target(actor, reason)
+    end
+
+    register_hook_safely("/Script/Engine.PlayerController:ServerAcknowledgePossession", function()
+        schedule_bootstrap("server_acknowledge_possession")
+    end)
+    register_hook_safely("/Script/Engine.PlayerController:ClientRestart", function()
+        schedule_bootstrap("client_restart")
+    end)
+    register_hook_safely("/Script/Engine.Actor:ReceiveEndPlay", function(...)
+        remove_lifecycle_actor("end_play", ...)
+    end)
+    register_hook_safely("/Script/Pal.PalCharacter:OnDeadCharacter", function(...)
+        remove_lifecycle_actor("dead", ...)
+    end)
+    register_hook_safely("/Script/Pal.PalUtility:PalCaptureSuccess", function(...)
+        remove_lifecycle_actor("captured", ...)
+    end)
+    register_hook_safely(
+        "/Script/Pal.PalCharacter:OnRep_IsPalActiveActor",
+        function(...)
+            local actor = actor_from_hook_arguments(...)
+            if actor == nil then
+                return
+            end
+            local ok, active = safe_call_no_args(actor, "GetActiveActorFlag")
+            if ok and active == false then
+                remove_bridge_target(actor, "active_actor_disabled")
+                return
+            end
+            queue_lifecycle_actor("active_actor", actor)
+        end,
+        "post"
+    )
+    register_hook_safely(
+        "/Script/Pal.PalCharacter:LocalInitialized",
+        function(...)
+            queue_lifecycle_actor("local_initialized", ...)
+        end,
+        "post"
+    )
+    register_hook_safely(
+        "/Script/Pal.PalCharacterParameterComponent:OnRep_IndividualParameter",
+        function(...)
+            queue_lifecycle_actor("parameter_replicated", ...)
+        end,
+        "post"
+    )
+    register_hook_safely(
+        "/Script/Pal.PalCharacterParameterComponent:OnInitialize_AfterSetIndividualParameter",
+        function(...)
+            queue_lifecycle_actor("parameter_initialized", ...)
+        end,
+        "post"
+    )
+    register_hook_safely(
+        "/Script/Pal.PalCharacterParameterComponent:OnInitializedCharacter",
+        function(...)
+            queue_lifecycle_actor("component_initialized", ...)
+        end,
+        "post"
+    )
+    register_hook_safely(
+        "/Script/Pal.PalCharacter:BroadcastOnCompleteInitializeParameter",
+        function(...)
+            queue_lifecycle_actor("initialization_complete", ...)
+        end,
+        "post"
+    )
 end
 
 local function register_load_map_hooks()
